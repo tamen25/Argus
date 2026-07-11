@@ -19,10 +19,13 @@ alertmanager:
   enabled: false
 overrides_exporter:
   enabled: false
-query_scheduler:
-  enabled: false
 rollout_operator:
   enabled: false
+
+# NOTE: query_scheduler must stay enabled — mimir-distributed 6.x queriers are
+# hard-wired to the scheduler's headless service; disabling it hangs all queries.
+query_scheduler:
+  replicas: 1
 
 ruler:
   replicas: 1
