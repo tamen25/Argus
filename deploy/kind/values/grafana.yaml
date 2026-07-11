@@ -1,0 +1,34 @@
+# Grafana (grafana/grafana chart) — reachable at http://localhost:3000 via kind
+# extraPortMapping (nodePort 30300).
+adminUser: admin
+adminPassword: argus-dev
+
+service:
+  type: NodePort
+  nodePort: 30300
+
+grafana.ini:
+  plugins:
+    # Argus plugin loads unsigned during development (Phase 1+).
+    allow_loading_unsigned_plugins: tamen25-argus-app
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Mimir
+        type: prometheus
+        uid: mimir
+        access: proxy
+        url: http://mimir-nginx.lgtm.svc/prometheus
+        isDefault: true
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki-gateway.lgtm.svc
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        url: http://tempo.lgtm.svc:3100

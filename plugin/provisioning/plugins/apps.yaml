@@ -1,0 +1,11 @@
+apiVersion: 1
+
+apps:
+  - type: 'tamen25-argus-app'
+    org_id: 1
+    org_name: 'tamen25'
+    disabled: false
+    jsonData:
+      apiUrl: http://default-url.com
+    secureJsonData:
+      apiKey: secret-key

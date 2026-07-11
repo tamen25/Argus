@@ -1,0 +1,54 @@
+# Default values for the argus chart (Phase 0 skeleton).
+# Environment-specific overlays: values-kind.yaml, values-eks.yaml.
+
+image:
+  repository: ghcr.io/tamen25/argus
+  tag: "" # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+engine:
+  # HTTP API / health / metrics listen address.
+  addr: ":8080"
+  # Bearer token for the engine API (§5.3: required; plugin backend is the
+  # only documented caller). If empty, the chart generates one at install.
+  apiToken: ""
+  # OTLP receiver ports (Phase 1+; service exposes them from day one so the
+  # Alloy fan-out config never changes).
+  otlp:
+    grpcPort: 4317
+    httpPort: 4318
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# §5.3: NetworkPolicies ship with the chart, default on.
+networkPolicy:
+  enabled: true
+  # Namespaces allowed to reach the engine API (Grafana runs here).
+  allowedNamespaces:
+    - lgtm
+
+serviceAccount:
+  create: true
+  name: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+postgresql:
+  enabled: true
+  auth:
+    database: argus
+    username: argus
+    # Dev default; override with existingSecret in real deployments.
+    password: argus-dev
+  primary:
+    persistence:
+      size: 5Gi

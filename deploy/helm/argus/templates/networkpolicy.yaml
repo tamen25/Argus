@@ -1,0 +1,21 @@
+{{- if .Values.networkPolicy.enabled }}
+# §5.3: engine API is reachable only from allowed namespaces (Grafana's plugin
+# backend is the only documented caller) and from Alloy for OTLP.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "argus.fullname" . }}
+  labels: {{- include "argus.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "argus.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range .Values.networkPolicy.allowedNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
+        - podSelector: {} # same-namespace (postgres, jobs)
+{{- end }}

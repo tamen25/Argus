@@ -1,0 +1,20 @@
+# kind cluster config for the Argus dev environment (Phase 0).
+# Host port mappings (via NodePort services):
+#   3000 -> Grafana        (nodePort 30300)
+#   4317 -> Alloy OTLP/gRPC (nodePort 30317)
+#   4318 -> Alloy OTLP/HTTP (nodePort 30318)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: argus
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30300
+        hostPort: 3000
+        protocol: TCP
+      - containerPort: 30317
+        hostPort: 4317
+        protocol: TCP
+      - containerPort: 30318
+        hostPort: 4318
+        protocol: TCP

@@ -1,0 +1,38 @@
+# Binaries / build output
+engine/bin/
+plugin/dist/
+plugin/coverage/
+*.exe
+*.test
+*.out
+
+# Node
+node_modules/
+
+# Go
+engine/vendor/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local env / secrets
+.env
+*.local.yaml
+
+# Helm fetched dependencies (Chart.lock IS committed)
+deploy/helm/argus/charts/
+
+# Terraform
+deploy/terraform/.terraform/
+deploy/terraform/*.tfstate*
+deploy/terraform/*.tfvars
+
+# mkdocs
+site/
+
+# Playwright
+plugin/test-results/
+plugin/playwright-report/

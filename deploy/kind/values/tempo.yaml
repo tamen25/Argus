@@ -1,0 +1,8 @@
+# Tempo (grafana/tempo chart) — single binary. 30d trace retention (traces are
+# bulky; metrics carry the long-horizon backtest history, not traces).
+tempo:
+  retention: 720h
+
+persistence:
+  enabled: true
+  size: 10Gi

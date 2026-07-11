@@ -1,0 +1,9 @@
+# Chaos Mesh on kind (containerd runtime).
+chaosDaemon:
+  runtime: containerd
+  socketPath: /run/containerd/containerd.sock
+
+dashboard:
+  create: true
+  # Dev cluster only: no auth on the dashboard.
+  securityMode: false

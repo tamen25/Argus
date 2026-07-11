@@ -1,0 +1,9 @@
+Argus {{ .Chart.AppVersion }} installed as {{ .Release.Name }} in {{ .Release.Namespace }}.
+
+Engine API (in-cluster):
+  http://{{ include "argus.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+
+API token:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "argus.fullname" . }} -o jsonpath='{.data.api-token}' | base64 -d
+
+NOTE: Phase 0 skeleton — the engine currently serves /healthz only.

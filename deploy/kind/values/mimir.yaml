@@ -1,0 +1,59 @@
+# Mimir (grafana/mimir-distributed) — minimal single-replica footprint for kind.
+#
+# HISTORY ACCUMULATION (master plan §9, Phase 0): blocks retention is 365d so
+# Module B (Backtest) has months of real metric history by Phase 3. Do not
+# lower this on the dev cluster; disk cost is the point.
+mimir:
+  structuredConfig:
+    multitenancy_enabled: false
+    limits:
+      compactor_blocks_retention_period: 365d
+      # otel-demo emits modest cardinality; generous ceiling for chaos scenarios
+      max_global_series_per_user: 1000000
+      ingestion_rate: 100000
+    ingester:
+      ring:
+        replication_factor: 1
+
+alertmanager:
+  enabled: false
+overrides_exporter:
+  enabled: false
+query_scheduler:
+  enabled: false
+rollout_operator:
+  enabled: false
+
+ruler:
+  replicas: 1
+
+distributor:
+  replicas: 1
+ingester:
+  replicas: 1
+  zoneAwareReplication:
+    enabled: false
+  persistentVolume:
+    size: 10Gi
+store_gateway:
+  replicas: 1
+  zoneAwareReplication:
+    enabled: false
+compactor:
+  replicas: 1
+  persistentVolume:
+    size: 5Gi
+querier:
+  replicas: 1
+query_frontend:
+  replicas: 1
+
+# Object storage for blocks: in-cluster MinIO (also exercises the S3 code path
+# the A2 cost engine will use in Phase 2).
+minio:
+  enabled: true
+  persistence:
+    size: 20Gi
+
+nginx:
+  replicas: 1
