@@ -8,32 +8,12 @@ default:
 
 components:
   flagd:
-    # Override reason: flagd-ui OOMKills at the chart's 250Mi default on this
-    # cluster. sidecarContainers is a list, so the whole entry is copied from
-    # chart 0.40.9 defaults with only the memory limit raised.
-    sidecarContainers:
-      - name: flagd-ui
-        useDefault:
-          env: true
-        service:
-          port: 4000
-        env:
-          - name: FLAGD_METRICS_EXPORTER
-            value: otel
-          - name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: http://$(OTEL_COLLECTOR_NAME):4318
-          - name: FLAGD_UI_PORT
-            value: "4000"
-          - name: SECRET_KEY_BASE
-            value: yYrECL4qbNwleYInGJYvVnSkwJuSQJ4ijPTx5tirGUXrbznFIBFVJdPl5t6O9ASw
-          - name: PHX_HOST
-            value: localhost
-        resources:
-          limits:
-            memory: 512Mi
-        volumeMounts:
-          - name: config-rw
-            mountPath: /app/data
+    # flagd-ui sidecar disabled: it OOMKills within seconds regardless of limit
+    # (tested 250Mi default, 512Mi, 1Gi) on this cluster — runaway allocation,
+    # not sizing. It is only the flag-editing web UI; flagd itself serves flags
+    # fine. Phase 4 fault injection edits the flagd ConfigMap directly.
+    # (frontend-proxy's /feature route will 503 — harmless.) See DECISIONS.md.
+    sidecarContainers: []
 
 opentelemetry-collector:
   enabled: false

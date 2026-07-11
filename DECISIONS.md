@@ -2,6 +2,7 @@
 
 Every scope cut / deviation from the master plan. One line + rationale. Newest first.
 
+- 2026-07-12 — flagd-ui sidecar disabled on the kind cluster: OOMKills within seconds at 250Mi/512Mi/1Gi (runaway allocation). Flag editing not needed for telemetry; Phase 4 fault injection will edit the flagd ConfigMap directly.
 - 2026-07-12 — grafana/alloy Helm chart (1.10.1) prints a deprecation warning; kept for Phase 0 since it works. Revisit successor chart (k8s-monitoring / alloy-operator) before Phase 1 wiring of the argus fan-out.
 
 - 2026-07-12 — Helm chart versions in `deploy/kind/bootstrap.sh` pinned via variables at top of script; initial pins taken from repo state at scaffold time — re-pin after first successful `make dev-up`. Rationale: reproducibility without blocking Phase 0 on chart churn.
