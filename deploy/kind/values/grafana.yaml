@@ -20,7 +20,7 @@ datasources:
         type: prometheus
         uid: mimir
         access: proxy
-        url: http://mimir-nginx.lgtm.svc/prometheus
+        url: http://mimir-gateway.lgtm.svc/prometheus
         isDefault: true
       - name: Loki
         type: loki
@@ -31,4 +31,4 @@ datasources:
         type: tempo
         uid: tempo
         access: proxy
-        url: http://tempo.lgtm.svc:3100
+        url: http://tempo.lgtm.svc:3200

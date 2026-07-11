@@ -41,7 +41,7 @@ alloy:
 
       prometheus.remote_write "mimir" {
         endpoint {
-          url = "http://mimir-nginx.lgtm.svc/api/v1/push"
+          url = "http://mimir-gateway.lgtm.svc/api/v1/push"
         }
       }
 
