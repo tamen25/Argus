@@ -6,6 +6,35 @@ default:
     - name: OTEL_COLLECTOR_NAME
       value: alloy.lgtm
 
+components:
+  flagd:
+    # Override reason: flagd-ui OOMKills at the chart's 250Mi default on this
+    # cluster. sidecarContainers is a list, so the whole entry is copied from
+    # chart 0.40.9 defaults with only the memory limit raised.
+    sidecarContainers:
+      - name: flagd-ui
+        useDefault:
+          env: true
+        service:
+          port: 4000
+        env:
+          - name: FLAGD_METRICS_EXPORTER
+            value: otel
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: http://$(OTEL_COLLECTOR_NAME):4318
+          - name: FLAGD_UI_PORT
+            value: "4000"
+          - name: SECRET_KEY_BASE
+            value: yYrECL4qbNwleYInGJYvVnSkwJuSQJ4ijPTx5tirGUXrbznFIBFVJdPl5t6O9ASw
+          - name: PHX_HOST
+            value: localhost
+        resources:
+          limits:
+            memory: 512Mi
+        volumeMounts:
+          - name: config-rw
+            mountPath: /app/data
+
 opentelemetry-collector:
   enabled: false
 jaeger:

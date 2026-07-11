@@ -24,4 +24,16 @@
 #   notes: "First logged incident of the history-accumulation track."
 
 version: 1
-incidents: []
+incidents:
+  - id: 2026-07-11-flagd-ui-oomkill
+    title: "flagd-ui sidecar OOMKilled in CrashLoopBackOff at chart-default 250Mi limit"
+    start: "2026-07-11T22:39:00Z"
+    end:   "2026-07-11T22:55:30Z"
+    services: [flagd]
+    induced: false
+    notes: >-
+      First boot of the dev cluster. flagd container healthy throughout; the
+      flagd-ui sidecar OOMKilled 6 times until its memory limit was raised to
+      512Mi in deploy/kind/values/otel-demo.yaml. Visible in Loki (flagd
+      restarts) and Mimir (kube restarts counters) — first entry of the
+      history-accumulation track.
