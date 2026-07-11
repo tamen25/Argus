@@ -1,0 +1,18 @@
+# OpenTelemetry Demo — workload only. Built-in backends disabled; all telemetry
+# goes to Alloy in the lgtm namespace, which fans out to Mimir/Loki/Tempo.
+default:
+  envOverrides:
+    # Demo services derive OTEL_EXPORTER_OTLP_ENDPOINT from this hostname.
+    - name: OTEL_COLLECTOR_NAME
+      value: alloy.lgtm
+
+opentelemetry-collector:
+  enabled: false
+jaeger:
+  enabled: false
+prometheus:
+  enabled: false
+grafana:
+  enabled: false
+opensearch:
+  enabled: false

@@ -1,0 +1,17 @@
+apiVersion: v2
+name: argus
+description: >-
+  Argus engine — CI for reliability: scores your telemetry, prices it, backtests
+  your alerts, and benchmarks whether an AI agent can diagnose incidents from it.
+type: application
+version: 0.1.0
+appVersion: "0.0.1"
+home: https://github.com/tamen25/Argus
+sources:
+  - https://github.com/tamen25/Argus
+kubeVersion: ">=1.27.0"
+dependencies:
+  - name: postgresql
+    version: "16.x.x"
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: postgresql.enabled

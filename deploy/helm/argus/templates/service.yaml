@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "argus.fullname" . }}
+  labels: {{- include "argus.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector: {{- include "argus.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+    # OTLP receiver ports (engine implements them in Phase 1; exposing them now
+    # keeps the Alloy fan-out config stable across phases).
+    - name: otlp-grpc
+      port: {{ .Values.engine.otlp.grpcPort }}
+      targetPort: {{ .Values.engine.otlp.grpcPort }}
+    - name: otlp-http
+      port: {{ .Values.engine.otlp.httpPort }}
+      targetPort: {{ .Values.engine.otlp.httpPort }}

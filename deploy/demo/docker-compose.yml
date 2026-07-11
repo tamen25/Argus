@@ -1,0 +1,46 @@
+# `make demo` — see Argus in 5 minutes without a cluster (master plan §8).
+# Phase 0: engine (healthz only) + Postgres + grafana/otel-lgtm (Grafana with
+# mini Loki+Tempo+Mimir+Collector in one image). Phase 1 adds the Argus plugin
+# preinstalled in Grafana and wires the collector's sampled mirror to the engine.
+name: argus-demo
+
+services:
+  engine:
+    build:
+      context: ../../engine
+    command: ["serve", "--addr", ":8080"]
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "argus", "version"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: argus
+      POSTGRES_USER: argus
+      POSTGRES_PASSWORD: argus-dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argus -d argus"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  lgtm:
+    # All-in-one Grafana + Loki + Tempo + Mimir + OTel Collector demo image.
+    image: grafana/otel-lgtm:latest
+    ports:
+      - "3000:3000" # Grafana
+      - "14317:4317" # OTLP gRPC (host ports offset to avoid clashing with kind)
+      - "14318:4318" # OTLP HTTP
+
+volumes:
+  pgdata:

@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "argus.fullname" . }}
+  labels: {{- include "argus.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "argus.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "argus.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "argus.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: engine
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve", "--addr", {{ .Values.engine.addr | quote }}]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ARGUS_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "argus.fullname" . }}
+                  key: api-token
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources: {{- toYaml .Values.resources | nindent 12 }}

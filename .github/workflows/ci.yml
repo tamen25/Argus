@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: Engine (lint + test + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: engine/go.sum
+      - name: golangci-lint (incl. depguard architecture rules)
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+          working-directory: engine
+      - name: Test
+        run: go test -race ./...
+      - name: Build
+        run: CGO_ENABLED=0 go build -trimpath -o bin/argus ./cmd/argus
+
+  plugin:
+    name: Plugin (lint + test + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plugin/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: plugin/go.sum
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm run test:ci
+      - name: Build frontend
+        run: npm run build
+      - name: Build backend
+        run: go build ./...
+
+  helm:
+    name: Helm chart lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: helm lint
+        run: |
+          helm dependency update deploy/helm/argus
+          helm lint deploy/helm/argus
+          helm template argus deploy/helm/argus >/dev/null

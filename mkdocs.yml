@@ -1,0 +1,26 @@
+site_name: Argus
+site_description: "CI for reliability — score, price, backtest, and prove your observability."
+repo_url: https://github.com/tamen25/Argus
+repo_name: tamen25/Argus
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      toggle: {icon: material/weather-night, name: Dark mode}
+    - scheme: slate
+      toggle: {icon: material/weather-sunny, name: Light mode}
+  features:
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Master build plan: argus-master-build-plan.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - tables

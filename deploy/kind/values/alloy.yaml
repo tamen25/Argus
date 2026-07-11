@@ -1,0 +1,69 @@
+# Alloy (grafana/alloy chart) — OTLP gateway for the cluster.
+# Receives OTLP from otel-demo (and anything else), fans out to Mimir/Loki/Tempo.
+# Phase 1 adds a second, sampled OTLP exporter to argus-engine (see comment in config).
+alloy:
+  extraPorts:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+  configMap:
+    content: |-
+      otelcol.receiver.otlp "default" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+        http {
+          endpoint = "0.0.0.0:4318"
+        }
+        output {
+          metrics = [otelcol.processor.batch.default.input]
+          logs    = [otelcol.processor.batch.default.input]
+          traces  = [otelcol.processor.batch.default.input]
+        }
+      }
+
+      otelcol.processor.batch "default" {
+        output {
+          metrics = [otelcol.exporter.prometheus.mimir.input]
+          logs    = [otelcol.exporter.loki.default.input]
+          traces  = [otelcol.exporter.otlp.tempo.input]
+        }
+      }
+
+      otelcol.exporter.prometheus "mimir" {
+        forward_to = [prometheus.remote_write.mimir.receiver]
+      }
+
+      prometheus.remote_write "mimir" {
+        endpoint {
+          url = "http://mimir-nginx.lgtm.svc/api/v1/push"
+        }
+      }
+
+      otelcol.exporter.loki "default" {
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki-gateway.lgtm.svc/loki/api/v1/push"
+        }
+      }
+
+      otelcol.exporter.otlp "tempo" {
+        client {
+          endpoint = "tempo.lgtm.svc:4317"
+          tls {
+            insecure = true
+          }
+        }
+      }
+
+      // Phase 1 (do not enable in Phase 0): sampled mirror to argus-engine.
+      // otelcol.processor.probabilistic_sampler "argus" { ... }
+      // otelcol.exporter.otlp "argus" { client { endpoint = "argus-engine.argus.svc:4317" } }

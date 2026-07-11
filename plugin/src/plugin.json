@@ -1,0 +1,68 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "app",
+  "name": "Argus",
+  "id": "tamen25-argus-app",
+  "backend": true,
+  "executable": "gpx_argus",
+  "info": {
+    "keywords": ["observability", "opentelemetry", "instrumentation-score", "cost", "slo", "lgtm"],
+    "description": "CI for reliability — scores your telemetry, prices it, backtests your alerts, and benchmarks whether an AI agent can diagnose incidents from it.",
+    "author": {
+      "name": "tamen25"
+    },
+    "links": [
+      {"name": "GitHub", "url": "https://github.com/tamen25/Argus"},
+      {"name": "License", "url": "https://github.com/tamen25/Argus/blob/main/LICENSE"}
+    ],
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "screenshots": [],
+    "version": "%VERSION%",
+    "updated": "%TODAY%"
+  },
+  "includes": [
+    {
+      "type": "page",
+      "name": "Page One",
+      "path": "/a/%PLUGIN_ID%/one",
+      "addToNav": true,
+      "defaultNav": true
+    },
+    {
+      "type": "page",
+      "name": "Page Two",
+      "path": "/a/%PLUGIN_ID%/two",
+      "addToNav": true,
+      "defaultNav": false
+    },
+    {
+      "type": "page",
+      "name": "Page Three",
+      "path": "/a/%PLUGIN_ID%/three",
+      "addToNav": true,
+      "defaultNav": false
+    },
+    {
+      "type": "page",
+      "name": "Page Four",
+      "path": "/a/%PLUGIN_ID%/four",
+      "addToNav": true,
+      "defaultNav": false
+    },
+    {
+      "type": "page",
+      "icon": "cog",
+      "name": "Configuration",
+      "path": "/plugins/%PLUGIN_ID%",
+      "role": "Admin",
+      "addToNav": true
+    }
+  ],
+  "dependencies": {
+    "grafanaDependency": ">=12.3.0",
+    "plugins": []
+  }
+}

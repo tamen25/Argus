@@ -1,0 +1,16 @@
+# Overlay for the kind dev cluster (make dev-up installs argus here in Phase 1+).
+image:
+  repository: argus-engine
+  tag: dev
+  pullPolicy: Never # image is `kind load`-ed, never pulled
+
+engine:
+  apiToken: argus-dev-token
+
+networkPolicy:
+  enabled: false # kind's default CNI (kindnet) enforces nothing anyway
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi

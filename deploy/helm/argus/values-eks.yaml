@@ -1,0 +1,19 @@
+# Overlay for the EKS demo environment (Phase 4 flagship runs ONLY).
+# Terraform in deploy/terraform provisions the cluster; apply/destroy per
+# session — never leave it running.
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+postgresql:
+  primary:
+    persistence:
+      size: 20Gi
+
+networkPolicy:
+  enabled: true

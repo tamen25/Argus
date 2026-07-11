@@ -1,0 +1,8 @@
+# Dev environment is WSL2/Linux — everything checks out with LF.
+# (CRLF shell scripts break bash; CRLF YAML breaks some parsers.)
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff2 binary

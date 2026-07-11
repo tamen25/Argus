@@ -1,0 +1,27 @@
+# Argus incident registry — ground truth for Module B (Backtest).
+# Master plan §3.2: user-labeled past incidents; §9 Phase 0: log EVERY induced fault,
+# chaos experiment, and real incident from day one so Phase 3 has real data.
+#
+# Schema (v1):
+#   id:               unique slug, convention: YYYY-MM-DD-<short-name>
+#   title:            human-readable one-liner
+#   start / end:      RFC 3339 UTC timestamps of impact window
+#   services:         affected service.name values
+#   expected_alerts:  (optional) alert rule names that SHOULD have fired
+#   induced:          (optional) true if caused by chaos/fault injection
+#   fault:            (optional) path to the fault manifest used
+#   notes:            (optional) free text
+#
+# Example:
+# - id: 2026-07-15-checkout-cardinality
+#   title: "Cardinality explosion in checkout (chaos-mesh induced)"
+#   start: "2026-07-15T14:00:00Z"
+#   end:   "2026-07-15T14:25:00Z"
+#   services: [checkout]
+#   expected_alerts: [MimirIngesterSeriesLimit]
+#   induced: true
+#   fault: scenarios/faults/cardinality-explosion.yaml
+#   notes: "First logged incident of the history-accumulation track."
+
+version: 1
+incidents: []

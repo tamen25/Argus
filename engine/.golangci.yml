@@ -1,0 +1,31 @@
+# golangci-lint v2 config for the Argus engine.
+# Binding architecture rule 2 (CLAUDE.md): deterministic core, LLM at the edge —
+# rules/, cost/, backtest/, bench (except the flagged normalization path) never
+# import the LLM client. Enforced here via depguard; CI runs this on every PR.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - depguard
+    - misspell
+    - unconvert
+    - unparam
+  settings:
+    depguard:
+      rules:
+        deterministic-core:
+          list-mode: lax # allow everything not explicitly denied
+          files:
+            - "**/internal/rules/**"
+            - "**/internal/cost/**"
+            - "**/internal/backtest/**"
+            - "**/internal/bench/scoring/**"
+          deny:
+            - pkg: github.com/tamen25/Argus/engine/internal/remediate/llm
+              desc: "deterministic core must not import the LLM client (architecture rule 2)"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
