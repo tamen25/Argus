@@ -89,8 +89,13 @@
     }
   ],
   "rules_evaluated": [
+    "ARG-LOG-001",
     "ARG-RES-001",
+    "ARG-RES-002",
+    "ARG-RES-003",
     "ARG-SPA-002",
+    "LOG-001",
+    "LOG-002",
     "MET-001",
     "RES-005",
     "SPA-002",

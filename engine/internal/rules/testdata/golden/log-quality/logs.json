@@ -1,0 +1,41 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "cart"}},
+          {"key": "deployment.environment.name", "value": {"stringValue": "production"}}
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {"name": "otel"},
+          "logRecords": [
+            {"severityNumber": 5, "severityText": "DEBUG", "body": {"stringValue": "cache miss for sku 42"}, "traceId": "0102030405060708090a0b0c0d0e0f30"},
+            {"severityNumber": 9, "severityText": "INFO", "body": {"stringValue": "added item"}, "traceId": "0102030405060708090a0b0c0d0e0f31"},
+            {"severityNumber": 9, "severityText": "INFO", "body": {"stringValue": "checkout started"}, "traceId": "0102030405060708090a0b0c0d0e0f32"},
+            {"severityNumber": 17, "severityText": "ERROR", "body": {"stringValue": "payment timeout"}, "traceId": "0102030405060708090a0b0c0d0e0f33"}
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "legacy-batch"}},
+          {"key": "deployment.environment.name", "value": {"stringValue": "production"}}
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {"name": "log4j-bridge"},
+          "logRecords": [
+            {"body": {"stringValue": "job started"}},
+            {"body": {"stringValue": "processed 100 rows"}},
+            {"severityText": "WARNING", "body": {"stringValue": "slow query"}}
+          ]
+        }
+      ]
+    }
+  ]
+}

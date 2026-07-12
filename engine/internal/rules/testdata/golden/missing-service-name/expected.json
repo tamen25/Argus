@@ -12,6 +12,16 @@
           "passed": true
         },
         {
+          "rule_id": "ARG-RES-002",
+          "impact": "important",
+          "passed": false
+        },
+        {
+          "rule_id": "ARG-RES-003",
+          "impact": "normal",
+          "passed": false
+        },
+        {
           "rule_id": "RES-005",
           "impact": "critical",
           "passed": false
@@ -22,8 +32,54 @@
           "passed": true
         }
       ],
-      "extension_score": 100,
+      "extension_score": 44.44444444444444,
       "findings": [
+        {
+          "rule_id": "ARG-RES-002",
+          "rule_name": "service.version is present",
+          "source": "argus",
+          "service": "\u003cunknown\u003e",
+          "impact": "important",
+          "description": "Resource attributes SHOULD contain service.version. Without it, regressions cannot be correlated to deploys — the most common first question of any incident.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 1,
+            "violations": 1,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "span",
+              "summary": "span process-batch",
+              "attrs": {
+                "host.name": "node-7"
+              }
+            }
+          ]
+        },
+        {
+          "rule_id": "ARG-RES-003",
+          "rule_name": "deployment.environment.name is present",
+          "source": "argus",
+          "service": "\u003cunknown\u003e",
+          "impact": "normal",
+          "description": "Resource attributes SHOULD contain deployment.environment.name. Without it, prod and staging telemetry blend — and rules like LOG-001 cannot even identify production.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 1,
+            "violations": 1,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "span",
+              "summary": "span process-batch",
+              "attrs": {
+                "host.name": "node-7"
+              }
+            }
+          ]
+        },
         {
           "rule_id": "RES-005",
           "rule_name": "service.name is present",
@@ -60,6 +116,16 @@
           "passed": true
         },
         {
+          "rule_id": "ARG-RES-002",
+          "impact": "important",
+          "passed": true
+        },
+        {
+          "rule_id": "ARG-RES-003",
+          "impact": "normal",
+          "passed": false
+        },
+        {
           "rule_id": "RES-005",
           "impact": "critical",
           "passed": true
@@ -70,7 +136,41 @@
           "passed": true
         }
       ],
-      "extension_score": 100
+      "extension_score": 77.77777777777779,
+      "findings": [
+        {
+          "rule_id": "ARG-RES-003",
+          "rule_name": "deployment.environment.name is present",
+          "source": "argus",
+          "service": "checkout",
+          "impact": "normal",
+          "description": "Resource attributes SHOULD contain deployment.environment.name. Without it, prod and staging telemetry blend — and rules like LOG-001 cannot even identify production.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 2,
+            "violations": 2,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "span",
+              "summary": "span HTTP POST /checkout",
+              "attrs": {
+                "service.name": "checkout",
+                "service.version": "1.4.0"
+              }
+            },
+            {
+              "kind": "span",
+              "summary": "span HTTP GET /cart",
+              "attrs": {
+                "service.name": "checkout",
+                "service.version": "1.4.0"
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "service": "unknown_service:java",
@@ -80,6 +180,16 @@
         {
           "rule_id": "ARG-RES-001",
           "impact": "critical",
+          "passed": false
+        },
+        {
+          "rule_id": "ARG-RES-002",
+          "impact": "important",
+          "passed": false
+        },
+        {
+          "rule_id": "ARG-RES-003",
+          "impact": "normal",
           "passed": false
         },
         {
@@ -117,13 +227,64 @@
               }
             }
           ]
+        },
+        {
+          "rule_id": "ARG-RES-002",
+          "rule_name": "service.version is present",
+          "source": "argus",
+          "service": "unknown_service:java",
+          "impact": "important",
+          "description": "Resource attributes SHOULD contain service.version. Without it, regressions cannot be correlated to deploys — the most common first question of any incident.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 1,
+            "violations": 1,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "span",
+              "summary": "span unnamed",
+              "attrs": {
+                "service.name": "unknown_service:java"
+              }
+            }
+          ]
+        },
+        {
+          "rule_id": "ARG-RES-003",
+          "rule_name": "deployment.environment.name is present",
+          "source": "argus",
+          "service": "unknown_service:java",
+          "impact": "normal",
+          "description": "Resource attributes SHOULD contain deployment.environment.name. Without it, prod and staging telemetry blend — and rules like LOG-001 cannot even identify production.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 1,
+            "violations": 1,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "span",
+              "summary": "span unnamed",
+              "attrs": {
+                "service.name": "unknown_service:java"
+              }
+            }
+          ]
         }
       ]
     }
   ],
   "rules_evaluated": [
+    "ARG-LOG-001",
     "ARG-RES-001",
+    "ARG-RES-002",
+    "ARG-RES-003",
     "ARG-SPA-002",
+    "LOG-001",
+    "LOG-002",
     "MET-001",
     "RES-005",
     "SPA-002",

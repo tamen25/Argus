@@ -1,0 +1,19 @@
+# Argus extension rule (NOT part of the spec score). Master-plan rule 6a:
+# service.version present. The spec's illustrative examples rate a missing
+# service.version as Important, but no official rule file exists yet —
+# upstream contribution candidate.
+schema: argus.rules/v1
+id: ARG-RES-002
+source: argus
+name: service.version is present
+description: >-
+  Resource attributes SHOULD contain service.version. Without it, regressions
+  cannot be correlated to deploys — the most common first question of any
+  incident.
+target: resource
+impact: important
+evaluation:
+  mode: item
+  criteria: "'service.version' in resource && string(resource['service.version']) != ''"
+remediation:
+  template: missing-resource-attributes

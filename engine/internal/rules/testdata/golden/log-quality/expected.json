@@ -1,0 +1,293 @@
+{
+  "fleet_score": 70,
+  "services": [
+    {
+      "service": "cart",
+      "spec_score": 70,
+      "category": "Needs Improvement",
+      "results": [
+        {
+          "rule_id": "ARG-LOG-001",
+          "impact": "important",
+          "passed": true
+        },
+        {
+          "rule_id": "ARG-RES-001",
+          "impact": "critical",
+          "passed": true
+        },
+        {
+          "rule_id": "ARG-RES-002",
+          "impact": "important",
+          "passed": false
+        },
+        {
+          "rule_id": "ARG-RES-003",
+          "impact": "normal",
+          "passed": true
+        },
+        {
+          "rule_id": "LOG-001",
+          "impact": "important",
+          "passed": false
+        },
+        {
+          "rule_id": "LOG-002",
+          "impact": "important",
+          "passed": true
+        },
+        {
+          "rule_id": "RES-005",
+          "impact": "critical",
+          "passed": true
+        }
+      ],
+      "extension_score": 75,
+      "findings": [
+        {
+          "rule_id": "ARG-RES-002",
+          "rule_name": "service.version is present",
+          "source": "argus",
+          "service": "cart",
+          "impact": "important",
+          "description": "Resource attributes SHOULD contain service.version. Without it, regressions cannot be correlated to deploys — the most common first question of any incident.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 4,
+            "violations": 4,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "log",
+              "summary": "log severity=DEBUG",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "cart"
+              }
+            },
+            {
+              "kind": "log",
+              "summary": "log severity=INFO",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "cart"
+              }
+            },
+            {
+              "kind": "log",
+              "summary": "log severity=INFO",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "cart"
+              }
+            },
+            {
+              "kind": "log",
+              "summary": "log severity=ERROR",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "cart"
+              }
+            }
+          ]
+        },
+        {
+          "rule_id": "LOG-001",
+          "rule_name": "debug logs are not enabled in production",
+          "source": "spec",
+          "service": "cart",
+          "impact": "important",
+          "description": "Log records at DEBUG level MUST NOT be observed from services whose deployment.environment.name is a production environment. Debug volume in prod is cost without diagnostic value.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 4,
+            "violations": 1,
+            "ratio": 0.25
+          },
+          "evidence": [
+            {
+              "kind": "log",
+              "summary": "log severity=DEBUG",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "cart"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "legacy-batch",
+      "spec_score": 70,
+      "category": "Needs Improvement",
+      "results": [
+        {
+          "rule_id": "ARG-LOG-001",
+          "impact": "important",
+          "passed": false
+        },
+        {
+          "rule_id": "ARG-RES-001",
+          "impact": "critical",
+          "passed": true
+        },
+        {
+          "rule_id": "ARG-RES-002",
+          "impact": "important",
+          "passed": false
+        },
+        {
+          "rule_id": "ARG-RES-003",
+          "impact": "normal",
+          "passed": true
+        },
+        {
+          "rule_id": "LOG-001",
+          "impact": "important",
+          "passed": true
+        },
+        {
+          "rule_id": "LOG-002",
+          "impact": "important",
+          "passed": false
+        },
+        {
+          "rule_id": "RES-005",
+          "impact": "critical",
+          "passed": true
+        }
+      ],
+      "extension_score": 50,
+      "findings": [
+        {
+          "rule_id": "ARG-LOG-001",
+          "rule_name": "logs carry trace correlation",
+          "source": "argus",
+          "service": "legacy-batch",
+          "impact": "important",
+          "description": "Request-path log records SHOULD carry a trace_id. Uncorrelated logs cannot be joined to traces, forcing grep-based investigation during incidents.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 3,
+            "violations": 3,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "log",
+              "summary": "log severity=",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "legacy-batch"
+              }
+            },
+            {
+              "kind": "log",
+              "summary": "log severity=",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "legacy-batch"
+              }
+            },
+            {
+              "kind": "log",
+              "summary": "log severity=WARNING",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "legacy-batch"
+              }
+            }
+          ]
+        },
+        {
+          "rule_id": "ARG-RES-002",
+          "rule_name": "service.version is present",
+          "source": "argus",
+          "service": "legacy-batch",
+          "impact": "important",
+          "description": "Resource attributes SHOULD contain service.version. Without it, regressions cannot be correlated to deploys — the most common first question of any incident.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 3,
+            "violations": 3,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "log",
+              "summary": "log severity=",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "legacy-batch"
+              }
+            },
+            {
+              "kind": "log",
+              "summary": "log severity=",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "legacy-batch"
+              }
+            },
+            {
+              "kind": "log",
+              "summary": "log severity=WARNING",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "legacy-batch"
+              }
+            }
+          ]
+        },
+        {
+          "rule_id": "LOG-002",
+          "rule_name": "log records have severity set",
+          "source": "spec",
+          "service": "legacy-batch",
+          "impact": "important",
+          "description": "Log records MUST carry a severity (number, or text mappable to one). Severity-less logs cannot be filtered, routed, or costed by level.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 3,
+            "violations": 2,
+            "ratio": 0.6666666666666666
+          },
+          "evidence": [
+            {
+              "kind": "log",
+              "summary": "log severity=",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "legacy-batch"
+              }
+            },
+            {
+              "kind": "log",
+              "summary": "log severity=",
+              "attrs": {
+                "deployment.environment.name": "production",
+                "service.name": "legacy-batch"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "rules_evaluated": [
+    "ARG-LOG-001",
+    "ARG-RES-001",
+    "ARG-RES-002",
+    "ARG-RES-003",
+    "ARG-SPA-002",
+    "LOG-001",
+    "LOG-002",
+    "MET-001",
+    "RES-005",
+    "SPA-002",
+    "SPA-003",
+    "SPA-004"
+  ]
+}
