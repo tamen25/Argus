@@ -1,9 +1,9 @@
 {
-  "fleet_score": 66.66666666666667,
+  "fleet_score": 80.95238095238095,
   "services": [
     {
       "service": "\u003cunknown\u003e",
-      "spec_score": 0,
+      "spec_score": 42.857142857142854,
       "category": "Poor",
       "results": [
         {
@@ -15,6 +15,11 @@
           "rule_id": "RES-005",
           "impact": "critical",
           "passed": false
+        },
+        {
+          "rule_id": "SPA-004",
+          "impact": "important",
+          "passed": true
         }
       ],
       "extension_score": 100,
@@ -58,6 +63,11 @@
           "rule_id": "RES-005",
           "impact": "critical",
           "passed": true
+        },
+        {
+          "rule_id": "SPA-004",
+          "impact": "important",
+          "passed": true
         }
       ],
       "extension_score": 100
@@ -75,6 +85,11 @@
         {
           "rule_id": "RES-005",
           "impact": "critical",
+          "passed": true
+        },
+        {
+          "rule_id": "SPA-004",
+          "impact": "important",
           "passed": true
         }
       ],
@@ -108,7 +123,11 @@
   ],
   "rules_evaluated": [
     "ARG-RES-001",
+    "ARG-SPA-002",
     "MET-001",
-    "RES-005"
+    "RES-005",
+    "SPA-002",
+    "SPA-003",
+    "SPA-004"
   ]
 }

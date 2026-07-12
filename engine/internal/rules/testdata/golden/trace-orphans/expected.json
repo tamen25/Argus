@@ -1,0 +1,100 @@
+{
+  "fleet_score": 50,
+  "services": [
+    {
+      "service": "checkout",
+      "spec_score": 0,
+      "category": "Poor",
+      "results": [
+        {
+          "rule_id": "ARG-SPA-002",
+          "impact": "normal",
+          "passed": false
+        },
+        {
+          "rule_id": "SPA-002",
+          "impact": "normal",
+          "passed": false
+        }
+      ],
+      "extension_score": 0,
+      "findings": [
+        {
+          "rule_id": "ARG-SPA-002",
+          "rule_name": "traces have a root span",
+          "source": "argus",
+          "service": "checkout",
+          "impact": "normal",
+          "description": "Traces SHOULD contain a root span (a span without a parent). Rootless traces cannot be anchored in time or entry point, making end-to-end latency attribution impossible.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 1,
+            "violations": 1,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "aggregate",
+              "attrs": {
+                "missing_root_ratio": 0.5,
+                "orphan_ratio": 0.35,
+                "traces": 40
+              }
+            }
+          ]
+        },
+        {
+          "rule_id": "SPA-002",
+          "rule_name": "traces do not contain orphan spans",
+          "source": "spec",
+          "service": "checkout",
+          "impact": "normal",
+          "description": "Any span referencing a parent_span_id MUST have that parent present in the same trace. Orphan spans indicate broken context propagation — the single biggest killer of trace-based diagnosis.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 1,
+            "violations": 1,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "aggregate",
+              "attrs": {
+                "missing_root_ratio": 0.5,
+                "orphan_ratio": 0.35,
+                "traces": 40
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "payment",
+      "spec_score": 100,
+      "category": "Excellent",
+      "results": [
+        {
+          "rule_id": "ARG-SPA-002",
+          "impact": "normal",
+          "passed": true
+        },
+        {
+          "rule_id": "SPA-002",
+          "impact": "normal",
+          "passed": true
+        }
+      ],
+      "extension_score": 100
+    }
+  ],
+  "rules_evaluated": [
+    "ARG-RES-001",
+    "ARG-SPA-002",
+    "MET-001",
+    "RES-005",
+    "SPA-002",
+    "SPA-003",
+    "SPA-004"
+  ]
+}

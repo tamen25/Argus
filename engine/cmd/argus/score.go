@@ -102,8 +102,7 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 		return nil, err
 	}
 	col := rules.NewCollector(eng)
-	card := ingest.NewCardinalityTracker(ingest.DefaultMaxTrackedPairs)
-	pipe := ingest.NewPipeline(col, card)
+	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{})
 
 	var notes []string
 
@@ -126,9 +125,9 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 		srv.GracefulStop()
 		<-done
 	}
-	pipe.CardinalityRows()
-	if n := card.Evictions(); n > 0 {
-		notes = append(notes, fmt.Sprintf("cardinality tracker evicted %d pairs (LRU, cap %d) — estimates for evicted pairs are lost", n, ingest.DefaultMaxTrackedPairs))
+	pipe.AggregateRows()
+	if n := pipe.Evictions(); n > 0 {
+		notes = append(notes, fmt.Sprintf("aggregate trackers evicted %d entries (LRU) — estimates for evicted entries are lost", n))
 	}
 
 	// Poller path: verify what the backend can see.
