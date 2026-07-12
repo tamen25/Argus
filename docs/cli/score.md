@@ -17,7 +17,7 @@ argus score --listen-otlp :4317 --output json --store-dsn postgres://argus:...@d
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--rules` | `rules` | rule directory (expects `spec/` and `argus/` subtrees) |
+| `--rules` | *(built-ins)* | extra rule YAML dir; same-ID rules **override** built-ins, new IDs extend. Built-in spec+argus rules are embedded in the binary |
 | `--listen-otlp` | *(off)* | OTLP gRPC address receiving the **sampled mirror** (point a second Alloy exporter here; Argus is never in the critical path) |
 | `--window` | `60s` | collection window while listening |
 | `--mimir-url` | *(off)* | enables poller verification (`confidence: verified`) |

@@ -75,6 +75,13 @@ type MetricPoint struct {
 	Type         string // gauge|sum|histogram|exponential_histogram|summary
 	Unit         string
 	HasExemplars bool
+	// ExemplarCount is the number of exemplars on this data point (rule 8
+	// needs the count, not just presence).
+	ExemplarCount int
+	// BucketBounds/BucketCounts are populated for classic histograms only
+	// (rule 12: bucket misconfiguration). len(counts) == len(bounds)+1.
+	BucketBounds []float64
+	BucketCounts []uint64
 	Attrs        map[string]any
 }
 

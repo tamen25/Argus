@@ -30,6 +30,11 @@ jobs:
         with:
           version: latest
           working-directory: engine
+      - name: Builtin rules in sync with /rules
+        run: |
+          go run ./tools/syncrules
+          git diff --exit-code -- internal/rules/builtin || {
+            echo "::error::embedded builtin rules drifted from /rules — run 'make rules-sync' and commit"; exit 1; }
       - name: Test
         run: go test -race ./...
       - name: Build

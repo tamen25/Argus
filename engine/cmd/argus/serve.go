@@ -18,6 +18,7 @@ import (
 	"github.com/tamen25/Argus/engine/internal/export"
 	"github.com/tamen25/Argus/engine/internal/ingest"
 	"github.com/tamen25/Argus/engine/internal/rules"
+	"github.com/tamen25/Argus/engine/internal/rules/builtin"
 )
 
 func newServeCmd() *cobra.Command {
@@ -26,24 +27,33 @@ func newServeCmd() *cobra.Command {
 		otlpAddr string
 		rulesDir string
 		interval time.Duration
+		maxPairs int
+		window   time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Run the argus engine: OTLP receiver + /metrics score export + /healthz",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return serve(cmd.Context(), serveConfig{addr: addr, otlpAddr: otlpAddr, rulesDir: rulesDir, interval: interval})
+			return serve(cmd.Context(), serveConfig{
+				addr: addr, otlpAddr: otlpAddr, rulesDir: rulesDir,
+				interval: interval, maxPairs: maxPairs, window: window,
+			})
 		},
 	}
 	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (/healthz, /metrics)")
 	cmd.Flags().StringVar(&otlpAddr, "otlp-grpc", "", "OTLP gRPC listen address (e.g. :4317); empty disables ingest")
-	cmd.Flags().StringVar(&rulesDir, "rules", "rules", "rules directory (used when ingest is enabled)")
+	cmd.Flags().StringVar(&rulesDir, "rules", "", "extra rule YAML directory overriding/extending built-ins")
 	cmd.Flags().DurationVar(&interval, "score-interval", 30*time.Second, "how often scores are recomputed and exported")
+	cmd.Flags().IntVar(&maxPairs, "max-tracked-pairs", ingest.DefaultMaxTrackedPairs, "cardinality sketch pair cap per window generation (LRU eviction beyond)")
+	cmd.Flags().DurationVar(&window, "cardinality-window", ingest.DefaultWindow, "tumbling window for cardinality aggregates")
 	return cmd
 }
 
 type serveConfig struct {
 	addr, otlpAddr, rulesDir string
 	interval                 time.Duration
+	maxPairs                 int
+	window                   time.Duration
 }
 
 // serve runs the HTTP endpoints (and, when configured, the OTLP receiver and
@@ -64,16 +74,31 @@ func serve(ctx context.Context, cfg serveConfig) error {
 
 	// Optional ingest + score export loop.
 	if cfg.otlpAddr != "" {
-		rs, err := rules.LoadDir(cfg.rulesDir+"/spec", cfg.rulesDir+"/argus")
+		rs, err := builtin.Load()
 		if err != nil {
 			return err
+		}
+		if cfg.rulesDir != "" {
+			custom, err := rules.LoadDir(cfg.rulesDir)
+			if err != nil {
+				return err
+			}
+			rs = rules.Merge(rs, custom)
 		}
 		eng, err := rules.NewEngine(rs)
 		if err != nil {
 			return err
 		}
 		col := rules.NewCollector(eng)
-		pipe := ingest.NewPipeline(col, ingest.NewCardinalityTracker(ingest.DefaultMaxTrackedPairs))
+		if cfg.maxPairs <= 0 {
+			cfg.maxPairs = ingest.DefaultMaxTrackedPairs
+		}
+		if cfg.window <= 0 {
+			cfg.window = ingest.DefaultWindow
+		}
+		card := ingest.NewCardinalityTrackerWithClock(cfg.maxPairs, cfg.window, time.Now)
+		export.RegisterAggregateStats(reg, card.PairsTracked, card.Evictions)
+		pipe := ingest.NewPipeline(col, card)
 		lis, err := net.Listen("tcp", cfg.otlpAddr)
 		if err != nil {
 			return err

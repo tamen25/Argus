@@ -1,6 +1,8 @@
 package model
 
 import (
+	"strings"
+
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -63,11 +65,14 @@ func FromMetrics(md pmetric.Metrics) []Item {
 						Resource: res,
 						Scope:    scope,
 						Metric: &MetricPoint{
-							Name:         m.Name(),
-							Type:         mtype,
-							Unit:         m.Unit(),
-							HasExemplars: p.exemplars,
-							Attrs:        convertAttrs(p.attrs),
+							Name:          m.Name(),
+							Type:          mtype,
+							Unit:          m.Unit(),
+							HasExemplars:  p.exemplarCount > 0,
+							ExemplarCount: p.exemplarCount,
+							BucketBounds:  p.bounds,
+							BucketCounts:  p.counts,
+							Attrs:         convertAttrs(p.attrs),
 						},
 					})
 				}
@@ -98,7 +103,7 @@ func FromLogs(ld plog.Logs) []Item {
 					Scope:    scope,
 					Log: &LogRecord{
 						SeverityText:   lr.SeverityText(),
-						SeverityNumber: int32(lr.SeverityNumber()),
+						SeverityNumber: normalizeSeverity(lr),
 						HasTraceID:     !lr.TraceID().IsEmpty(),
 						BodyLen:        len(lr.Body().AsString()),
 						Attrs:          convertAttrs(lr.Attributes()),
@@ -158,8 +163,10 @@ func convertValue(v pcommon.Value) any {
 }
 
 type pointInfo struct {
-	attrs     pcommon.Map
-	exemplars bool
+	attrs         pcommon.Map
+	exemplarCount int
+	bounds        []float64
+	counts        []uint64
 }
 
 func metricPoints(m pmetric.Metric) (string, []pointInfo) {
@@ -168,39 +175,70 @@ func metricPoints(m pmetric.Metric) (string, []pointInfo) {
 		dps := m.Gauge().DataPoints()
 		out := make([]pointInfo, 0, dps.Len())
 		for i := 0; i < dps.Len(); i++ {
-			out = append(out, pointInfo{dps.At(i).Attributes(), dps.At(i).Exemplars().Len() > 0})
+			out = append(out, pointInfo{attrs: dps.At(i).Attributes(), exemplarCount: dps.At(i).Exemplars().Len()})
 		}
 		return "gauge", out
 	case pmetric.MetricTypeSum:
 		dps := m.Sum().DataPoints()
 		out := make([]pointInfo, 0, dps.Len())
 		for i := 0; i < dps.Len(); i++ {
-			out = append(out, pointInfo{dps.At(i).Attributes(), dps.At(i).Exemplars().Len() > 0})
+			out = append(out, pointInfo{attrs: dps.At(i).Attributes(), exemplarCount: dps.At(i).Exemplars().Len()})
 		}
 		return "sum", out
 	case pmetric.MetricTypeHistogram:
 		dps := m.Histogram().DataPoints()
 		out := make([]pointInfo, 0, dps.Len())
 		for i := 0; i < dps.Len(); i++ {
-			out = append(out, pointInfo{dps.At(i).Attributes(), dps.At(i).Exemplars().Len() > 0})
+			dp := dps.At(i)
+			out = append(out, pointInfo{
+				attrs:         dp.Attributes(),
+				exemplarCount: dp.Exemplars().Len(),
+				bounds:        dp.ExplicitBounds().AsRaw(),
+				counts:        dp.BucketCounts().AsRaw(),
+			})
 		}
 		return "histogram", out
 	case pmetric.MetricTypeExponentialHistogram:
 		dps := m.ExponentialHistogram().DataPoints()
 		out := make([]pointInfo, 0, dps.Len())
 		for i := 0; i < dps.Len(); i++ {
-			out = append(out, pointInfo{dps.At(i).Attributes(), dps.At(i).Exemplars().Len() > 0})
+			out = append(out, pointInfo{attrs: dps.At(i).Attributes(), exemplarCount: dps.At(i).Exemplars().Len()})
 		}
 		return "exponential_histogram", out
 	case pmetric.MetricTypeSummary:
 		dps := m.Summary().DataPoints()
 		out := make([]pointInfo, 0, dps.Len())
 		for i := 0; i < dps.Len(); i++ {
-			out = append(out, pointInfo{dps.At(i).Attributes(), false})
+			out = append(out, pointInfo{attrs: dps.At(i).Attributes()})
 		}
 		return "summary", out
 	default:
 		return "unknown", nil
+	}
+}
+
+// normalizeSeverity returns the record's severity number; when only
+// SeverityText is set (common with collector-converted logs), the text is
+// mapped to the OTel severity scale so severity rules see one vocabulary.
+func normalizeSeverity(lr plog.LogRecord) int32 {
+	if n := lr.SeverityNumber(); n != plog.SeverityNumberUnspecified {
+		return int32(n)
+	}
+	switch strings.ToUpper(lr.SeverityText()) {
+	case "TRACE":
+		return int32(plog.SeverityNumberTrace)
+	case "DEBUG":
+		return int32(plog.SeverityNumberDebug)
+	case "INFO":
+		return int32(plog.SeverityNumberInfo)
+	case "WARN", "WARNING":
+		return int32(plog.SeverityNumberWarn)
+	case "ERROR":
+		return int32(plog.SeverityNumberError)
+	case "FATAL":
+		return int32(plog.SeverityNumberFatal)
+	default:
+		return 0
 	}
 }
 

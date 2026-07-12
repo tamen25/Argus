@@ -40,7 +40,7 @@ attribute); false is a violation. It must type-check as `bool`.
 | `resource` | map | item mode — resource attributes as observed |
 | `scope` | map (`name`, `version`) | item mode |
 | `span` | map (`name`, `kind`, `has_parent`, `status`, `attrs`) | item mode, span items |
-| `metric` | map (`name`, `type`, `unit`, `has_exemplars`, `attrs`) | item mode, metric items |
+| `metric` | map (`name`, `type`, `unit`, `has_exemplars`, `exemplar_count`, `bucket_bounds`, `bucket_counts`, `attrs`) | item mode, metric items |
 | `log` | map (`severity_text`, `severity_number`, `has_trace_id`, `body_len`, `attrs`) | item mode, log items |
 | `agg` | map — fields of the aggregate row | aggregate mode |
 | `params` | map — the rule's `params` block | both |
@@ -58,6 +58,30 @@ Aggregate-mode rules evaluate named rows computed by the ingest layer:
 
 New aggregate *types* require Go; new thresholds/criteria over existing
 aggregates do not.
+
+### Window semantics (all aggregates inherit this)
+
+Sketches cannot subtract, so aggregate windows are **two-generation
+tumbling**, not sliding: observations land in the *current* generation; every
+window length W (engine flag `--cardinality-window`, default 1h) the current
+generation becomes *previous* and a fresh current starts. Reported estimates
+are **max(current, previous)**.
+
+Consequences: a finding never vanishes at a window boundary; a value set
+stops influencing estimates only after being silent for between W and 2W;
+short bursts can therefore be visible for up to 2W. A rule's `params.window`
+documents the intended window and must match the engine setting — the engine
+does not derive per-rule windows.
+
+### Bounds (all aggregates inherit this)
+
+The sketch store is hard-capped at `--max-tracked-pairs` (default 4096) per
+generation with **LRU admission**: a new pair evicts the least recently
+observed one. Pressure is observable, never silent:
+`argus_aggregate_pairs_tracked` (gauge), `argus_aggregate_pair_evictions_total`
+(counter), plus a report note when evictions occurred. Memory envelope:
+worst case ≈ cap × 16KiB (dense HLL-14) × 2 generations; in practice far less
+(low-cardinality pairs stay sparse).
 
 ## Rollup, scoring, confidence
 

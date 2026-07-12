@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/tamen25/Argus/engine/internal/ingest/mimir"
 	"github.com/tamen25/Argus/engine/internal/report"
 	"github.com/tamen25/Argus/engine/internal/rules"
+	"github.com/tamen25/Argus/engine/internal/rules/builtin"
 	"github.com/tamen25/Argus/engine/internal/store"
 )
 
@@ -71,7 +71,7 @@ per-service Instrumentation Scores. Exit code 2 when --fail-below-score trips
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&opts.rulesDir, "rules", "rules", "directory containing rule YAML (spec/ and argus/ subtrees)")
+	f.StringVar(&opts.rulesDir, "rules", "", "extra rule YAML directory; same-ID rules override built-ins, new IDs extend them")
 	f.StringVar(&opts.listenOTLP, "listen-otlp", "", "OTLP gRPC listen address for the sampled mirror (e.g. :4317); empty disables")
 	f.DurationVar(&opts.window, "window", 60*time.Second, "collection window when --listen-otlp is set")
 	f.StringVar(&opts.mimirURL, "mimir-url", "", "Mimir base URL for poller verification (e.g. http://mimir-gateway.lgtm.svc)")
@@ -86,14 +86,16 @@ per-service Instrumentation Scores. Exit code 2 when --fail-below-score trips
 
 // runScore executes one collection+evaluation cycle.
 func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
-	specDir := filepath.Join(opts.rulesDir, "spec")
-	argusDir := filepath.Join(opts.rulesDir, "argus")
-	rs, err := rules.LoadDir(specDir, argusDir)
+	rs, err := builtin.Load()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("loading built-in rules: %w", err)
 	}
-	if len(rs) == 0 {
-		return nil, fmt.Errorf("no rules found under %s", opts.rulesDir)
+	if opts.rulesDir != "" {
+		custom, err := rules.LoadDir(opts.rulesDir)
+		if err != nil {
+			return nil, err
+		}
+		rs = rules.Merge(rs, custom)
 	}
 	eng, err := rules.NewEngine(rs)
 	if err != nil {
@@ -125,8 +127,8 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 		<-done
 	}
 	pipe.CardinalityRows()
-	if n := card.Overflowed(); n > 0 {
-		notes = append(notes, fmt.Sprintf("cardinality tracker overflowed %d observations (pair cap %d)", n, ingest.DefaultMaxTrackedPairs))
+	if n := card.Evictions(); n > 0 {
+		notes = append(notes, fmt.Sprintf("cardinality tracker evicted %d pairs (LRU, cap %d) — estimates for evicted pairs are lost", n, ingest.DefaultMaxTrackedPairs))
 	}
 
 	// Poller path: verify what the backend can see.
