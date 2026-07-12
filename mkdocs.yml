@@ -24,7 +24,11 @@ nav:
       - Authoring: rules/authoring.md
       - RES-005: rules/res-005.md
       - MET-001: rules/met-001.md
+      - SPA-002: rules/spa-002.md
+      - SPA-003: rules/spa-003.md
+      - SPA-004: rules/spa-004.md
       - ARG-RES-001: rules/arg-res-001.md
+      - ARG-SPA-002: rules/arg-spa-002.md
   - Master build plan: argus-master-build-plan.md
 
 markdown_extensions:

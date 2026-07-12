@@ -1,0 +1,17 @@
+# Implements spec rule SPA-004 (rules/spec/upstream/SPA-004.md): root spans
+# are not CLIENT spans. A client-kind root usually means the server side
+# never continued the trace (broken propagation at the entry hop).
+schema: argus.rules/v1
+id: SPA-004
+source: spec
+name: root spans are not CLIENT spans
+description: >-
+  A root span MUST NOT have kind CLIENT. A client root means the downstream
+  server dropped or never received the trace context.
+target: span
+impact: important
+evaluation:
+  mode: item
+  criteria: "span.has_parent || span.kind != 'client'"
+remediation:
+  template: broken-context-propagation

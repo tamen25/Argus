@@ -2,6 +2,9 @@
 
 Every scope cut / deviation from the master plan. One line + rationale. Newest first.
 
+- 2026-07-12 — SPA-003 threshold: upstream criteria is TODO; Argus ships max_span_names=200 as initial default, flagged for tuning before v0.1.
+- 2026-07-12 — SPA-002/ARG-SPA-002 tolerate 10%/20% bad-trace ratios by default: head sampling makes orphan/rootless ratios upper bounds, so zero-tolerance would false-positive on any sampled pipeline. Documented in rule pages.
+- 2026-07-12 — Master-plan rules 3+10 implemented via a bounded TraceTracker (LRU traces, capped spans/trace, completed-window judgement); trace_health has no poller verification — span topology is invisible to backend APIs, findings stay sampled.
 - 2026-07-12 — Aggregate windows are two-generation tumbling (report max of current+previous), not sliding: HLL cannot subtract. Boundary behavior documented in docs/rules/authoring.md; bursts remain visible up to 2 windows.
 - 2026-07-12 — Aggregate store admission is LRU with hard cap, default lowered 10000→4096 pairs/generation (memory envelope: ≈ cap × 16KiB dense × 2 gens worst case). Evictions counted and exported (argus_aggregate_pair_evictions_total), configurable via --max-tracked-pairs.
 - 2026-07-12 — Built-in rules embedded via go:generate copy (engine/internal/rules/builtin) because go:embed cannot cross the module boundary to /rules; /rules stays source of truth, CI fails on drift, --rules dir overrides/extends by ID. Closes the v0.1 rule-loading item.

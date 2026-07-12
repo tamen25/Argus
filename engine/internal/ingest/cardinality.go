@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,90 +13,93 @@ import (
 	"github.com/tamen25/Argus/engine/internal/rules"
 )
 
-// DefaultMaxTrackedPairs bounds distinct (service, metric, attribute) sketch
-// entries per generation. Memory envelope: a dense HLL-14 sketch is ~16KiB;
-// worst case ≈ cap × 16KiB × 2 generations ≈ 128MiB at 4096 — in practice far
-// lower because low-cardinality pairs stay in sparse representation.
+// DefaultMaxTrackedPairs bounds distinct sketch entries per generation.
+// Memory envelope: a dense HLL-14 sketch is ~16KiB; worst case ≈ cap × 16KiB
+// × 2 generations ≈ 128MiB at 4096 — in practice far lower because
+// low-cardinality entries stay in sparse representation.
 const DefaultMaxTrackedPairs = 4096
 
 // DefaultWindow is the tumbling-window length for aggregate sketches,
 // matching MET-001's 1-hour criteria window.
 const DefaultWindow = time.Hour
 
-type pairKey struct {
-	service, metric, attr string
+type sketchKey struct {
+	service string
+	dims    string // joined dim values, \x00-separated
 }
 
-type pairEntry struct {
+type sketchEntry struct {
 	sketch *hyperloglog.Sketch
 	elem   *list.Element // position in the LRU list (current generation only)
+	dims   []string
 }
 
-// CardinalityTracker estimates distinct attribute values per
-// (service, metric, attribute) with HyperLogLog sketches — never exact sets
-// (architecture rule 3).
+// SketchTracker estimates distinct values per (service, dims...) with
+// HyperLogLog sketches — never exact sets (architecture rule 3). One named
+// aggregate per tracker instance; dimNames label the dims in emitted rows.
 //
-// Window semantics: two-generation tumbling. Observations land in the
-// current generation; every window the current generation becomes the
-// previous one and a fresh current starts. Estimates report
-// max(current, previous), so a finding never vanishes at a window boundary —
-// a value set stops influencing estimates only after it has been silent for
-// between one and two full windows.
-//
-// Admission: hard cap per generation with LRU eviction — the least recently
-// observed pair is evicted for a new one, and evictions are counted (exposed
-// as argus_aggregate_pair_evictions_total; honest reporting, never silent).
-type CardinalityTracker struct {
+// Window semantics: two-generation tumbling; estimates report
+// max(current, previous) — see docs/rules/authoring.md.
+// Admission: hard cap per generation with LRU eviction, evictions counted.
+type SketchTracker struct {
 	mu        sync.Mutex
+	aggregate string
+	dimNames  []string
 	max       int
 	window    time.Duration
 	now       func() time.Time
 	rotatedAt time.Time
 
-	cur  map[pairKey]*pairEntry
-	lru  *list.List // front = most recently observed; values are pairKey
-	prev map[pairKey]*hyperloglog.Sketch
+	cur  map[sketchKey]*sketchEntry
+	lru  *list.List // front = most recently observed; values are sketchKey
+	prev map[sketchKey]*sketchEntry
 
 	evictions int64
 }
 
-// NewCardinalityTracker builds a tracker with the default 1h tumbling window.
+// NewSketchTracker builds a named tracker.
+func NewSketchTracker(aggregate string, dimNames []string, maxEntries int, window time.Duration, now func() time.Time) *SketchTracker {
+	return &SketchTracker{
+		aggregate: aggregate, dimNames: dimNames,
+		max: maxEntries, window: window, now: now, rotatedAt: now(),
+		cur: make(map[sketchKey]*sketchEntry), lru: list.New(),
+	}
+}
+
+// CardinalityTracker is the metric-attribute instance of SketchTracker.
+type CardinalityTracker = SketchTracker
+
+// NewCardinalityTracker builds the metric_attribute_cardinality tracker with
+// the default 1h tumbling window.
 func NewCardinalityTracker(maxPairs int) *CardinalityTracker {
 	return NewCardinalityTrackerWithClock(maxPairs, DefaultWindow, time.Now)
 }
 
 // NewCardinalityTrackerWithClock injects window length and clock (tests).
 func NewCardinalityTrackerWithClock(maxPairs int, window time.Duration, now func() time.Time) *CardinalityTracker {
-	return &CardinalityTracker{
-		max: maxPairs, window: window, now: now, rotatedAt: now(),
-		cur: make(map[pairKey]*pairEntry), lru: list.New(),
-	}
+	return NewSketchTracker("metric_attribute_cardinality", []string{"metric", "attribute"}, maxPairs, window, now)
 }
 
 // rotateLocked ages generations forward as needed. Called with mu held.
-func (t *CardinalityTracker) rotateLocked() {
+func (t *SketchTracker) rotateLocked() {
 	now := t.now()
 	elapsed := now.Sub(t.rotatedAt)
 	if elapsed < t.window {
 		return
 	}
 	if elapsed >= 2*t.window {
-		// idle for 2+ windows: everything ages out
-		t.prev = nil
+		t.prev = nil // idle for 2+ windows: everything ages out
 	} else {
-		t.prev = make(map[pairKey]*hyperloglog.Sketch, len(t.cur))
-		for k, e := range t.cur {
-			t.prev[k] = e.sketch
-		}
+		t.prev = t.cur
 	}
-	t.cur = make(map[pairKey]*pairEntry)
+	t.cur = make(map[sketchKey]*sketchEntry)
 	t.lru.Init()
 	t.rotatedAt = now
 }
 
-// Observe records one attribute value occurrence.
-func (t *CardinalityTracker) Observe(service, metric, attr, value string) {
-	k := pairKey{service, metric, attr}
+// Observe records one value occurrence for (service, dims...).
+func (t *SketchTracker) Observe(service string, dims []string, value string) {
+	k := sketchKey{service, strings.Join(dims, "\x00")}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.rotateLocked()
@@ -103,17 +107,16 @@ func (t *CardinalityTracker) Observe(service, metric, attr, value string) {
 	e, ok := t.cur[k]
 	if !ok {
 		if len(t.cur) >= t.max {
-			// evict the least recently observed pair
 			back := t.lru.Back()
 			if back == nil {
 				return // max <= 0
 			}
-			victim := back.Value.(pairKey)
+			victim := back.Value.(sketchKey)
 			delete(t.cur, victim)
 			t.lru.Remove(back)
 			t.evictions++
 		}
-		e = &pairEntry{sketch: hyperloglog.New14()}
+		e = &sketchEntry{sketch: hyperloglog.New14(), dims: append([]string(nil), dims...)}
 		e.elem = t.lru.PushFront(k)
 		t.cur[k] = e
 	} else {
@@ -122,16 +125,16 @@ func (t *CardinalityTracker) Observe(service, metric, attr, value string) {
 	e.sketch.Insert([]byte(value))
 }
 
-// Evictions returns how many pairs were LRU-evicted (reported as a
+// Evictions returns how many entries were LRU-evicted (reported as a
 // self-metric, never silently dropped — architecture rule 7).
-func (t *CardinalityTracker) Evictions() int64 {
+func (t *SketchTracker) Evictions() int64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.evictions
 }
 
-// PairsTracked returns the live pair count across both generations.
-func (t *CardinalityTracker) PairsTracked() int {
+// PairsTracked returns the live entry count across both generations.
+func (t *SketchTracker) PairsTracked() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.rotateLocked()
@@ -144,46 +147,57 @@ func (t *CardinalityTracker) PairsTracked() int {
 	return n
 }
 
-// Rows snapshots every pair as a metric_attribute_cardinality aggregate row,
-// reporting max(current, previous) per pair.
-func (t *CardinalityTracker) Rows() []rules.AggregateRow {
+// Rows snapshots every entry as an aggregate row, reporting
+// max(current, previous) per key.
+func (t *SketchTracker) Rows() []rules.AggregateRow {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.rotateLocked()
 
-	est := make(map[pairKey]uint64, len(t.cur)+len(t.prev))
-	for k, e := range t.cur {
-		est[k] = e.sketch.Estimate()
+	type acc struct {
+		dims []string
+		est  uint64
 	}
-	for k, s := range t.prev {
-		if v := s.Estimate(); v > est[k] {
-			est[k] = v
+	est := make(map[sketchKey]acc, len(t.cur)+len(t.prev))
+	for k, e := range t.cur {
+		est[k] = acc{e.dims, e.sketch.Estimate()}
+	}
+	for k, e := range t.prev {
+		if v := e.sketch.Estimate(); v > est[k].est {
+			est[k] = acc{e.dims, v}
 		}
 	}
 
 	rows := make([]rules.AggregateRow, 0, len(est))
-	for k, v := range est {
-		rows = append(rows, rules.AggregateRow{
-			Service:   k.service,
-			Aggregate: "metric_attribute_cardinality",
-			Fields: map[string]any{
-				"metric":      k.metric,
-				"attribute":   k.attr,
-				"cardinality": int64(v),
-			},
-		})
+	for k, a := range est {
+		fields := make(map[string]any, len(t.dimNames)+1)
+		for i, name := range t.dimNames {
+			if i < len(a.dims) {
+				fields[name] = a.dims[i]
+			}
+		}
+		fields["cardinality"] = int64(a.est)
+		rows = append(rows, rules.AggregateRow{Service: k.service, Aggregate: t.aggregate, Fields: fields})
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		a, b := rows[i], rows[j]
 		if a.Service != b.Service {
 			return a.Service < b.Service
 		}
-		if a.Fields["metric"] != b.Fields["metric"] {
-			return a.Fields["metric"].(string) < b.Fields["metric"].(string)
-		}
-		return a.Fields["attribute"].(string) < b.Fields["attribute"].(string)
+		return fieldsKey(a.Fields, t.dimNames) < fieldsKey(b.Fields, t.dimNames)
 	})
 	return rows
+}
+
+func fieldsKey(f map[string]any, names []string) string {
+	var b strings.Builder
+	for _, n := range names {
+		if s, ok := f[n].(string); ok {
+			b.WriteString(s)
+		}
+		b.WriteByte(0)
+	}
+	return b.String()
 }
 
 func stringify(v any) string {

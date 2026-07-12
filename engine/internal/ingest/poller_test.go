@@ -57,7 +57,7 @@ func TestPollerVerifiesServicePresence(t *testing.T) {
 
 	// stream saw checkout fail RES-005 (sampled artifact); Mimir knows the
 	// service exists with a proper job label -> verified pass overrides
-	p := NewPipeline(col, NewCardinalityTracker(10))
+	p := NewPipeline(col, TrackerOpts{MaxPairs: 10})
 	p.ConsumeTraces(testTraces("", 1)) // <unknown> violation stays sampled
 
 	poller := NewPoller(&fakeMimir{jobs: []string{"otel-demo/checkout", "ad"}}, eng)
@@ -127,7 +127,7 @@ func TestPollerErrorLeavesSampledResults(t *testing.T) {
 	rs, _ := rules.LoadBytes([]byte(res005WithPoller))
 	eng, _ := rules.NewEngine(rs)
 	col := rules.NewCollector(eng)
-	p := NewPipeline(col, NewCardinalityTracker(10))
+	p := NewPipeline(col, TrackerOpts{MaxPairs: 10})
 	p.ConsumeTraces(testTraces("", 1))
 
 	poller := NewPoller(&fakeMimir{err: context.DeadlineExceeded}, eng)

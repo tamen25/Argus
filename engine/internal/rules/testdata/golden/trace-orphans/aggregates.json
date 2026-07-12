@@ -1,0 +1,6 @@
+[
+  {"Service": "checkout", "Aggregate": "trace_health",
+   "Fields": {"traces": 40, "orphan_ratio": 0.35, "missing_root_ratio": 0.5}},
+  {"Service": "payment", "Aggregate": "trace_health",
+   "Fields": {"traces": 25, "orphan_ratio": 0.0, "missing_root_ratio": 0.04}}
+]

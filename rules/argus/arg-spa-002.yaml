@@ -1,0 +1,23 @@
+# Argus extension rule (NOT part of the spec score). Master-plan rule 10:
+# broken trace — missing root span. The spec has no direct rule for this.
+# Same sampling caveat as SPA-002: head sampling can drop roots legitimately,
+# so the default threshold tolerates 20% before failing. Evaluated on
+# completed windows only.
+schema: argus.rules/v1
+id: ARG-SPA-002
+source: argus
+name: traces have a root span
+description: >-
+  Traces SHOULD contain a root span (a span without a parent). Rootless
+  traces cannot be anchored in time or entry point, making end-to-end
+  latency attribution impossible.
+target: span
+impact: normal
+evaluation:
+  mode: aggregate
+  aggregate: trace_health
+  criteria: "agg.missing_root_ratio <= params.max_missing_root_ratio"
+params:
+  max_missing_root_ratio: 0.2
+remediation:
+  template: broken-context-propagation
