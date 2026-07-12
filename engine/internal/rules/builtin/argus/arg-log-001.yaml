@@ -1,0 +1,20 @@
+# Argus extension rule (NOT part of the spec score). Master-plan rule 4:
+# logs without trace correlation. Threshold-based: background jobs and
+# startup logs legitimately lack trace context, so a service fails only when
+# most of its log volume is uncorrelated. Threshold flagged for tuning.
+schema: argus.rules/v1
+id: ARG-LOG-001
+source: argus
+name: logs carry trace correlation
+description: >-
+  Request-path log records SHOULD carry a trace_id. Uncorrelated logs cannot
+  be joined to traces, forcing grep-based investigation during incidents.
+target: log
+impact: important
+evaluation:
+  mode: item
+  criteria: "log.has_trace_id == true"
+service_violation:
+  threshold_ratio: 0.5
+remediation:
+  template: logs-without-trace-context

@@ -27,8 +27,13 @@ nav:
       - SPA-002: rules/spa-002.md
       - SPA-003: rules/spa-003.md
       - SPA-004: rules/spa-004.md
+      - LOG-001: rules/log-001.md
+      - LOG-002: rules/log-002.md
       - ARG-RES-001: rules/arg-res-001.md
       - ARG-SPA-002: rules/arg-spa-002.md
+      - ARG-LOG-001: rules/arg-log-001.md
+      - ARG-RES-002: rules/arg-res-002.md
+      - ARG-RES-003: rules/arg-res-003.md
   - Master build plan: argus-master-build-plan.md
 
 markdown_extensions:

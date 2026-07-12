@@ -2,6 +2,8 @@
 
 Every scope cut / deviation from the master plan. One line + rationale. Newest first.
 
+- 2026-07-12 — LOG-001 approximates the spec's "14 days" clause as "any DEBUG in prod during the window": stream windows cannot see 14-day history until score persistence accumulates (revisit when Postgres history exists).
+- 2026-07-12 — ARG-LOG-001 threshold 0.5 (service fails when >50% of log volume lacks trace_id): non-request-path logs legitimately uncorrelated; flagged for tuning.
 - 2026-07-12 — SPA-003 threshold: upstream criteria is TODO; Argus ships max_span_names=200 as initial default, flagged for tuning before v0.1.
 - 2026-07-12 — SPA-002/ARG-SPA-002 tolerate 10%/20% bad-trace ratios by default: head sampling makes orphan/rootless ratios upper bounds, so zero-tolerance would false-positive on any sampled pipeline. Documented in rule pages.
 - 2026-07-12 — Master-plan rules 3+10 implemented via a bounded TraceTracker (LRU traces, capped spans/trace, completed-window judgement); trace_health has no poller verification — span topology is invisible to backend APIs, findings stay sampled.

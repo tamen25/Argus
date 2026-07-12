@@ -1,0 +1,28 @@
+# Implements spec rule LOG-001 (rules/spec/upstream/LOG-001.md): debug logs
+# are not enabled in production. Master-plan rule 7 (spec half; volume-abuse
+# variant is ARG-LOG-002).
+#
+# FIDELITY NOTE: the spec's "for longer than 14 days" clause needs history a
+# stream window cannot see; Argus approximates with "DEBUG observed in a
+# production environment during the evaluation window" (see DECISIONS.md).
+schema: argus.rules/v1
+id: LOG-001
+source: spec
+name: debug logs are not enabled in production
+description: >-
+  Log records at DEBUG level MUST NOT be observed from services whose
+  deployment.environment.name is a production environment. Debug volume in
+  prod is cost without diagnostic value.
+target: log
+impact: important
+evaluation:
+  mode: item
+  # pass unless: env matches prod AND severity is in the DEBUG band (5-8)
+  criteria: >-
+    !(('deployment.environment.name' in resource) &&
+      string(resource['deployment.environment.name']).matches(params.prod_env_pattern) &&
+      log.severity_number >= 5 && log.severity_number <= 8)
+params:
+  prod_env_pattern: "^prod"
+remediation:
+  template: log-level-abuse

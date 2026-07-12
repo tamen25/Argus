@@ -1,0 +1,18 @@
+# Implements spec rule LOG-002 (rules/spec/upstream/LOG-002.md): log records
+# have their severity set. Argus normalizes SeverityText-only records to the
+# OTel number scale at conversion, so this fails only when neither a number
+# nor a recognizable text level is present.
+schema: argus.rules/v1
+id: LOG-002
+source: spec
+name: log records have severity set
+description: >-
+  Log records MUST carry a severity (number, or text mappable to one).
+  Severity-less logs cannot be filtered, routed, or costed by level.
+target: log
+impact: important
+evaluation:
+  mode: item
+  criteria: "log.severity_number != 0"
+remediation:
+  template: log-severity-unset
