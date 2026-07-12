@@ -1,19 +1,13 @@
 // Command argus is the Argus CLI and engine entrypoint.
 //
-// Phase 0 scope: hello-world skeleton — root command, version, and a minimal
-// serve command exposing /healthz. Real subsystems (score, cost, backtest,
-// bench, mcp, devtools) land in later phases behind this same entrypoint.
+// Phase 1 scope: `argus score` (stream + poller evaluation, reports, CI gate)
+// and `argus serve` (OTLP receiver + Prometheus score export). Later phases
+// add cost, backtest, bench, mcp, and devtools behind this same entrypoint.
 package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -37,7 +31,7 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(newVersionCmd(), newServeCmd())
+	root.AddCommand(newVersionCmd(), newServeCmd(), newScoreCmd())
 	return root
 }
 
@@ -49,51 +43,5 @@ func newVersionCmd() *cobra.Command {
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), "argus", version)
 			return err
 		},
-	}
-}
-
-func newServeCmd() *cobra.Command {
-	var addr string
-	cmd := &cobra.Command{
-		Use:   "serve",
-		Short: "Run the argus engine (Phase 0: health endpoint only)",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return serve(cmd.Context(), addr)
-		},
-	}
-	cmd.Flags().StringVar(&addr, "addr", ":8080", "listen address")
-	return cmd
-}
-
-// serve runs a minimal HTTP server until ctx is cancelled or SIGINT/SIGTERM.
-func serve(ctx context.Context, addr string) error {
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok\n"))
-	})
-
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
-	errCh := make(chan error, 1)
-	go func() { errCh <- srv.ListenAndServe() }()
-
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return err
-		}
-		// ListenAndServe returns ErrServerClosed after a clean Shutdown; that
-		// is the expected path, not an error.
-		if err := <-errCh; !errors.Is(err, http.ErrServerClosed) {
-			return err
-		}
-		return nil
 	}
 }

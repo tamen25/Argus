@@ -18,6 +18,13 @@ nav:
   - Home: index.md
   - Quickstart: quickstart.md
   - History durability: history-durability.md
+  - CLI:
+      - score: cli/score.md
+  - Rules:
+      - Authoring: rules/authoring.md
+      - RES-005: rules/res-005.md
+      - MET-001: rules/met-001.md
+      - ARG-RES-001: rules/arg-res-001.md
   - Master build plan: argus-master-build-plan.md
 
 markdown_extensions:
