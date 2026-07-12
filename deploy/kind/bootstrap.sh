@@ -22,6 +22,9 @@ CHAOS_MESH_CHART_VERSION="${CHAOS_MESH_CHART_VERSION:-2.8.3}"
 need() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' not found in PATH" >&2; exit 1; }; }
 for tool in docker kind kubectl helm; do need "$tool"; done
 
+echo "==> durable history dir (survives cluster recreation)"
+mkdir -p /var/lib/argus/history
+
 echo "==> kind cluster '${CLUSTER_NAME}'"
 if kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then
   echo "    already exists, skipping create"
@@ -39,6 +42,9 @@ helm repo update >/dev/null
 for ns in lgtm otel-demo chaos-mesh; do
   kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 done
+
+echo "==> history PV/PVC (MinIO data on host mount)"
+kubectl apply -f "${SCRIPT_DIR}/argus-history-pv.yaml"
 
 echo "==> Mimir (365d retention — backtest history accumulation starts NOW)"
 helm upgrade --install mimir grafana/mimir-distributed \

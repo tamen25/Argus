@@ -1,0 +1,29 @@
+# Static PV/PVC binding MinIO's data to the kind node's /data/argus-history,
+# which is an extraMount of /var/lib/argus/history on the WSL host — telemetry
+# history survives cluster recreation (docs/history-durability.md).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: argus-history
+spec:
+  capacity:
+    storage: 40Gi
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: argus-history
+  hostPath:
+    path: /data/argus-history
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: argus-history
+  namespace: lgtm
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: argus-history
+  volumeName: argus-history
+  resources:
+    requests:
+      storage: 40Gi

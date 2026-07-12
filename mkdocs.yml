@@ -17,6 +17,7 @@ theme:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
+  - History durability: history-durability.md
   - Master build plan: argus-master-build-plan.md
 
 markdown_extensions:
