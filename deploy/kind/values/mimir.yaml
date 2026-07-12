@@ -14,6 +14,18 @@ mimir:
     ingester:
       ring:
         replication_factor: 1
+    querier:
+      # Ingesters are empty after a cluster recreation (WAL is transient by
+      # design); route anything older than 2h to the store-gateway so restored
+      # blocks are immediately queryable. Default (12h) would hide restored
+      # history for hours after a recreate.
+      query_store_after: 2h
+    blocks_storage:
+      bucket_store:
+        # Must be < query_store_after: by default (10h) the store-gateway
+        # refuses to load fresh blocks on the assumption ingesters serve them —
+        # not true for restored history on a recreated cluster.
+        ignore_blocks_within: 1h
 
 alertmanager:
   enabled: false
@@ -52,11 +64,12 @@ query_frontend:
   replicas: 1
 
 # Object storage for blocks: in-cluster MinIO (also exercises the S3 code path
-# the A2 cost engine will use in Phase 2).
+# the A2 cost engine will use in Phase 2). Data lives on the argus-history
+# static PVC (hostPath -> WSL filesystem) so blocks survive cluster recreation.
 minio:
   enabled: true
   persistence:
-    size: 20Gi
+    existingClaim: argus-history
 
 nginx:
   replicas: 1

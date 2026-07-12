@@ -8,6 +8,12 @@ apiVersion: kind.x-k8s.io/v1alpha4
 name: argus
 nodes:
   - role: control-plane
+    # Durable telemetry history (master plan §9): MinIO's data dir lives on the
+    # WSL host filesystem, so Mimir blocks survive cluster deletion/recreation.
+    # bootstrap.sh creates the host dir; teardown.sh never touches it.
+    extraMounts:
+      - hostPath: /var/lib/argus/history
+        containerPath: /data/argus-history
     extraPortMappings:
       - containerPort: 30300
         hostPort: 3000

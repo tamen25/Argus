@@ -2,6 +2,7 @@
 
 Every scope cut / deviation from the master plan. One line + rationale. Newest first.
 
+- 2026-07-12 — Durable history via in-cluster MinIO on a hostPath-backed static PV (kind extraMount → /var/lib/argus/history on WSL ext4), not an external MinIO container: Mimir keeps its object-storage-native path, everything stays declarative in the repo, and no out-of-band container lifecycle to manage. Unflushed WAL (~2h) is accepted as loss on recreation.
 - 2026-07-12 — flagd-ui sidecar disabled on the kind cluster: OOMKills within seconds at 250Mi/512Mi/1Gi (runaway allocation). Flag editing not needed for telemetry; Phase 4 fault injection will edit the flagd ConfigMap directly.
 - 2026-07-12 — grafana/alloy Helm chart (1.10.1) prints a deprecation warning; kept for Phase 0 since it works. Revisit successor chart (k8s-monitoring / alloy-operator) before Phase 1 wiring of the argus fan-out.
 
