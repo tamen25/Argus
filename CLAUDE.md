@@ -24,8 +24,8 @@ UI: Grafana App Plugin (React + Scenes + Go plugin backend) + `argus` CLI (cobra
 
 > Update this section manually as phases complete. Do not work ahead of the current phase.
 
-- [ ] **Phase 0 (ACTIVE)** — Foundation: WSL2 env, kind bootstrap (LGTM + otel-demo + chaos-mesh), monorepo scaffold, CI, Helm skeleton, **start telemetry-history accumulation** (long Mimir retention + `incidents.yaml` from day one)
-- [ ] Phase 1 — Score engine (15 rules target / 8 floor) + remediation templates + CLI + plugin Overview/Scores → v0.1 public
+- [x] **Phase 0 (done 2026-07-12)** — Foundation: WSL2 env, kind bootstrap (LGTM + otel-demo + chaos-mesh), monorepo scaffold, CI, Helm skeleton, **start telemetry-history accumulation** (long Mimir retention + `incidents.yaml` from day one)
+- [ ] **Phase 1 (ACTIVE)** — Score engine (15 rules target / 8 floor) + remediation templates + CLI + plugin Overview/Scores → v0.1 public
 - [ ] Phase 2 — Cost engine + LLM explanations + plugin Spend → v0.2 public
 - [ ] Phase 3 — **Fidelity spike first (timeboxed 1 week)** → backtest engine + synth-history generator + plugin Backtest → v0.3 public
 - [ ] Phase 4 — Submit plugin to catalog at phase START → bench orchestrator + scenarios (12 target / 8 floor) + flagship benchmark → v1.0 public

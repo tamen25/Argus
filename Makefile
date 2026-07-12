@@ -37,3 +37,9 @@ demo: ## docker compose demo: engine + postgres + grafana + mini-LGTM
 
 demo-down: ## Stop the demo compose stack
 	docker compose -f deploy/demo/docker-compose.yml down -v
+
+BACKUP_DIR ?= $(HOME)/argus-backups
+backup-history: ## Snapshot accumulated telemetry history (MinIO data) to a tarball
+	@mkdir -p $(BACKUP_DIR)
+	tar czf $(BACKUP_DIR)/argus-history-$$(date +%Y%m%d-%H%M%S).tgz -C /var/lib/argus history
+	@ls -lh $(BACKUP_DIR) | tail -3

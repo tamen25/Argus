@@ -25,6 +25,17 @@
 
 version: 1
 incidents:
+  - id: 2026-07-12-adfailure-toggle-test
+    title: "adFailure feature flag ON — flagd fault-injection mechanism verification"
+    start: "2026-07-12T03:02:39Z"
+    end:   "2026-07-12T03:03:29Z"
+    services: [ad]
+    induced: true
+    fault: scenarios/faults/toggle-flag.sh
+    notes: >-
+      Verified the ConfigMap-based flag toggle path Phase 4 depends on
+      (patch flagd-config + flagd rollout restart; ~30s propagation).
+      ad service returned errors for ~50s.
   - id: 2026-07-11-flagd-ui-oomkill
     title: "flagd-ui sidecar OOMKilled in CrashLoopBackOff at chart-default 250Mi limit"
     start: "2026-07-11T22:39:00Z"
