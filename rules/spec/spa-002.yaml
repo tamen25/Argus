@@ -1,0 +1,26 @@
+# Implements spec rule SPA-002 (rules/spec/upstream/SPA-002.md): traces do
+# not contain orphan spans (parent_span_id references a span that exists).
+# Master-plan rule 3 (broken context propagation).
+#
+# SAMPLING CAVEAT: on a sampled mirror, parts of a trace can be legitimately
+# absent, so the observed orphan ratio is an upper bound. Default threshold
+# tolerates 10% before failing; confidence stays "sampled" (no poller can
+# verify span topology). Evaluated on completed windows only.
+schema: argus.rules/v1
+id: SPA-002
+source: spec
+name: traces do not contain orphan spans
+description: >-
+  Any span referencing a parent_span_id MUST have that parent present in the
+  same trace. Orphan spans indicate broken context propagation — the single
+  biggest killer of trace-based diagnosis.
+target: span
+impact: normal
+evaluation:
+  mode: aggregate
+  aggregate: trace_health
+  criteria: "agg.orphan_ratio <= params.max_orphan_ratio"
+params:
+  max_orphan_ratio: 0.1
+remediation:
+  template: broken-context-propagation

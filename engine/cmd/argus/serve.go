@@ -90,15 +90,8 @@ func serve(ctx context.Context, cfg serveConfig) error {
 			return err
 		}
 		col := rules.NewCollector(eng)
-		if cfg.maxPairs <= 0 {
-			cfg.maxPairs = ingest.DefaultMaxTrackedPairs
-		}
-		if cfg.window <= 0 {
-			cfg.window = ingest.DefaultWindow
-		}
-		card := ingest.NewCardinalityTrackerWithClock(cfg.maxPairs, cfg.window, time.Now)
-		export.RegisterAggregateStats(reg, card.PairsTracked, card.Evictions)
-		pipe := ingest.NewPipeline(col, card)
+		pipe := ingest.NewPipeline(col, ingest.TrackerOpts{MaxPairs: cfg.maxPairs, Window: cfg.window})
+		export.RegisterAggregateStats(reg, pipe.PairsTracked, pipe.Evictions)
 		lis, err := net.Listen("tcp", cfg.otlpAddr)
 		if err != nil {
 			return err
@@ -116,7 +109,7 @@ func serve(ctx context.Context, cfg serveConfig) error {
 				case <-ctx.Done():
 					return
 				case <-t.C:
-					pipe.CardinalityRows()
+					pipe.AggregateRows()
 					prom.Update(col.Snapshot())
 				}
 			}

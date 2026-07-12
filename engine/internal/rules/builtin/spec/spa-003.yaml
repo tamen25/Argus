@@ -1,0 +1,23 @@
+# Implements spec rule SPA-003 (rules/spec/upstream/SPA-003.md): span names
+# have bound cardinality. Master-plan rule 9 (span name explosion).
+# NOTE: upstream criteria is TODO; Argus picks 200 distinct span names per
+# service per window as the initial threshold — flagged for real-world tuning
+# before v0.1 (see DECISIONS.md). Estimated via HLL sketches.
+schema: argus.rules/v1
+id: SPA-003
+source: spec
+name: span names have bound cardinality
+description: >-
+  Distinct span names per service MUST stay bounded. Span-name explosion
+  (raw URLs, IDs in names) destroys latency breakdowns and blows up
+  span-metrics pipelines.
+target: span
+impact: important
+evaluation:
+  mode: aggregate
+  aggregate: span_name_cardinality
+  criteria: "agg.cardinality < params.max_span_names"
+params:
+  max_span_names: 200
+remediation:
+  template: unbounded-span-name

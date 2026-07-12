@@ -1,0 +1,63 @@
+{
+  "fleet_score": 50,
+  "services": [
+    {
+      "service": "ad",
+      "spec_score": 0,
+      "category": "Poor",
+      "results": [
+        {
+          "rule_id": "SPA-003",
+          "impact": "important",
+          "passed": false
+        }
+      ],
+      "findings": [
+        {
+          "rule_id": "SPA-003",
+          "rule_name": "span names have bound cardinality",
+          "source": "spec",
+          "service": "ad",
+          "impact": "important",
+          "description": "Distinct span names per service MUST stay bounded. Span-name explosion (raw URLs, IDs in names) destroys latency breakdowns and blows up span-metrics pipelines.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 1,
+            "violations": 1,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "aggregate",
+              "attrs": {
+                "attribute": "span.name",
+                "cardinality": 5123
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "email",
+      "spec_score": 100,
+      "category": "Excellent",
+      "results": [
+        {
+          "rule_id": "SPA-003",
+          "impact": "important",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "rules_evaluated": [
+    "ARG-RES-001",
+    "ARG-SPA-002",
+    "MET-001",
+    "RES-005",
+    "SPA-002",
+    "SPA-003",
+    "SPA-004"
+  ]
+}

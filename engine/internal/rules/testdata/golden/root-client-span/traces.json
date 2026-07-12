@@ -1,0 +1,17 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "frontend"}}]},
+      "scopeSpans": [
+        {
+          "scope": {"name": "otel"},
+          "spans": [
+            {"traceId": "0102030405060708090a0b0c0d0e0f20", "spanId": "1102030405060708", "name": "HTTP GET downstream", "kind": 3},
+            {"traceId": "0102030405060708090a0b0c0d0e0f21", "spanId": "1102030405060709", "name": "GET /", "kind": 2},
+            {"traceId": "0102030405060708090a0b0c0d0e0f21", "spanId": "110203040506070a", "parentSpanId": "1102030405060709", "name": "render", "kind": 1}
+          ]
+        }
+      ]
+    }
+  ]
+}

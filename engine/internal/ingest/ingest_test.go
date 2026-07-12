@@ -41,7 +41,7 @@ func newPipeline(t *testing.T) (*Pipeline, *rules.Collector) {
 		t.Fatal(err)
 	}
 	col := rules.NewCollector(eng)
-	return NewPipeline(col, NewCardinalityTracker(DefaultMaxTrackedPairs)), col
+	return NewPipeline(col, TrackerOpts{}), col
 }
 
 func testTraces(svc string, n int) ptrace.Traces {
@@ -93,7 +93,7 @@ func TestCardinalityTrackerEstimates(t *testing.T) {
 	// re-send same values: estimate must not double (it's distinct-count)
 	p.ConsumeMetrics(testMetrics("ad", "requests_total", "user_id", distinct))
 
-	rows := p.CardinalityRows()
+	rows := p.AggregateRows()
 	var got int64 = -1
 	for _, r := range rows {
 		if r.Service == "ad" && r.Fields["metric"] == "requests_total" && r.Fields["attribute"] == "user_id" {
@@ -111,7 +111,7 @@ func TestCardinalityTrackerEstimates(t *testing.T) {
 func TestCardinalityTrackerBoundedPairs(t *testing.T) {
 	tr := NewCardinalityTracker(10)
 	for i := 0; i < 50; i++ {
-		tr.Observe("svc", fmt.Sprintf("metric-%d", i), "attr", "v")
+		tr.Observe("svc", []string{fmt.Sprintf("metric-%d", i), "attr"}, "v")
 	}
 	if n := len(tr.Rows()); n > 10 {
 		t.Errorf("tracked pairs = %d, want <= 10 (bounded memory)", n)
@@ -183,7 +183,7 @@ func TestCardinalityTwoGenerationTumbling(t *testing.T) {
 	tr := NewCardinalityTrackerWithClock(100, time.Hour, func() time.Time { return now })
 
 	for i := 0; i < 500; i++ {
-		tr.Observe("s", "m", "a", fmt.Sprintf("v%d", i))
+		tr.Observe("s", []string{"m", "a"}, fmt.Sprintf("v%d", i))
 	}
 	est := func() int64 {
 		for _, r := range tr.Rows() {
@@ -213,11 +213,11 @@ func TestCardinalityTwoGenerationTumbling(t *testing.T) {
 
 func TestCardinalityLRUEvictionAndStats(t *testing.T) {
 	tr := NewCardinalityTracker(3)
-	tr.Observe("s", "m1", "a", "v")
-	tr.Observe("s", "m2", "a", "v")
-	tr.Observe("s", "m3", "a", "v")
-	tr.Observe("s", "m1", "a", "v2") // refresh m1
-	tr.Observe("s", "m4", "a", "v")  // evicts m2 (least recently observed)
+	tr.Observe("s", []string{"m1", "a"}, "v")
+	tr.Observe("s", []string{"m2", "a"}, "v")
+	tr.Observe("s", []string{"m3", "a"}, "v")
+	tr.Observe("s", []string{"m1", "a"}, "v2") // refresh m1
+	tr.Observe("s", []string{"m4", "a"}, "v")  // evicts m2
 
 	rows := tr.Rows()
 	seen := map[string]bool{}

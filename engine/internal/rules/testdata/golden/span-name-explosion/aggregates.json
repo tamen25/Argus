@@ -1,0 +1,6 @@
+[
+  {"Service": "ad", "Aggregate": "span_name_cardinality",
+   "Fields": {"attribute": "span.name", "cardinality": 5123}},
+  {"Service": "email", "Aggregate": "span_name_cardinality",
+   "Fields": {"attribute": "span.name", "cardinality": 34}}
+]
