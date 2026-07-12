@@ -184,7 +184,9 @@ func itemActivation(it model.Item) map[string]any {
 	case it.Metric != nil:
 		act["metric"] = map[string]any{
 			"name": it.Metric.Name, "type": it.Metric.Type, "unit": it.Metric.Unit,
-			"has_exemplars": it.Metric.HasExemplars, "attrs": orEmpty(it.Metric.Attrs),
+			"has_exemplars": it.Metric.HasExemplars, "exemplar_count": int64(it.Metric.ExemplarCount),
+			"bucket_bounds": it.Metric.BucketBounds, "bucket_counts": it.Metric.BucketCounts,
+			"attrs": orEmpty(it.Metric.Attrs),
 		}
 	case it.Log != nil:
 		act["log"] = map[string]any{

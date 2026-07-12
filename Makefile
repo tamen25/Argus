@@ -38,6 +38,9 @@ demo: ## docker compose demo: engine + postgres + grafana + mini-LGTM
 demo-down: ## Stop the demo compose stack
 	docker compose -f deploy/demo/docker-compose.yml down -v
 
+rules-sync: ## Sync /rules YAML into the engine's embedded builtin copy
+	cd $(ENGINE_DIR) && go run ./tools/syncrules
+
 BACKUP_DIR ?= $(HOME)/argus-backups
 backup-history: ## Snapshot accumulated telemetry history (MinIO data) to a tarball
 	@mkdir -p $(BACKUP_DIR)

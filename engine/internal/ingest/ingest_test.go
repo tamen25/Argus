@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
@@ -115,8 +116,8 @@ func TestCardinalityTrackerBoundedPairs(t *testing.T) {
 	if n := len(tr.Rows()); n > 10 {
 		t.Errorf("tracked pairs = %d, want <= 10 (bounded memory)", n)
 	}
-	if tr.Overflowed() == 0 {
-		t.Error("overflow counter = 0, want > 0 (honest reporting of dropped pairs)")
+	if tr.Evictions() == 0 {
+		t.Error("eviction counter = 0, want > 0 (honest reporting of dropped pairs)")
 	}
 }
 
@@ -174,5 +175,62 @@ func TestBoundedSteadyStateAllocations(t *testing.T) {
 
 	if after > before*1.5+16 {
 		t.Errorf("allocs grew with state: before=%v after=%v", before, after)
+	}
+}
+
+func TestCardinalityTwoGenerationTumbling(t *testing.T) {
+	now := time.Unix(1000, 0)
+	tr := NewCardinalityTrackerWithClock(100, time.Hour, func() time.Time { return now })
+
+	for i := 0; i < 500; i++ {
+		tr.Observe("s", "m", "a", fmt.Sprintf("v%d", i))
+	}
+	est := func() int64 {
+		for _, r := range tr.Rows() {
+			if r.Fields["metric"] == "m" {
+				return r.Fields["cardinality"].(int64)
+			}
+		}
+		return -1
+	}
+	first := est()
+	if first < 490 || first > 510 {
+		t.Fatalf("estimate = %d, want ~500", first)
+	}
+
+	// cross one window boundary: previous generation still reported (max)
+	now = now.Add(61 * time.Minute)
+	if got := est(); got < 490 {
+		t.Errorf("estimate right after rotation = %d; findings must not vanish at window boundary", got)
+	}
+
+	// cross a second boundary: the old generation ages out entirely
+	now = now.Add(61 * time.Minute)
+	if got := est(); got != -1 && got > 10 {
+		t.Errorf("estimate after two rotations = %d, want gone/near-zero", got)
+	}
+}
+
+func TestCardinalityLRUEvictionAndStats(t *testing.T) {
+	tr := NewCardinalityTracker(3)
+	tr.Observe("s", "m1", "a", "v")
+	tr.Observe("s", "m2", "a", "v")
+	tr.Observe("s", "m3", "a", "v")
+	tr.Observe("s", "m1", "a", "v2") // refresh m1
+	tr.Observe("s", "m4", "a", "v")  // evicts m2 (least recently observed)
+
+	rows := tr.Rows()
+	seen := map[string]bool{}
+	for _, r := range rows {
+		seen[r.Fields["metric"].(string)] = true
+	}
+	if len(rows) != 3 || !seen["m1"] || !seen["m4"] || seen["m2"] {
+		t.Errorf("tracked after eviction = %v, want m1,m3,m4", seen)
+	}
+	if tr.Evictions() != 1 {
+		t.Errorf("evictions = %d, want 1", tr.Evictions())
+	}
+	if tr.PairsTracked() != 3 {
+		t.Errorf("pairs tracked = %d, want 3", tr.PairsTracked())
 	}
 }

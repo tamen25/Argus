@@ -41,6 +41,20 @@ argus_findings{impact="important",service="ad"} 1
 		t.Error(err)
 	}
 
+	RegisterAggregateStats(reg, func() int { return 7 }, func() int64 { return 3 })
+	wantStats := `
+# HELP argus_aggregate_pair_evictions_total Sketch pairs evicted by the LRU admission policy (estimates lost).
+# TYPE argus_aggregate_pair_evictions_total counter
+argus_aggregate_pair_evictions_total 3
+# HELP argus_aggregate_pairs_tracked Live (service, metric, attribute) sketch pairs across both window generations.
+# TYPE argus_aggregate_pairs_tracked gauge
+argus_aggregate_pairs_tracked 7
+`
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(wantStats),
+		"argus_aggregate_pairs_tracked", "argus_aggregate_pair_evictions_total"); err != nil {
+		t.Error(err)
+	}
+
 	// stale services must disappear on next update
 	e.Update(&rules.Snapshot{FleetScore: 100, Services: []rules.ServiceReport{
 		{ServiceName: "checkout", SpecScore: 100, Category: "Excellent"},

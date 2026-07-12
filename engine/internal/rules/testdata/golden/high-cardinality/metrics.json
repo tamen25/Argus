@@ -16,7 +16,14 @@
               "histogram": {
                 "aggregationTemporality": 2,
                 "dataPoints": [
-                  {"attributes": [{"key": "http.route", "value": {"stringValue": "/ads"}}], "count": "10", "sum": 1.5}
+                  {
+                    "attributes": [{"key": "http.route", "value": {"stringValue": "/ads"}}],
+                    "count": "10",
+                    "sum": 1.5,
+                    "explicitBounds": [0.05, 0.1, 0.5, 1, 5],
+                    "bucketCounts": ["2", "3", "3", "1", "1", "0"],
+                    "exemplars": [{"asDouble": 0.42, "spanId": "0102030405060708", "traceId": "0102030405060708090a0b0c0d0e0f10"}]
+                  }
                 ]
               }
             }

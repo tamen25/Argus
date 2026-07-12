@@ -118,3 +118,41 @@ func TestLoaderRejectsDuplicateIDs(t *testing.T) {
 		t.Error("want duplicate-id error, got nil")
 	}
 }
+
+func TestMergeOverridesByID(t *testing.T) {
+	base, err := LoadBytes([]byte(validRule))
+	if err != nil {
+		t.Fatal(err)
+	}
+	override := strings.Replace(validRule, "impact: critical", "impact: low", 1)
+	extra := `
+schema: argus.rules/v1
+id: CUSTOM-001
+source: argus
+name: custom rule
+description: user-supplied
+target: span
+impact: low
+evaluation:
+  mode: item
+  criteria: "span.name != ''"
+`
+	over, err := LoadBytes([]byte(override), []byte(extra))
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := Merge(base, over)
+	if len(merged) != 2 {
+		t.Fatalf("merged = %d rules, want 2", len(merged))
+	}
+	byID := map[string]*Rule{}
+	for _, r := range merged {
+		byID[r.ID] = r
+	}
+	if byID["RES-005"].Impact != ImpactLow {
+		t.Errorf("override did not replace builtin: impact = %s", byID["RES-005"].Impact)
+	}
+	if byID["CUSTOM-001"] == nil {
+		t.Error("extension rule missing after merge")
+	}
+}
