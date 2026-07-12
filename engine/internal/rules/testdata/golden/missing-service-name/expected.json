@@ -1,0 +1,114 @@
+{
+  "fleet_score": 66.66666666666667,
+  "services": [
+    {
+      "service": "\u003cunknown\u003e",
+      "spec_score": 0,
+      "category": "Poor",
+      "results": [
+        {
+          "rule_id": "ARG-RES-001",
+          "impact": "critical",
+          "passed": true
+        },
+        {
+          "rule_id": "RES-005",
+          "impact": "critical",
+          "passed": false
+        }
+      ],
+      "extension_score": 100,
+      "findings": [
+        {
+          "rule_id": "RES-005",
+          "rule_name": "service.name is present",
+          "source": "spec",
+          "service": "\u003cunknown\u003e",
+          "impact": "critical",
+          "description": "Resource attributes MUST contain a service.name key with a non-empty string value. Without it, telemetry cannot be attributed to a service and most downstream correlation breaks.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 1,
+            "violations": 1,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "span",
+              "summary": "span process-batch",
+              "attrs": {
+                "host.name": "node-7"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "checkout",
+      "spec_score": 100,
+      "category": "Excellent",
+      "results": [
+        {
+          "rule_id": "ARG-RES-001",
+          "impact": "critical",
+          "passed": true
+        },
+        {
+          "rule_id": "RES-005",
+          "impact": "critical",
+          "passed": true
+        }
+      ],
+      "extension_score": 100
+    },
+    {
+      "service": "unknown_service:java",
+      "spec_score": 100,
+      "category": "Excellent",
+      "results": [
+        {
+          "rule_id": "ARG-RES-001",
+          "impact": "critical",
+          "passed": false
+        },
+        {
+          "rule_id": "RES-005",
+          "impact": "critical",
+          "passed": true
+        }
+      ],
+      "extension_score": 0,
+      "findings": [
+        {
+          "rule_id": "ARG-RES-001",
+          "rule_name": "service.name is not the SDK default",
+          "source": "argus",
+          "service": "unknown_service:java",
+          "impact": "critical",
+          "description": "service.name MUST NOT be an SDK-generated default (unknown_service or unknown_service:\u003cprocess\u003e). A default name means the SDK is unconfigured and telemetry is effectively unattributable.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 1,
+            "violations": 1,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "span",
+              "summary": "span unnamed",
+              "attrs": {
+                "service.name": "unknown_service:java"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "rules_evaluated": [
+    "ARG-RES-001",
+    "MET-001",
+    "RES-005"
+  ]
+}

@@ -11,6 +11,8 @@ mimir:
       # otel-demo emits modest cardinality; generous ceiling for chaos scenarios
       max_global_series_per_user: 1000000
       ingestion_rate: 100000
+      # Argus MET-001 poller verification uses the cardinality API.
+      cardinality_analysis_enabled: true
     ingester:
       ring:
         replication_factor: 1

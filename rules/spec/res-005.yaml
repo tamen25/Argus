@@ -1,0 +1,20 @@
+# Implements spec rule RES-005 (rules/spec/upstream/RES-005.md), pinned at
+# /.instrumentation-score-version. Master-plan rule 1 (spec half; the
+# unknown_service check is the argus extension ARG-RES-001).
+schema: argus.rules/v1
+id: RES-005
+source: spec
+name: service.name is present
+description: >-
+  Resource attributes MUST contain a service.name key with a non-empty string
+  value. Without it, telemetry cannot be attributed to a service and most
+  downstream correlation breaks.
+target: resource
+impact: critical
+evaluation:
+  mode: item
+  criteria: "'service.name' in resource && string(resource['service.name']) != ''"
+confidence:
+  poller: mimir_service_presence
+remediation:
+  template: missing-service-name

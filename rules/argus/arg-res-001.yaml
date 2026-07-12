@@ -1,0 +1,21 @@
+# Argus extension rule (NOT part of the spec score; reported separately).
+# Completes master-plan rule 1: an SDK-default service.name like
+# "unknown_service:java" passes RES-005's letter (non-empty) but means the SDK
+# was never configured. Candidate for upstream contribution.
+schema: argus.rules/v1
+id: ARG-RES-001
+source: argus
+name: service.name is not the SDK default
+description: >-
+  service.name MUST NOT be an SDK-generated default (unknown_service or
+  unknown_service:<process>). A default name means the SDK is unconfigured and
+  telemetry is effectively unattributable.
+target: resource
+impact: critical
+evaluation:
+  mode: item
+  criteria: >-
+    !('service.name' in resource) ||
+    !string(resource['service.name']).startsWith('unknown_service')
+remediation:
+  template: missing-service-name
