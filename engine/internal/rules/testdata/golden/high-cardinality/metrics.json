@@ -1,0 +1,28 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "ad"}}
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": {"name": "go.opentelemetry.io/otel"},
+          "metrics": [
+            {
+              "name": "http_server_request_duration_seconds",
+              "unit": "s",
+              "histogram": {
+                "aggregationTemporality": 2,
+                "dataPoints": [
+                  {"attributes": [{"key": "http.route", "value": {"stringValue": "/ads"}}], "count": "10", "sum": 1.5}
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

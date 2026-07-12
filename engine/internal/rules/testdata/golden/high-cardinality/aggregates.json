@@ -1,0 +1,22 @@
+[
+  {
+    "Service": "ad",
+    "Aggregate": "metric_attribute_cardinality",
+    "Fields": {
+      "metric": "app_ads_ad_requests_total",
+      "attribute": "user_id",
+      "cardinality": 48211,
+      "window": "1h"
+    }
+  },
+  {
+    "Service": "ad",
+    "Aggregate": "metric_attribute_cardinality",
+    "Fields": {
+      "metric": "http_server_request_duration_seconds",
+      "attribute": "http.route",
+      "cardinality": 14,
+      "window": "1h"
+    }
+  }
+]
