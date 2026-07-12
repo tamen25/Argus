@@ -56,8 +56,17 @@ func TestRunScoreStreamWindow(t *testing.T) {
 		t.Errorf("spec version = %q", rep.SpecVersion)
 	}
 	unk := rep.Snapshot.Service("<unknown>")
-	if unk == nil || len(unk.Findings) == 0 || unk.Findings[0].RuleID != "RES-005" {
-		t.Fatalf("expected RES-005 finding for <unknown>, got %+v", unk)
+	if unk == nil {
+		t.Fatal("no <unknown> report")
+	}
+	found := false
+	for _, f := range unk.Findings {
+		if f.RuleID == "RES-005" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected RES-005 finding for <unknown>, got %+v", unk.Findings)
 	}
 	// exact score depends on how many built-in rules apply; the invariant is
 	// that a failing critical rule keeps the service far from perfect

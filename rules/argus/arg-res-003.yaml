@@ -1,0 +1,18 @@
+# Argus extension rule (NOT part of the spec score). Master-plan rule 6b:
+# deployment.environment.name present (rated Normal in the spec's
+# illustrative examples; no official rule file yet).
+schema: argus.rules/v1
+id: ARG-RES-003
+source: argus
+name: deployment.environment.name is present
+description: >-
+  Resource attributes SHOULD contain deployment.environment.name. Without it,
+  prod and staging telemetry blend — and rules like LOG-001 cannot even
+  identify production.
+target: resource
+impact: normal
+evaluation:
+  mode: item
+  criteria: "'deployment.environment.name' in resource && string(resource['deployment.environment.name']) != ''"
+remediation:
+  template: missing-resource-attributes
