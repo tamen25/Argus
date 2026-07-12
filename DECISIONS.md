@@ -2,6 +2,9 @@
 
 Every scope cut / deviation from the master plan. One line + rationale. Newest first.
 
+- 2026-07-12 — Aggregate windows are two-generation tumbling (report max of current+previous), not sliding: HLL cannot subtract. Boundary behavior documented in docs/rules/authoring.md; bursts remain visible up to 2 windows.
+- 2026-07-12 — Aggregate store admission is LRU with hard cap, default lowered 10000→4096 pairs/generation (memory envelope: ≈ cap × 16KiB dense × 2 gens worst case). Evictions counted and exported (argus_aggregate_pair_evictions_total), configurable via --max-tracked-pairs.
+- 2026-07-12 — Built-in rules embedded via go:generate copy (engine/internal/rules/builtin) because go:embed cannot cross the module boundary to /rules; /rules stays source of truth, CI fails on drift, --rules dir overrides/extends by ID. Closes the v0.1 rule-loading item.
 - 2026-07-12 — Master-plan rule 1 split in two: RES-005 implements the spec criteria verbatim (non-empty service.name); the UNKNOWN/SDK-default check is extension rule ARG-RES-001, because the spec forbids non-spec rules in the spec score and `unknown_service:x` is technically non-empty.
 - 2026-07-12 — Spec vendored as verbatim file copies under rules/spec/upstream (pinned SHA in .instrumentation-score-version) instead of a git submodule: no submodule friction in CI/create-plugin tooling, same auditability.
 - 2026-07-12 — Report rendering lives in engine/internal/report (not listed in the §4 layout): keeps rules/ deterministic-core-only and reusable by cost/backtest reports later. Flagged in the Phase 1 design review.

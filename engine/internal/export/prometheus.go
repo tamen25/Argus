@@ -36,6 +36,22 @@ func NewPrometheus(reg prometheus.Registerer) *Prometheus {
 	return e
 }
 
+// RegisterAggregateStats exposes the aggregate store's bounds as
+// self-metrics: pair count and LRU evictions (honest reporting of estimator
+// pressure).
+func RegisterAggregateStats(reg prometheus.Registerer, pairs func() int, evictions func() int64) {
+	reg.MustRegister(
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "argus_aggregate_pairs_tracked",
+			Help: "Live (service, metric, attribute) sketch pairs across both window generations.",
+		}, func() float64 { return float64(pairs()) }),
+		prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name: "argus_aggregate_pair_evictions_total",
+			Help: "Sketch pairs evicted by the LRU admission policy (estimates lost).",
+		}, func() float64 { return float64(evictions()) }),
+	)
+}
+
 // Update replaces all series with the snapshot's state (stale services drop).
 func (e *Prometheus) Update(snap *rules.Snapshot) {
 	e.score.Reset()

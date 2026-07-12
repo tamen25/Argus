@@ -15,15 +15,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-func repoRulesDir(t *testing.T) string {
-	t.Helper()
-	p, err := filepath.Abs(filepath.Join("..", "..", "..", "rules"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
 func specVersionFile(t *testing.T) string {
 	t.Helper()
 	p, err := filepath.Abs(filepath.Join("..", "..", "..", ".instrumentation-score-version"))
@@ -38,8 +29,8 @@ func TestRunScoreStreamWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := &scoreOptions{
-		rulesDir: repoRulesDir(t), window: 2 * time.Second,
+	opts := &scoreOptions{ // no rulesDir: built-in embedded rules
+		window:          2 * time.Second,
 		specVersionFile: specVersionFile(t), listener: lis,
 	}
 
@@ -74,12 +65,34 @@ func TestRunScoreStreamWindow(t *testing.T) {
 }
 
 func TestScoreCommandFailBelowThreshold(t *testing.T) {
-	// empty rules dir -> error (no silent 100s)
-	empty := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(empty, "spec"), 0o755)
-	_ = os.MkdirAll(filepath.Join(empty, "argus"), 0o755)
-	if _, err := runScore(context.Background(), &scoreOptions{rulesDir: empty, specVersionFile: specVersionFile(t)}); err == nil {
-		t.Error("want error for empty rules dir")
+	// built-ins load with no rules dir at all; a custom dir overrides by ID
+	rep0, err := runScore(context.Background(), &scoreOptions{specVersionFile: specVersionFile(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep0.Snapshot.RulesEvaluated) < 3 {
+		t.Errorf("builtin rules = %v, want >= 3", rep0.Snapshot.RulesEvaluated)
+	}
+	override := t.TempDir()
+	if err := os.WriteFile(filepath.Join(override, "res-005.yaml"), []byte(`schema: argus.rules/v1
+id: RES-005
+source: spec
+name: service.name is present
+description: override
+target: resource
+impact: low
+evaluation:
+  mode: item
+  criteria: "'service.name' in resource"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep1, err := runScore(context.Background(), &scoreOptions{rulesDir: override, specVersionFile: specVersionFile(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep1.Snapshot.RulesEvaluated) != len(rep0.Snapshot.RulesEvaluated) {
+		t.Errorf("override must replace, not append: %v", rep1.Snapshot.RulesEvaluated)
 	}
 
 	// threshold trip: no telemetry -> fleet 100 -> fail-below 100.1 impossible;
@@ -89,7 +102,7 @@ func TestScoreCommandFailBelowThreshold(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := &scoreOptions{
-		rulesDir: repoRulesDir(t), window: 1500 * time.Millisecond,
+		window:          1500 * time.Millisecond,
 		specVersionFile: specVersionFile(t), listener: lis, failBelow: 85,
 	}
 	go func() {

@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -44,6 +45,45 @@ func LoadDir(dirs ...string) ([]*Rule, error) {
 		return nil, fmt.Errorf("loading rules (%s): %w", strings.Join(names, ", "), err)
 	}
 	return rs, nil
+}
+
+// LoadFS loads every *.yaml rule in an fs.FS (used for the embedded built-in
+// rules).
+func LoadFS(fsys fs.FS) ([]*Rule, error) {
+	var blobs [][]byte
+	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".yaml") {
+			return err
+		}
+		b, err := fs.ReadFile(fsys, path)
+		if err != nil {
+			return err
+		}
+		blobs = append(blobs, b)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return LoadBytes(blobs...)
+}
+
+// Merge overlays rules onto a base set: an override with the same ID replaces
+// the base rule (CLI semantics: built-ins first, --rules dir on top).
+func Merge(base, overrides []*Rule) []*Rule {
+	byID := make(map[string]*Rule, len(base)+len(overrides))
+	for _, r := range base {
+		byID[r.ID] = r
+	}
+	for _, r := range overrides {
+		byID[r.ID] = r
+	}
+	out := make([]*Rule, 0, len(byID))
+	for _, r := range byID {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // LoadBytes parses one rule per YAML document. The decoder is strict: unknown
