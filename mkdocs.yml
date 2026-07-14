@@ -22,6 +22,7 @@ nav:
   - Making the thresholds yours: making-thresholds-yours.md
   - CLI:
       - score: cli/score.md
+      - remediate: cli/remediate.md
   - Rules:
       - Authoring: rules/authoring.md
       - RES-005: rules/res-005.md
