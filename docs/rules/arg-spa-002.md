@@ -12,3 +12,10 @@ deliberately loose because head sampling drops roots legitimately; same
 caveat as [SPA-002](spa-002.md)).
 
 **Remediation.** Template `broken-context-propagation`.
+
+## Cross-service resolution (since 2026-07-14)
+
+The root span belongs to the entry service; downstream participants are not
+"rootless" for lacking it. A trace with no root anywhere is attributed to
+the break-point services (spans with unresolved parents); if truncation
+hides the break, every participant carries it — an honest upper bound.

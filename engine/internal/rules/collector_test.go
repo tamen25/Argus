@@ -160,6 +160,60 @@ params:
 	}
 }
 
+// Bounded memory (architecture rule 3) holds for aggregate rules under a
+// long-running serve loop: re-evaluating the same violating row every export
+// tick must not grow retained state — the 2.5h soak caught RSS +38% from
+// exactly this. Counts keep counting; evidence stays capped at MaxEvidence
+// (latest rows win — a day-old cardinality estimate is not evidence).
+func TestCollectorAggregateStateBoundedAcrossTicks(t *testing.T) {
+	agg := `
+schema: argus.rules/v1
+id: MET-001
+source: spec
+name: bounded metric attribute cardinality
+description: test
+target: metric
+impact: important
+evaluation:
+  mode: aggregate
+  aggregate: metric_attribute_cardinality
+  criteria: "agg.cardinality < params.max_cardinality"
+params:
+  max_cardinality: 10000
+`
+	eng := mustEngine(t, agg)
+	c := NewCollector(eng)
+
+	const ticks = 1000
+	for i := 0; i < ticks; i++ {
+		c.ObserveAggregate(AggregateRow{Service: "ad", Aggregate: "metric_attribute_cardinality",
+			Fields: map[string]any{"metric": "m", "attribute": "user_id", "cardinality": 40000 + i}})
+	}
+
+	f := c.Snapshot().Service("ad").Findings[0]
+	if f.Stats.Observed != ticks || f.Stats.Violations != ticks || f.Stats.Ratio != 1 {
+		t.Errorf("stats = %+v, want %d/%d", f.Stats, ticks, ticks)
+	}
+	if len(f.Evidence) > MaxEvidence {
+		t.Fatalf("evidence = %d entries, want <= %d", len(f.Evidence), MaxEvidence)
+	}
+	// latest evidence retained: the last tick's cardinality must be present
+	found := false
+	for _, e := range f.Evidence {
+		if e.Attrs["cardinality"] == 40000+ticks-1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("evidence holds stale rows only: %+v", f.Evidence)
+	}
+
+	// white-box: retained state per rule is the counters + capped evidence
+	if got := len(c.svc["ad"].aggEvidence["MET-001"]); got > MaxEvidence {
+		t.Errorf("retained aggregate evidence = %d, want <= %d", got, MaxEvidence)
+	}
+}
+
 func TestCollectorSeparatesSpecAndExtensionScores(t *testing.T) {
 	ext := `
 schema: argus.rules/v1
