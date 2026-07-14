@@ -5,7 +5,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/argus ./cmd/argus
+# SPEC_VERSION bakes the Instrumentation Score spec pin into the binary —
+# distroless has no repo checkout to read .instrumentation-score-version from.
+ARG SPEC_VERSION=
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.embeddedSpecVersion=${SPEC_VERSION}" -o /out/argus ./cmd/argus
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/argus /usr/local/bin/argus

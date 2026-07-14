@@ -63,3 +63,20 @@ argus_aggregate_pairs_tracked 7
 		t.Errorf("score series = %d, want 1 after stale reset", n)
 	}
 }
+
+// Soak observability: per-signal item throughput (items/sec derives from the
+// counter's rate).
+func TestItemStats(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	RegisterItemStats(reg, func() (int64, int64, int64) { return 11, 22, 33 })
+	want := `
+# HELP argus_items_consumed_total Telemetry items consumed since startup, by signal.
+# TYPE argus_items_consumed_total counter
+argus_items_consumed_total{signal="traces"} 11
+argus_items_consumed_total{signal="metrics"} 22
+argus_items_consumed_total{signal="logs"} 33
+`
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(want), "argus_items_consumed_total"); err != nil {
+		t.Error(err)
+	}
+}

@@ -1,0 +1,13 @@
+[
+  {"Service": "checkout", "Aggregate": "span_name_cardinality", "Fields": {"attribute": "span.name", "cardinality": 42}},
+  {"Service": "cart", "Aggregate": "span_name_cardinality", "Fields": {"attribute": "span.name", "cardinality": 180}},
+  {"Service": "ad", "Aggregate": "span_name_cardinality", "Fields": {"attribute": "span.name", "cardinality": 17}},
+  {"Service": "checkout", "Aggregate": "metric_attribute_cardinality", "Fields": {"metric": "http_requests_total", "attribute": "path", "cardinality": 950}},
+  {"Service": "cart", "Aggregate": "metric_attribute_cardinality", "Fields": {"metric": "cart_items", "attribute": "user_tier", "cardinality": 4}},
+  {"Service": "checkout", "Aggregate": "resource_attr_cardinality", "Fields": {"attribute": "service.version", "cardinality": 2}},
+  {"Service": "cart", "Aggregate": "resource_attr_cardinality", "Fields": {"attribute": "service.version", "cardinality": 5}},
+  {"Service": "checkout", "Aggregate": "exemplar_coverage", "Fields": {"histogram_points": 500, "with_exemplars": 12}},
+  {"Service": "cart", "Aggregate": "exemplar_coverage", "Fields": {"histogram_points": 300, "with_exemplars": 0}},
+  {"Service": "checkout", "Aggregate": "trace_health", "Fields": {"traces": 900, "orphan_ratio": 0.04, "missing_root_ratio": 0.11}},
+  {"Service": "cart", "Aggregate": "trace_health", "Fields": {"traces": 700, "orphan_ratio": 0.02, "missing_root_ratio": 0.05}}
+]

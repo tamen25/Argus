@@ -183,9 +183,17 @@ func renderReport(rep *report.Report, format string) ([]byte, error) {
 	}
 }
 
+// embeddedSpecVersion is set at build time via
+// -ldflags "-X main.embeddedSpecVersion=<sha>" for environments without the
+// repo pin file on disk (container images, `go install` builds).
+var embeddedSpecVersion string
+
 func readSpecVersion(path string) string {
 	b, err := os.ReadFile(path)
 	if err != nil {
+		if embeddedSpecVersion != "" {
+			return embeddedSpecVersion
+		}
 		return "unknown"
 	}
 	return strings.TrimSpace(string(b))

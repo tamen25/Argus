@@ -1,6 +1,8 @@
 # Alloy (grafana/alloy chart) — OTLP gateway for the cluster.
-# Receives OTLP from otel-demo (and anything else), fans out to Mimir/Loki/Tempo.
-# Phase 1 adds a second, sampled OTLP exporter to argus-engine (see comment in config).
+# Receives OTLP from otel-demo (and anything else), fans out to Mimir/Loki/Tempo,
+# plus the Phase 1 sampled mirror to argus-engine. Argus is never in the
+# critical path: the mirror is a separate exporter with its own queue; if the
+# engine is down, Alloy retries and drops mirror data only.
 alloy:
   extraPorts:
     - name: otlp-grpc
@@ -29,9 +31,9 @@ alloy:
 
       otelcol.processor.batch "default" {
         output {
-          metrics = [otelcol.exporter.prometheus.mimir.input]
-          logs    = [otelcol.exporter.loki.default.input]
-          traces  = [otelcol.exporter.otlp.tempo.input]
+          metrics = [otelcol.exporter.prometheus.mimir.input, otelcol.exporter.otlp.argus.input]
+          logs    = [otelcol.exporter.loki.default.input, otelcol.exporter.otlp.argus.input]
+          traces  = [otelcol.exporter.otlp.tempo.input, otelcol.exporter.otlp.argus.input]
         }
       }
 
@@ -64,6 +66,14 @@ alloy:
         }
       }
 
-      // Phase 1 (do not enable in Phase 0): sampled mirror to argus-engine.
-      // otelcol.processor.probabilistic_sampler "argus" { ... }
-      // otelcol.exporter.otlp "argus" { client { endpoint = "argus-engine.argus.svc:4317" } }
+      // Phase 1 mirror to argus-engine. Full mirror on the dev cluster
+      // (volume is tiny); production guidance adds
+      // otelcol.processor.probabilistic_sampler in front of this exporter.
+      otelcol.exporter.otlp "argus" {
+        client {
+          endpoint = "argus-engine.argus.svc:4317"
+          tls {
+            insecure = true
+          }
+        }
+      }
