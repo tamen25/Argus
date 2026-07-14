@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,5 +141,31 @@ evaluation:
 	}
 	if !errors.Is(errBelowThreshold, errBelowThreshold) {
 		t.Error("sentinel sanity")
+	}
+}
+
+// An empty fleet scores a vacuous 100 and would sail through any
+// --fail-below-score gate; the report must say so out loud (honest
+// reporting). Regression test for a silently broken mirror.
+func TestRunScoreEmptyWindowNote(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := runScore(context.Background(), &scoreOptions{
+		window:          200 * time.Millisecond,
+		specVersionFile: specVersionFile(t), listener: lis,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, n := range rep.Notes {
+		if strings.Contains(n, "no telemetry") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("empty window must be disclosed in notes, got %v", rep.Notes)
 	}
 }

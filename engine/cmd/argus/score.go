@@ -129,6 +129,10 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 	if n := pipe.Evictions(); n > 0 {
 		notes = append(notes, fmt.Sprintf("aggregate trackers evicted %d entries (LRU) — estimates for evicted entries are lost", n))
 	}
+	if lis != nil && len(col.Snapshot().Services) == 0 {
+		// an empty fleet scores a vacuous 100 and would pass any gate silently
+		notes = append(notes, "no telemetry received on the OTLP listener during the window — the fleet score reflects an empty fleet, not healthy instrumentation")
+	}
 
 	// Poller path: verify what the backend can see.
 	if opts.mimirURL != "" {
