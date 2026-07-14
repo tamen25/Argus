@@ -74,8 +74,14 @@ type svcState struct {
 	violations     map[string]int64
 	evalErrs       map[string]int64
 	evidence       map[string][]Evidence
-	aggFindings    map[string][]Violation // aggregate-mode violations by rule
-	aggObserved    map[string]int64
+	// Aggregate rules re-evaluate every export tick for the life of a serve
+	// process, so state is counters + capped evidence, never a growing slice
+	// (bounded memory, rule 3 — a soak run caught the earlier append-per-tick
+	// version leaking). Evidence keeps the LATEST MaxEvidence rows: current
+	// estimates are evidence, day-old ones are noise.
+	aggViolations map[string]int64
+	aggEvidence   map[string][]Evidence
+	aggObserved   map[string]int64
 }
 
 // NewCollector builds a collector over the engine's rules.
@@ -89,7 +95,8 @@ func (c *Collector) state(svc string) *svcState {
 		s = &svcState{
 			observedByRule: map[string]int64{}, violations: map[string]int64{},
 			evalErrs: map[string]int64{}, evidence: map[string][]Evidence{},
-			aggFindings: map[string][]Violation{}, aggObserved: map[string]int64{},
+			aggViolations: map[string]int64{}, aggEvidence: map[string][]Evidence{},
+			aggObserved: map[string]int64{},
 		}
 		c.svc[svc] = s
 	}
@@ -133,7 +140,13 @@ func (c *Collector) ObserveAggregate(row AggregateRow) {
 		}
 	}
 	for _, v := range viol {
-		s.aggFindings[v.RuleID] = append(s.aggFindings[v.RuleID], v)
+		s.aggViolations[v.RuleID]++
+		ev := s.aggEvidence[v.RuleID]
+		if len(ev) >= MaxEvidence {
+			// latest-wins ring: drop the oldest retained row
+			ev = ev[1:]
+		}
+		s.aggEvidence[v.RuleID] = append(ev, Evidence{Kind: "aggregate", Attrs: v.Fields})
 	}
 }
 
@@ -229,13 +242,8 @@ func (c *Collector) serviceReport(name string) ServiceReport {
 			evid = s.evidence[r.ID]
 		} else {
 			observed = s.aggObserved[r.ID]
-			vs := s.aggFindings[r.ID]
-			violations = int64(len(vs))
-			for _, v := range vs {
-				if len(evid) < MaxEvidence {
-					evid = append(evid, Evidence{Kind: "aggregate", Attrs: v.Fields})
-				}
-			}
+			violations = s.aggViolations[r.ID]
+			evid = s.aggEvidence[r.ID]
 		}
 		if errs := s.evalErrs[r.ID]; errs > 0 {
 			details["eval_errors"] = errs
