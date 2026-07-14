@@ -155,6 +155,40 @@ func TestGRPCReceiverEndToEnd(t *testing.T) {
 	}
 }
 
+// Real-world collectors (Alloy, the OTel Collector) gzip OTLP exports by
+// default; a receiver without the gzip decompressor drops every payload as a
+// permanent error. Regression test for the live-cluster mirror.
+func TestGRPCReceiverAcceptsGzip(t *testing.T) {
+	p, col := newPipeline(t)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewGRPCServer(p)
+	go func() { _ = srv.Serve(lis) }()
+	defer srv.Stop()
+
+	// Compressor referenced by name, not by importing encoding/gzip here:
+	// that import registers the codec process-globally and would green this
+	// test even if the production receiver lost it. This way the registration
+	// must come from the ingest package itself.
+	conn, err := grpc.NewClient(lis.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(grpc.UseCompressor("gzip")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	tc := ptraceotlp.NewGRPCClient(conn)
+	if _, err := tc.Export(context.Background(), ptraceotlp.NewExportRequestFromTraces(testTraces("checkout", 2))); err != nil {
+		t.Fatalf("gzip traces export: %v", err)
+	}
+	if rep := col.Snapshot().Service("checkout"); rep == nil {
+		t.Error("gzip-compressed payload not observed")
+	}
+}
+
 // Architecture rule 3: O(1) steady-state allocations per item. Processing
 // must not allocate more per item as accumulated state grows.
 func TestBoundedSteadyStateAllocations(t *testing.T) {
