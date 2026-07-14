@@ -1,0 +1,24 @@
+# Argus extension rule (NOT part of the spec score). Master-plan rule 15:
+# resource attribute consistency — one service reporting many conflicting
+# values for identity attributes (service.version etc.) usually means broken
+# resource detection or mixed pipelines. Default tolerates 3 distinct values
+# (rolling deploys legitimately run 2-3 versions); flagged for tuning.
+schema: argus.rules/v1
+id: ARG-RES-004
+source: argus
+name: resource attributes are consistent per service
+description: >-
+  A service SHOULD NOT report many conflicting values for identity resource
+  attributes (service.version, deployment.environment.name,
+  telemetry.sdk.language) within a window — a symptom of broken resource
+  detection or two pipelines writing as one service.
+target: resource
+impact: normal
+evaluation:
+  mode: aggregate
+  aggregate: resource_attr_cardinality
+  criteria: "agg.cardinality <= params.max_values"
+params:
+  max_values: 3
+remediation:
+  template: missing-resource-attributes

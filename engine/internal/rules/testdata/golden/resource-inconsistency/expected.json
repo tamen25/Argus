@@ -1,0 +1,63 @@
+{
+  "fleet_score": 100,
+  "services": [
+    {
+      "service": "checkout",
+      "spec_score": 100,
+      "category": "Excellent",
+      "results": [
+        {
+          "rule_id": "ARG-RES-004",
+          "impact": "normal",
+          "passed": false
+        }
+      ],
+      "extension_score": 0,
+      "findings": [
+        {
+          "rule_id": "ARG-RES-004",
+          "rule_name": "resource attributes are consistent per service",
+          "source": "argus",
+          "service": "checkout",
+          "impact": "normal",
+          "description": "A service SHOULD NOT report many conflicting values for identity resource attributes (service.version, deployment.environment.name, telemetry.sdk.language) within a window — a symptom of broken resource detection or two pipelines writing as one service.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 2,
+            "violations": 1,
+            "ratio": 0.5
+          },
+          "evidence": [
+            {
+              "kind": "aggregate",
+              "attrs": {
+                "attribute": "service.version",
+                "cardinality": 14
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "rules_evaluated": [
+    "ARG-LOG-001",
+    "ARG-MET-001",
+    "ARG-MET-002",
+    "ARG-RES-001",
+    "ARG-RES-002",
+    "ARG-RES-003",
+    "ARG-RES-004",
+    "ARG-SPA-002",
+    "LOG-001",
+    "LOG-002",
+    "MET-001",
+    "MET-002",
+    "MET-004",
+    "MET-005",
+    "RES-005",
+    "SPA-002",
+    "SPA-003",
+    "SPA-004"
+  ]
+}

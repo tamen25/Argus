@@ -1,0 +1,18 @@
+# Implements spec rule MET-002 (rules/spec/upstream/MET-002.md): metrics have
+# useful units. Master-plan rule 11.
+# NOTE: full UCUM validation is out of scope for v0.1 — this checks the unit
+# is non-empty ("1" is valid UCUM for dimensionless). See DECISIONS.md.
+schema: argus.rules/v1
+id: MET-002
+source: spec
+name: metrics have a unit
+description: >-
+  Metrics MUST carry a unit of measurement (UCUM). A metric without a unit
+  cannot be interpreted — 1MB or 1GB is the whole difference in the world.
+target: metric
+impact: important
+evaluation:
+  mode: item
+  criteria: "metric.unit != ''"
+remediation:
+  template: missing-metric-unit

@@ -234,3 +234,90 @@ func TestCardinalityLRUEvictionAndStats(t *testing.T) {
 		t.Errorf("pairs tracked = %d, want 3", tr.PairsTracked())
 	}
 }
+
+func testHistogram(svc string, bounds []float64) pmetric.Metrics {
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", svc)
+	m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("latency")
+	m.SetUnit("s")
+	dp := m.SetEmptyHistogram().DataPoints().AppendEmpty()
+	dp.ExplicitBounds().FromRaw(bounds)
+	counts := make([]uint64, len(bounds)+1)
+	dp.BucketCounts().FromRaw(counts)
+	return md
+}
+
+func TestBucketSignatureTracking(t *testing.T) {
+	p, _ := newPipeline(t)
+	p.ConsumeMetrics(testHistogram("ad", []float64{0.1, 0.5, 1}))
+	p.ConsumeMetrics(testHistogram("ad", []float64{0.1, 0.5, 1}))     // same buckets
+	p.ConsumeMetrics(testHistogram("ad", []float64{0.25, 0.75, 1.5})) // drifted buckets
+
+	rows := p.AggregateRows()
+	f := rowsFor(rows, "histogram_bucket_signatures", "ad")
+	if f == nil {
+		t.Fatalf("no bucket-signature row: %+v", rows)
+	}
+	if c := f["cardinality"].(int64); c != 2 {
+		t.Errorf("signature cardinality = %d, want 2 (two distinct bucket layouts)", c)
+	}
+	if f["metric"] != "latency" {
+		t.Errorf("fields = %v", f)
+	}
+}
+
+func TestResourceAttrConsistencyTracking(t *testing.T) {
+	p, _ := newPipeline(t)
+	send := func(version string) {
+		md := pmetric.NewMetrics()
+		rm := md.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", "checkout")
+		rm.Resource().Attributes().PutStr("service.version", version)
+		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("m")
+		m.SetEmptySum().DataPoints().AppendEmpty()
+		p.ConsumeMetrics(md)
+	}
+	send("1.0.0")
+	send("1.0.1")
+	send("1.0.2")
+	send("1.0.3")
+
+	rows := p.AggregateRows()
+	var card int64 = -1
+	for _, r := range rows {
+		if r.Aggregate == "resource_attr_cardinality" && r.Service == "checkout" && r.Fields["attribute"] == "service.version" {
+			card = r.Fields["cardinality"].(int64)
+		}
+	}
+	if card != 4 {
+		t.Errorf("service.version cardinality = %d, want 4", card)
+	}
+}
+
+func TestExemplarCoverageAggregate(t *testing.T) {
+	p, _ := newPipeline(t)
+	// 3 histogram points, none with exemplars
+	for i := 0; i < 3; i++ {
+		p.ConsumeMetrics(testHistogram("quote", []float64{0.1, 1}))
+	}
+	rows := p.AggregateRows()
+	f := rowsFor(rows, "exemplar_coverage", "quote")
+	if f == nil {
+		t.Fatalf("no exemplar_coverage row: %+v", rows)
+	}
+	if f["histogram_points"].(int64) != 3 || f["with_exemplars"].(int64) != 0 {
+		t.Errorf("fields = %v, want 3/0", f)
+	}
+
+	// a point with an exemplar flips coverage
+	md := testHistogram("quote", []float64{0.1, 1})
+	md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0).Histogram().DataPoints().At(0).Exemplars().AppendEmpty()
+	p.ConsumeMetrics(md)
+	f = rowsFor(p.AggregateRows(), "exemplar_coverage", "quote")
+	if f["with_exemplars"].(int64) != 1 {
+		t.Errorf("with_exemplars = %v, want 1", f["with_exemplars"])
+	}
+}

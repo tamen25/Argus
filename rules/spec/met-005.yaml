@@ -1,0 +1,21 @@
+# Implements spec rule MET-005 (rules/spec/upstream/MET-005.md): metric names
+# do not contain the unit (that's what the unit field is for).
+schema: argus.rules/v1
+id: MET-005
+source: spec
+name: metric names do not embed the unit
+description: >-
+  Metric names MUST NOT contain the metric unit (e.g.
+  collection.duration.seconds) — the unit belongs in the unit field, and
+  name-embedded units drift when the unit changes.
+target: metric
+impact: normal
+evaluation:
+  mode: item
+  criteria: "!metric.name.matches(params.unit_in_name_pattern)"
+params:
+  # Prometheus-convention suffixes like _total are counters, not units, and
+  # are deliberately NOT matched here.
+  unit_in_name_pattern: '(\.|_)(seconds|milliseconds|microseconds|nanoseconds|minutes|hours|days|bytes|kilobytes|megabytes|gigabytes|percent)($|\.|_)'
+remediation:
+  template: unit-in-metric-name

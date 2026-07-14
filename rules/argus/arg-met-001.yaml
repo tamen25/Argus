@@ -1,0 +1,20 @@
+# Argus extension rule (NOT part of the spec score). Master-plan rule 8:
+# histograms carry exemplars — the bridge from a latency spike to an example
+# trace. Exemplars are sparse by design, so the check is coverage-based: the
+# service passes if ANY histogram point in the window carried an exemplar.
+schema: argus.rules/v1
+id: ARG-MET-001
+source: argus
+name: histograms carry exemplars
+description: >-
+  Histogram metrics SHOULD carry exemplars so dashboards can jump from a
+  latency spike straight to an example trace. Zero exemplars across a whole
+  window means the metrics-to-traces bridge is down.
+target: metric
+impact: normal
+evaluation:
+  mode: aggregate
+  aggregate: exemplar_coverage
+  criteria: "agg.histogram_points == 0 || agg.with_exemplars > 0"
+remediation:
+  template: missing-exemplars
