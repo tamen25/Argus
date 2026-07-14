@@ -19,6 +19,7 @@ nav:
   - Quickstart: quickstart.md
   - History durability: history-durability.md
   - Soak testing: soak.md
+  - Making the thresholds yours: making-thresholds-yours.md
   - CLI:
       - score: cli/score.md
   - Rules:

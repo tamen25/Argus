@@ -25,3 +25,9 @@ confidence:
   poller: mimir_label_cardinality
 remediation:
   template: high-cardinality-attribute
+calibration:
+  param: max_cardinality
+  source: aggregate
+  aggregate: metric_attribute_cardinality
+  field: cardinality
+  kind: count

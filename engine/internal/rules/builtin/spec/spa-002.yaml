@@ -24,3 +24,9 @@ params:
   max_orphan_ratio: 0.1
 remediation:
   template: broken-context-propagation
+calibration:
+  param: max_orphan_ratio
+  source: aggregate
+  aggregate: trace_health
+  field: orphan_ratio
+  kind: ratio

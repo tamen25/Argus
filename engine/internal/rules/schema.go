@@ -75,6 +75,11 @@ type Rule struct {
 	Confidence ConfidenceSpec `yaml:"confidence"`
 	// Remediation names the patch template for this rule (Phase 1: informative).
 	Remediation RemediationSpec `yaml:"remediation"`
+	// Calibration optionally names the observed distribution that can
+	// propose a better value for ONE params key (argus rules calibrate).
+	// Calibration never touches criteria — only params the spec leaves open
+	// and argus-extension params.
+	Calibration CalibrationSpec `yaml:"calibration"`
 }
 
 // Evaluation holds the CEL criteria. Criteria evaluates to true on SUCCESS
@@ -99,6 +104,29 @@ type ConfidenceSpec struct {
 type RemediationSpec struct {
 	Template string `yaml:"template"`
 }
+
+// CalibrationSpec ties one params key to the distribution that informs it.
+type CalibrationSpec struct {
+	Param string `yaml:"param"` // params key the proposal targets
+	// Source of observations: "aggregate" (rows from /api/aggregates or a
+	// soak dir) or "finding_ratio" (per-service violation ratios from
+	// reports/Postgres; failing services only — calibrate discloses that).
+	Source    string `yaml:"source"`
+	Aggregate string `yaml:"aggregate"` // aggregate name (source=aggregate)
+	Field     string `yaml:"field"`     // numeric field in the row (source=aggregate)
+	// Kind selects the deterministic proposal formula:
+	//   count       — ceil₂sig(P99 × 2)         (large cardinalities)
+	//   small_count — ceil(P99) + 1             (single-digit value spreads)
+	//   ratio       — min(1, P99 + max(0.05, 2×MAD)) rounded to 2 decimals
+	Kind string `yaml:"kind"`
+}
+
+// ServiceViolationParam is the dotted calibration target for the item-rule
+// rollup threshold, which lives outside params.
+const ServiceViolationParam = "service_violation.threshold_ratio"
+
+var validCalibrationSources = map[string]bool{"aggregate": true, "finding_ratio": true}
+var validCalibrationKinds = map[string]bool{"count": true, "small_count": true, "ratio": true}
 
 func (r *Rule) validate() error {
 	if r.Schema != SchemaV1 {
@@ -136,6 +164,22 @@ func (r *Rule) validate() error {
 	}
 	if r.ServiceViolation.ThresholdRatio < 0 || r.ServiceViolation.ThresholdRatio >= 1 {
 		return fmt.Errorf("rule %q: service_violation.threshold_ratio must be in [0,1)", r.ID)
+	}
+	if c := r.Calibration; c.Param != "" {
+		// The param target is a params key, or the one non-params numeric
+		// knob a rule has: the item-rollup threshold.
+		if _, ok := r.Params[c.Param]; !ok && c.Param != ServiceViolationParam {
+			return fmt.Errorf("rule %q: calibration.param %q not present in params", r.ID, c.Param)
+		}
+		if !validCalibrationSources[c.Source] {
+			return fmt.Errorf("rule %q: invalid calibration.source %q", r.ID, c.Source)
+		}
+		if !validCalibrationKinds[c.Kind] {
+			return fmt.Errorf("rule %q: invalid calibration.kind %q", r.ID, c.Kind)
+		}
+		if c.Source == "aggregate" && (c.Aggregate == "" || c.Field == "") {
+			return fmt.Errorf("rule %q: calibration.source=aggregate requires aggregate and field", r.ID)
+		}
 	}
 	return nil
 }

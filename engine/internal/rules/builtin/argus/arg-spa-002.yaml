@@ -21,3 +21,9 @@ params:
   max_missing_root_ratio: 0.2
 remediation:
   template: broken-context-propagation
+calibration:
+  param: max_missing_root_ratio
+  source: aggregate
+  aggregate: trace_health
+  field: missing_root_ratio
+  kind: ratio
