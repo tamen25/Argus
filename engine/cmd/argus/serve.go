@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/tamen25/Argus/engine/internal/report"
 	"github.com/tamen25/Argus/engine/internal/rules"
 	"github.com/tamen25/Argus/engine/internal/rules/builtin"
+	"github.com/tamen25/Argus/engine/internal/telemetry"
 )
 
 func newServeCmd() *cobra.Command {
@@ -110,6 +112,25 @@ func serve(ctx context.Context, cfg serveConfig) error {
 		go func() { _ = grpcSrv.Serve(lis) }()
 		defer grpcSrv.GracefulStop()
 
+		// Self-instrumentation (dogfooding, §3.4): exports only when
+		// OTEL_EXPORTER_OTLP_ENDPOINT is set — typically pointed at another
+		// argus scoring this one (the CI dogfood gate does exactly that).
+		tel, err := telemetry.Setup(ctx, telemetry.Config{
+			Endpoint:       strings.TrimPrefix(strings.TrimPrefix(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "http://"), "https://"),
+			ServiceName:    "argus-engine",
+			ServiceVersion: version,
+			Environment:    os.Getenv("ARGUS_ENVIRONMENT"),
+			ExportInterval: cfg.interval,
+		})
+		if err != nil {
+			return err
+		}
+		defer func() {
+			shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = tel.Shutdown(shCtx)
+		}()
+
 		prom := export.NewPrometheus(reg)
 		go func() {
 			t := time.NewTicker(cfg.interval)
@@ -119,8 +140,11 @@ func serve(ctx context.Context, cfg serveConfig) error {
 				case <-ctx.Done():
 					return
 				case <-t.C:
+					tickCtx, span := tel.Tracer.Start(ctx, "score.export")
 					pipe.AggregateRows()
 					prom.Update(col.Snapshot())
+					tel.ExportTicks.Add(tickCtx, 1)
+					span.End()
 				}
 			}
 		}()
