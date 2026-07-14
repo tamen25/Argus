@@ -7,6 +7,10 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 	"google.golang.org/grpc"
+
+	// Alloy and the OTel Collector gzip OTLP exports by default; without this
+	// decompressor every mirrored payload is rejected as a permanent error.
+	_ "google.golang.org/grpc/encoding/gzip"
 )
 
 // NewGRPCServer returns a gRPC server exposing the three OTLP export services
