@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +30,7 @@ func testAPIState(t *testing.T) (*http.ServeMux, *ingest.Pipeline) {
 	col := rules.NewCollector(eng)
 	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{})
 	mux := http.NewServeMux()
-	registerAPI(mux, col, pipe, "test-spec-sha", time.Minute)
+	registerAPI(mux, col, pipe, rs, "test-spec-sha", time.Minute)
 	return mux, pipe
 }
 
@@ -60,6 +62,44 @@ func TestAPIReport(t *testing.T) {
 	}
 	if rep.Snapshot == nil || rep.Snapshot.Service("checkout") == nil {
 		t.Errorf("snapshot missing checkout: %+v", rep.Snapshot)
+	}
+}
+
+// /api/remediation renders the patch for a live finding — the plugin's
+// remediation panel content.
+func TestAPIRemediation(t *testing.T) {
+	mux, pipe := testAPIState(t)
+	consumeSpan(pipe, "") // no service.name -> RES-005 finding on <unknown>
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		"/api/remediation?rule=RES-005&service="+url.QueryEscape("<unknown>"), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		RuleID   string            `json:"rule_id"`
+		Service  string            `json:"service"`
+		Template string            `json:"template"`
+		Formats  map[string]string `json:"formats"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Template != "missing-service-name" || len(got.Formats) != 2 {
+		t.Errorf("remediation = %+v", got)
+	}
+	for _, out := range got.Formats {
+		if !strings.Contains(out, "review before applying") {
+			t.Error("rendered patch missing human-review notice")
+		}
+	}
+
+	// no such finding -> 404, not an invented patch
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/remediation?rule=RES-005&service=checkout", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status for absent finding = %d, want 404", rec.Code)
 	}
 }
 

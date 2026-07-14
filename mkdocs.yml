@@ -20,6 +20,7 @@ nav:
   - History durability: history-durability.md
   - Soak testing: soak.md
   - Making the thresholds yours: making-thresholds-yours.md
+  - Grafana plugin: plugin.md
   - CLI:
       - score: cli/score.md
       - remediate: cli/remediate.md
