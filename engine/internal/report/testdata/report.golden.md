@@ -17,9 +17,9 @@
 
 ## Findings
 
-### unknown_service:java — service.name is present (`RES-005`)
+### service.name is present (`RES-005`) — 1 service
 
-- impact: **critical** · source: spec · confidence: **sampled**
-- observed: 4 · violations: 4 (100%)
+- impact: **critical** · source: spec
 - Resource attributes MUST contain a non-empty service.name.
+- **unknown_service:java** — confidence: **sampled** · observed: 4 · violations: 4 (100%)
   - evidence (span): span unnamed

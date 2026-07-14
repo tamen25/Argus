@@ -62,6 +62,63 @@ func TestJSONRoundTripsAndDisclosure(t *testing.T) {
 	}
 }
 
+func twoServiceSameRuleReport() *Report {
+	f := func(svc string) rules.Finding {
+		return rules.Finding{
+			RuleID: "MET-002", RuleName: "metrics have a unit", Source: "spec",
+			Service: svc, Impact: rules.ImpactImportant,
+			Description: "Metrics SHOULD declare a unit.",
+			Confidence:  rules.ConfidenceSampled,
+			Stats:       rules.Stats{Observed: 10, Violations: 10, Ratio: 1},
+		}
+	}
+	return &Report{
+		GeneratedAt:  time.Date(2026, 7, 14, 3, 0, 0, 0, time.UTC),
+		ArgusVersion: "v0.1.0-test", SpecVersion: "e6ee22274284", Window: "60s",
+		Snapshot: &rules.Snapshot{
+			FleetScore: 70,
+			Services: []rules.ServiceReport{
+				{ServiceName: "ad", SpecScore: 70, Category: "Needs Improvement", Findings: []rules.Finding{f("ad")}},
+				{ServiceName: "cart", SpecScore: 70, Category: "Needs Improvement", Findings: []rules.Finding{f("cart")}},
+			},
+			RulesEvaluated: []string{"MET-002"},
+		},
+	}
+}
+
+// One noisy rule must read as one section with a count, not N repeated
+// sections (report-UX: MET-002 fired on 13/18 live services).
+func TestMarkdownGroupsFindingsByRule(t *testing.T) {
+	md := Markdown(twoServiceSameRuleReport())
+	if got := strings.Count(md, "metrics have a unit (`MET-002`)"); got != 1 {
+		t.Errorf("rule heading appears %d times, want 1 (grouped)\n%s", got, md)
+	}
+	if !strings.Contains(md, "— 2 services") {
+		t.Errorf("grouped heading missing service count\n%s", md)
+	}
+	for _, svc := range []string{"ad", "cart"} {
+		if !strings.Contains(md, "**"+svc+"**") {
+			t.Errorf("per-service line for %s missing\n%s", svc, md)
+		}
+	}
+}
+
+func TestJSONFindingCounts(t *testing.T) {
+	b, err := JSON(twoServiceSameRuleReport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		FindingCounts map[string]int `json:"finding_counts"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.FindingCounts["MET-002"] != 2 {
+		t.Errorf("finding_counts = %v, want MET-002:2", got.FindingCounts)
+	}
+}
+
 func TestMarkdownGolden(t *testing.T) {
 	md := Markdown(sampleReport())
 

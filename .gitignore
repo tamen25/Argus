@@ -36,3 +36,4 @@ site/
 # Playwright
 plugin/test-results/
 plugin/playwright-report/
+soak-output/

@@ -5,7 +5,7 @@ SHELL := /bin/bash
 ENGINE_DIR := engine
 PLUGIN_DIR := plugin
 
-.PHONY: dev-up dev-down test test-integration lint build demo demo-down help
+.PHONY: dev-up dev-down test test-integration lint build demo demo-down help soak soak-analyze
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
@@ -40,6 +40,14 @@ demo-down: ## Stop the demo compose stack
 
 rules-sync: ## Sync /rules YAML into the engine's embedded builtin copy
 	cd $(ENGINE_DIR) && go run ./tools/syncrules
+
+SOAK_HOURS ?= 24
+soak: ## 24h soak run: engine in-cluster + Alloy mirror, minute metrics + hourly report snapshots (SOAK_HOURS=N to shorten)
+	SOAK_HOURS=$(SOAK_HOURS) bash scripts/soak.sh
+
+soak-analyze: ## Summarize a soak output dir: make soak-analyze SOAK_DIR=soak-output/<ts>
+	@test -n "$(SOAK_DIR)" || (echo "usage: make soak-analyze SOAK_DIR=soak-output/<ts>"; exit 2)
+	cd $(ENGINE_DIR) && go run ./tools/soakanalyze "$(abspath $(SOAK_DIR))"
 
 BACKUP_DIR ?= $(HOME)/argus-backups
 backup-history: ## Snapshot accumulated telemetry history (MinIO data) to a tarball

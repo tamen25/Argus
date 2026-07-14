@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -17,18 +19,20 @@ import (
 
 	"github.com/tamen25/Argus/engine/internal/export"
 	"github.com/tamen25/Argus/engine/internal/ingest"
+	"github.com/tamen25/Argus/engine/internal/report"
 	"github.com/tamen25/Argus/engine/internal/rules"
 	"github.com/tamen25/Argus/engine/internal/rules/builtin"
 )
 
 func newServeCmd() *cobra.Command {
 	var (
-		addr     string
-		otlpAddr string
-		rulesDir string
-		interval time.Duration
-		maxPairs int
-		window   time.Duration
+		addr        string
+		otlpAddr    string
+		rulesDir    string
+		specVerFile string
+		interval    time.Duration
+		maxPairs    int
+		window      time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -36,11 +40,13 @@ func newServeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return serve(cmd.Context(), serveConfig{
 				addr: addr, otlpAddr: otlpAddr, rulesDir: rulesDir,
-				interval: interval, maxPairs: maxPairs, window: window,
+				specVersionFile: specVerFile,
+				interval:        interval, maxPairs: maxPairs, window: window,
 			})
 		},
 	}
-	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (/healthz, /metrics)")
+	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (/healthz, /metrics, /api/report, /api/aggregates)")
+	cmd.Flags().StringVar(&specVerFile, "spec-version-file", ".instrumentation-score-version", "file with the pinned Instrumentation Score spec version, echoed in reports")
 	cmd.Flags().StringVar(&otlpAddr, "otlp-grpc", "", "OTLP gRPC listen address (e.g. :4317); empty disables ingest")
 	cmd.Flags().StringVar(&rulesDir, "rules", "", "extra rule YAML directory overriding/extending built-ins")
 	cmd.Flags().DurationVar(&interval, "score-interval", 30*time.Second, "how often scores are recomputed and exported")
@@ -51,6 +57,7 @@ func newServeCmd() *cobra.Command {
 
 type serveConfig struct {
 	addr, otlpAddr, rulesDir string
+	specVersionFile          string
 	interval                 time.Duration
 	maxPairs                 int
 	window                   time.Duration
@@ -92,6 +99,8 @@ func serve(ctx context.Context, cfg serveConfig) error {
 		col := rules.NewCollector(eng)
 		pipe := ingest.NewPipeline(col, ingest.TrackerOpts{MaxPairs: cfg.maxPairs, Window: cfg.window})
 		export.RegisterAggregateStats(reg, pipe.PairsTracked, pipe.Evictions)
+		export.RegisterItemStats(reg, pipe.ItemsConsumed)
+		registerAPI(mux, col, pipe, readSpecVersion(cfg.specVersionFile), cfg.window)
 		lis, err := net.Listen("tcp", cfg.otlpAddr)
 		if err != nil {
 			return err
@@ -116,7 +125,53 @@ func serve(ctx context.Context, cfg serveConfig) error {
 		}()
 	}
 
-	srv := &http.Server{Addr: cfg.addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	return serveHTTP(ctx, cfg.addr, mux)
+}
+
+// registerAPI mounts the JSON endpoints backing the soak harness and the
+// Grafana plugin: /api/report (score-CLI-equivalent envelope from live state)
+// and /api/aggregates (raw rows, calibrate input). Both are read-only: they
+// must not evaluate anything into the collector.
+func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline, specVersion string, window time.Duration) {
+	mux.HandleFunc("/api/report", func(w http.ResponseWriter, _ *http.Request) {
+		snap := col.Snapshot()
+		var notes []string
+		if n := pipe.Evictions(); n > 0 {
+			notes = append(notes, fmt.Sprintf("aggregate trackers evicted %d entries (LRU) — estimates for evicted entries are lost", n))
+		}
+		if len(snap.Services) == 0 {
+			notes = append(notes, "no telemetry received on the OTLP listener during the window — the fleet score reflects an empty fleet, not healthy instrumentation")
+		}
+		writeJSON(w, &report.Report{
+			GeneratedAt:     time.Now().UTC(),
+			ArgusVersion:    version,
+			SpecVersion:     specVersion,
+			Window:          window.String(),
+			RuleSetComplete: false, // Phase 1 implements a subset of official rules
+			Notes:           notes,
+			Snapshot:        snap,
+		})
+	})
+	mux.HandleFunc("/api/aggregates", func(w http.ResponseWriter, _ *http.Request) {
+		rows := pipe.CurrentRows()
+		if rows == nil {
+			rows = []rules.AggregateRow{}
+		}
+		writeJSON(w, rows)
+	})
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func serveHTTP(ctx context.Context, addr string, mux *http.ServeMux) error {
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
 

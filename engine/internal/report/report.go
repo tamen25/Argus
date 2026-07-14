@@ -7,6 +7,7 @@ package report
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,9 +28,27 @@ type Report struct {
 	Snapshot        *rules.Snapshot `json:"snapshot"`
 }
 
-// JSON renders the report as indented JSON.
+// JSON renders the report as indented JSON, with per-rule finding counts so
+// one noisy rule is countable at a glance.
 func JSON(r *Report) ([]byte, error) {
-	return json.MarshalIndent(r, "", "  ")
+	return json.MarshalIndent(struct {
+		*Report
+		FindingCounts map[string]int `json:"finding_counts,omitempty"`
+	}{r, findingCounts(r)}, "", "  ")
+}
+
+// findingCounts maps rule ID to the number of services it fired on.
+func findingCounts(r *Report) map[string]int {
+	counts := map[string]int{}
+	for _, s := range r.Snapshot.Services {
+		for _, f := range s.Findings {
+			counts[f.RuleID]++
+		}
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	return counts
 }
 
 // Markdown renders the report for humans (and the showback-style artifacts
@@ -59,19 +78,37 @@ func Markdown(r *Report) string {
 		fmt.Fprintf(&b, "| %s | %.1f | %s | %s | %d |\n", s.ServiceName, s.SpecScore, s.Category, ext, len(s.Findings))
 	}
 
-	var findings []rules.Finding
+	// Findings grouped by rule: one noisy rule reads as one section with a
+	// count, not one section per service.
+	var order []string
+	grouped := map[string][]rules.Finding{}
 	for _, s := range r.Snapshot.Services {
-		findings = append(findings, s.Findings...)
+		for _, f := range s.Findings {
+			if _, seen := grouped[f.RuleID]; !seen {
+				order = append(order, f.RuleID)
+			}
+			grouped[f.RuleID] = append(grouped[f.RuleID], f)
+		}
 	}
-	if len(findings) > 0 {
+	sort.Strings(order)
+	if len(order) > 0 {
 		fmt.Fprintf(&b, "\n## Findings\n")
-		for _, f := range findings {
-			fmt.Fprintf(&b, "\n### %s — %s (`%s`)\n\n", f.Service, f.RuleName, f.RuleID)
-			fmt.Fprintf(&b, "- impact: **%s** · source: %s · confidence: **%s**\n", f.Impact, f.Source, f.Confidence)
-			fmt.Fprintf(&b, "- observed: %d · violations: %d (%.0f%%)\n", f.Stats.Observed, f.Stats.Violations, f.Stats.Ratio*100)
-			fmt.Fprintf(&b, "- %s\n", f.Description)
-			for _, e := range f.Evidence {
-				fmt.Fprintf(&b, "  - evidence (%s): %s\n", e.Kind, e.Summary)
+		for _, id := range order {
+			fs := grouped[id]
+			f0 := fs[0]
+			noun := "services"
+			if len(fs) == 1 {
+				noun = "service"
+			}
+			fmt.Fprintf(&b, "\n### %s (`%s`) — %d %s\n\n", f0.RuleName, f0.RuleID, len(fs), noun)
+			fmt.Fprintf(&b, "- impact: **%s** · source: %s\n", f0.Impact, f0.Source)
+			fmt.Fprintf(&b, "- %s\n", f0.Description)
+			for _, f := range fs {
+				fmt.Fprintf(&b, "- **%s** — confidence: **%s** · observed: %d · violations: %d (%.0f%%)\n",
+					f.Service, f.Confidence, f.Stats.Observed, f.Stats.Violations, f.Stats.Ratio*100)
+				for _, e := range f.Evidence {
+					fmt.Fprintf(&b, "  - evidence (%s): %s\n", e.Kind, e.Summary)
+				}
 			}
 		}
 	}

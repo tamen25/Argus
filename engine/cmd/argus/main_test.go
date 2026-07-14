@@ -26,6 +26,22 @@ func TestVersionCommand(t *testing.T) {
 	}
 }
 
+// Container and `go install` builds have no pin file on disk; the build-time
+// embedded version (ldflags) must back the report's spec disclosure.
+func TestReadSpecVersionEmbeddedFallback(t *testing.T) {
+	old := embeddedSpecVersion
+	defer func() { embeddedSpecVersion = old }()
+
+	embeddedSpecVersion = "deadbeef1234"
+	if got := readSpecVersion("does/not/exist"); got != "deadbeef1234" {
+		t.Errorf("readSpecVersion fallback = %q, want embedded version", got)
+	}
+	embeddedSpecVersion = ""
+	if got := readSpecVersion("does/not/exist"); got != "unknown" {
+		t.Errorf("readSpecVersion without embed = %q, want unknown", got)
+	}
+}
+
 func TestServeHealthzAndShutdown(t *testing.T) {
 	// Grab a free port, then hand it to serve.
 	l, err := net.Listen("tcp", "127.0.0.1:0")

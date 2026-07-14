@@ -18,6 +18,7 @@ nav:
   - Home: index.md
   - Quickstart: quickstart.md
   - History durability: history-durability.md
+  - Soak testing: soak.md
   - CLI:
       - score: cli/score.md
   - Rules:
