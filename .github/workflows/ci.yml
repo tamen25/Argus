@@ -68,6 +68,43 @@ jobs:
       - name: Build backend
         run: go build ./...
 
+  dogfood:
+    name: Dogfood gate (argus scores itself)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: engine/go.sum
+      - name: Build
+        run: CGO_ENABLED=0 go build -trimpath -o argus ./cmd/argus
+      - name: Score the engine's own telemetry (gate at 85)
+        run: |
+          # One argus scores another: the scorer listens, the subject serves
+          # with OTLP self-export pointed at the scorer. Master plan §3.4 —
+          # Argus must pass its own rules, and this is where that's enforced.
+          ./argus score --listen-otlp 127.0.0.1:4319 --window 60s \
+            --fail-below-score 85 \
+            --spec-version-file ../.instrumentation-score-version \
+            --out dogfood-report.md &
+          SCORE_PID=$!
+          sleep 2
+          OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4319 ARGUS_ENVIRONMENT=ci \
+            ./argus serve --addr 127.0.0.1:8099 --otlp-grpc 127.0.0.1:4320 \
+            --score-interval 3s &
+          SERVE_PID=$!
+          set +e
+          wait "$SCORE_PID"; RC=$?
+          set -e
+          kill "$SERVE_PID" 2>/dev/null || true
+          echo "--- dogfood report ---"
+          cat dogfood-report.md
+          exit "$RC"
+
   helm:
     name: Helm chart lint
     runs-on: ubuntu-latest
