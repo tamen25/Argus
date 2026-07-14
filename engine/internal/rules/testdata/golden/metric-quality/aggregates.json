@@ -1,4 +1,6 @@
 [
   {"Service": "quote", "Aggregate": "histogram_bucket_signatures",
-   "Fields": {"metric": "quote_request_duration_seconds", "cardinality": 3}}
+   "Fields": {"metric": "quote_request_duration_seconds", "cardinality": 3}},
+  {"Service": "quote", "Aggregate": "exemplar_coverage",
+   "Fields": {"histogram_points": 3, "with_exemplars": 0}}
 ]

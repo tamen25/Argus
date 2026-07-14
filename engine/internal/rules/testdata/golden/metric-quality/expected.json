@@ -7,6 +7,11 @@
       "category": "Poor",
       "results": [
         {
+          "rule_id": "ARG-MET-001",
+          "impact": "normal",
+          "passed": false
+        },
+        {
           "rule_id": "ARG-MET-002",
           "impact": "important",
           "passed": false
@@ -47,8 +52,31 @@
           "passed": true
         }
       ],
-      "extension_score": 33.33333333333333,
+      "extension_score": 28.57142857142857,
       "findings": [
+        {
+          "rule_id": "ARG-MET-001",
+          "rule_name": "histograms carry exemplars",
+          "source": "argus",
+          "service": "quote",
+          "impact": "normal",
+          "description": "Histogram metrics SHOULD carry exemplars so dashboards can jump from a latency spike straight to an example trace. Zero exemplars across a whole window means the metrics-to-traces bridge is down.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 1,
+            "violations": 1,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "aggregate",
+              "attrs": {
+                "histogram_points": 3,
+                "with_exemplars": 0
+              }
+            }
+          ]
+        },
         {
           "rule_id": "ARG-MET-002",
           "rule_name": "histograms have explicit bucket bounds",
