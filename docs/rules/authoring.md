@@ -93,3 +93,23 @@ Findings carry `confidence: sampled` (OTLP mirror) or `verified` (poller saw
 unsampled backend data). Every rule needs a golden-file test under
 `engine/internal/rules/testdata/golden/` — input OTLP JSON in, expected
 snapshot out (`go test ./internal/rules -run TestGolden -update` after review).
+
+## Calibration (optional)
+
+A rule may declare which observed distribution can propose a better value
+for **one** params key. `argus rules calibrate` uses it; the evaluation
+path ignores it entirely.
+
+```yaml
+calibration:
+  param: max_span_names        # params key — or the dotted literal
+                               # service_violation.threshold_ratio
+  source: aggregate            # aggregate | finding_ratio
+  aggregate: span_name_cardinality   # required when source=aggregate
+  field: cardinality                 # numeric field in the row
+  kind: count                  # count | small_count | ratio (formula)
+```
+
+Criteria are never calibrated. For spec rules, only params the spec leaves
+open may carry a calibration block. Formulas and caveats:
+[Making the thresholds yours](../making-thresholds-yours.md).

@@ -21,6 +21,8 @@ linters:
             - "**/internal/cost/**"
             - "**/internal/backtest/**"
             - "**/internal/bench/scoring/**"
+            - "**/internal/calibrate/**"
+            - "**/internal/stats/**"
           deny:
             - pkg: github.com/tamen25/Argus/engine/internal/remediate/llm
               desc: "deterministic core must not import the LLM client (architecture rule 2)"

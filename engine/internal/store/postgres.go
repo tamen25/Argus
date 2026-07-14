@@ -114,5 +114,26 @@ func (p *Postgres) SaveSnapshot(ctx context.Context, snap *rules.Snapshot, meta 
 	return id, nil
 }
 
+// RuleRatios returns every persisted finding's violation ratio grouped by
+// rule ID — calibration evidence from score-run history. Ordered scan keeps
+// the result deterministic for a given database state.
+func (p *Postgres) RuleRatios(ctx context.Context) (map[string][]float64, error) {
+	rows, err := p.pool.Query(ctx, `SELECT rule_id, ratio FROM findings ORDER BY rule_id, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]float64{}
+	for rows.Next() {
+		var id string
+		var ratio float64
+		if err := rows.Scan(&id, &ratio); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], ratio)
+	}
+	return out, rows.Err()
+}
+
 // Close releases the pool.
 func (p *Postgres) Close() { p.pool.Close() }
