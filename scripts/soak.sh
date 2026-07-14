@@ -16,7 +16,9 @@
 # errors, no engine restarts.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# ARGUS_ROOT override lets the script run from a copied location (long runs
+# shouldn't execute a file that git branch switches rewrite underneath bash).
+ROOT="${ARGUS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 SOAK_HOURS="${SOAK_HOURS:-24}"
 SAMPLE_SECONDS="${SAMPLE_SECONDS:-60}"
 CLUSTER="${CLUSTER:-argus}"
