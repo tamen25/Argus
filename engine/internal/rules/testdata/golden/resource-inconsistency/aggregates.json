@@ -1,0 +1,6 @@
+[
+  {"Service": "checkout", "Aggregate": "resource_attr_cardinality",
+   "Fields": {"attribute": "service.version", "cardinality": 14}},
+  {"Service": "checkout", "Aggregate": "resource_attr_cardinality",
+   "Fields": {"attribute": "deployment.environment.name", "cardinality": 1}}
+]
