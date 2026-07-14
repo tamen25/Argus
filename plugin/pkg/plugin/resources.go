@@ -1,44 +1,51 @@
 package plugin
 
 import (
-	"encoding/json"
+	"io"
 	"net/http"
 )
 
-// handlePing is an example HTTP GET resource that returns a {"message": "ok"} JSON response.
-func (a *App) handlePing(w http.ResponseWriter, req *http.Request) {
-	w.Header().Add("Content-Type", "application/json")
-	if _, err := w.Write([]byte(`{"message": "ok"}`)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
+// engineRoutes maps plugin resource paths to engine API paths. The browser
+// only ever talks to Grafana; this backend holds the engine connection
+// (master plan §3.3 — plus §8: /resources/scores et al.).
+var engineRoutes = map[string]string{
+	"/scores":      "/api/report",
+	"/aggregates":  "/api/aggregates",
+	"/remediation": "/api/remediation",
 }
 
-// handleEcho is an example HTTP POST resource that accepts a JSON with a "message" key and
-// returns to the client whatever it is sent.
-func (a *App) handleEcho(w http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var body struct {
-		Message string `json:"message"`
-	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	w.Header().Add("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(body); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-// registerRoutes takes a *http.ServeMux and registers some HTTP handlers.
 func (a *App) registerRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/ping", a.handlePing)
-	mux.HandleFunc("/echo", a.handleEcho)
+	for resource, enginePath := range engineRoutes {
+		mux.HandleFunc(resource, a.proxyTo(enginePath))
+	}
+}
+
+// proxyTo forwards GETs (with query string) to the engine and relays the
+// response verbatim — status codes included, so honest engine errors (404
+// for absent findings, notes in reports) reach the UI unchanged.
+func (a *App) proxyTo(enginePath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		url := a.engineURL + enginePath
+		if req.URL.RawQuery != "" {
+			url += "?" + req.URL.RawQuery
+		}
+		outReq, err := http.NewRequestWithContext(req.Context(), http.MethodGet, url, nil)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		resp, err := a.client.Do(outReq)
+		if err != nil {
+			http.Error(w, "engine unreachable: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
+	}
 }

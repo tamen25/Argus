@@ -4,18 +4,13 @@ export const testIds = {
     apiUrl: 'data-testid ac-api-url',
     submit: 'data-testid ac-submit-form',
   },
-  pageOne: {
-    container: 'data-testid pg-one-container',
-    navigateToFour: 'data-testid navigate-to-four',
+  overview: {
+    container: 'data-testid overview-container',
+    servicesTable: 'data-testid overview-services-table',
   },
-  pageTwo: {
-    container: 'data-testid pg-two-container',
-  },
-  pageThree: {
-    container: 'data-testid pg-three-container',
-  },
-  pageFour: {
-    container: 'data-testid pg-four-container',
-    navigateBack: 'data-testid navigate-back',
+  scores: {
+    container: 'data-testid scores-container',
+    finding: 'data-testid scores-finding',
+    remediation: 'data-testid scores-remediation',
   },
 };

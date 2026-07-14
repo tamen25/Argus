@@ -19,6 +19,7 @@ import (
 
 	"github.com/tamen25/Argus/engine/internal/export"
 	"github.com/tamen25/Argus/engine/internal/ingest"
+	"github.com/tamen25/Argus/engine/internal/remediate"
 	"github.com/tamen25/Argus/engine/internal/report"
 	"github.com/tamen25/Argus/engine/internal/rules"
 	"github.com/tamen25/Argus/engine/internal/rules/builtin"
@@ -100,7 +101,7 @@ func serve(ctx context.Context, cfg serveConfig) error {
 		pipe := ingest.NewPipeline(col, ingest.TrackerOpts{MaxPairs: cfg.maxPairs, Window: cfg.window})
 		export.RegisterAggregateStats(reg, pipe.PairsTracked, pipe.Evictions)
 		export.RegisterItemStats(reg, pipe.ItemsConsumed)
-		registerAPI(mux, col, pipe, readSpecVersion(cfg.specVersionFile), cfg.window)
+		registerAPI(mux, col, pipe, rs, readSpecVersion(cfg.specVersionFile), cfg.window)
 		lis, err := net.Listen("tcp", cfg.otlpAddr)
 		if err != nil {
 			return err
@@ -132,7 +133,7 @@ func serve(ctx context.Context, cfg serveConfig) error {
 // Grafana plugin: /api/report (score-CLI-equivalent envelope from live state)
 // and /api/aggregates (raw rows, calibrate input). Both are read-only: they
 // must not evaluate anything into the collector.
-func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline, specVersion string, window time.Duration) {
+func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline, rs []*rules.Rule, specVersion string, window time.Duration) {
 	mux.HandleFunc("/api/report", func(w http.ResponseWriter, _ *http.Request) {
 		snap := col.Snapshot()
 		var notes []string
@@ -158,6 +159,46 @@ func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline
 			rows = []rules.AggregateRow{}
 		}
 		writeJSON(w, rows)
+	})
+	// /api/remediation?rule=ID&service=NAME renders the rule's patch template
+	// for a finding present in the CURRENT snapshot — 404 otherwise, so the
+	// plugin can never show a patch for a problem Argus didn't observe.
+	mux.HandleFunc("/api/remediation", func(w http.ResponseWriter, r *http.Request) {
+		ruleID, service := r.URL.Query().Get("rule"), r.URL.Query().Get("service")
+		if ruleID == "" || service == "" {
+			http.Error(w, "rule and service query params are required", http.StatusBadRequest)
+			return
+		}
+		var tmpl string
+		for _, rr := range rs {
+			if rr.ID == ruleID {
+				tmpl = rr.Remediation.Template
+			}
+		}
+		if tmpl == "" {
+			http.Error(w, fmt.Sprintf("rule %q has no remediation template", ruleID), http.StatusNotFound)
+			return
+		}
+		svc := col.Snapshot().Service(service)
+		if svc == nil {
+			http.Error(w, "service not observed", http.StatusNotFound)
+			return
+		}
+		for _, f := range svc.Findings {
+			if f.RuleID != ruleID {
+				continue
+			}
+			outs, err := remediate.Render(tmpl, remediate.Context{Service: service, Finding: f})
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, map[string]any{
+				"rule_id": ruleID, "service": service, "template": tmpl, "formats": outs,
+			})
+			return
+		}
+		http.Error(w, "no such finding in the current snapshot", http.StatusNotFound)
 	})
 }
 
