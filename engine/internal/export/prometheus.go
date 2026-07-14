@@ -52,6 +52,31 @@ func RegisterAggregateStats(reg prometheus.Registerer, pairs func() int, evictio
 	)
 }
 
+// RegisterItemStats exposes per-signal item throughput
+// (argus_items_consumed_total{signal}); items/sec derives from its rate.
+func RegisterItemStats(reg prometheus.Registerer, items func() (traces, metrics, logs int64)) {
+	desc := prometheus.NewDesc(
+		"argus_items_consumed_total",
+		"Telemetry items consumed since startup, by signal.",
+		[]string{"signal"}, nil,
+	)
+	reg.MustRegister(itemStatsCollector{desc: desc, items: items})
+}
+
+type itemStatsCollector struct {
+	desc  *prometheus.Desc
+	items func() (int64, int64, int64)
+}
+
+func (c itemStatsCollector) Describe(ch chan<- *prometheus.Desc) { ch <- c.desc }
+
+func (c itemStatsCollector) Collect(ch chan<- prometheus.Metric) {
+	tr, me, lo := c.items()
+	ch <- prometheus.MustNewConstMetric(c.desc, prometheus.CounterValue, float64(tr), "traces")
+	ch <- prometheus.MustNewConstMetric(c.desc, prometheus.CounterValue, float64(me), "metrics")
+	ch <- prometheus.MustNewConstMetric(c.desc, prometheus.CounterValue, float64(lo), "logs")
+}
+
 // Update replaces all series with the snapshot's state (stale services drop).
 func (e *Prometheus) Update(snap *rules.Snapshot) {
 	e.score.Reset()

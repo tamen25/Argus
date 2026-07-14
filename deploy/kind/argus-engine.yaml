@@ -1,0 +1,58 @@
+# Argus engine on the dev cluster: OTLP receiver for the Alloy sampled
+# mirror + /metrics + /api/report + /api/aggregates. Read-only by design —
+# no credentials, no write paths (architecture rule 5).
+#
+# Image is built and loaded by scripts/soak.sh (or manually):
+#   docker build -t argus-engine:dev --build-arg SPEC_VERSION=$(cat .instrumentation-score-version) engine/
+#   kind load docker-image argus-engine:dev --name argus
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argus
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argus-engine
+  namespace: argus
+  labels: {app: argus-engine}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: argus-engine}
+  template:
+    metadata:
+      labels: {app: argus-engine}
+    spec:
+      containers:
+        - name: engine
+          image: argus-engine:dev
+          imagePullPolicy: Never # kind-loaded local image
+          args:
+            - serve
+            - --addr=:8080
+            - --otlp-grpc=:4317
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: otlp-grpc, containerPort: 4317}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 96Mi}
+            # Bounded-memory rule 3: the soak run must stay flat well under
+            # this ceiling; an OOMKill here is a failed soak, not an ops issue.
+            limits: {cpu: "1", memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: argus-engine
+  namespace: argus
+  labels: {app: argus-engine}
+spec:
+  selector: {app: argus-engine}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+    - {name: otlp-grpc, port: 4317, targetPort: otlp-grpc}

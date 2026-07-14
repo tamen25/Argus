@@ -189,6 +189,56 @@ func TestGRPCReceiverAcceptsGzip(t *testing.T) {
 	}
 }
 
+// CurrentRows is the read-only view for HTTP handlers: it must expose the
+// same rows AggregateRows would without evaluating them into the collector,
+// or every scrape would inflate observation counts.
+func TestPipelineCurrentRowsIsReadOnly(t *testing.T) {
+	rs, err := rules.LoadBytes([]byte(met001))
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng, err := rules.NewEngine(rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	col := rules.NewCollector(eng)
+	p := NewPipeline(col, TrackerOpts{})
+	p.ConsumeMetrics(testMetrics("ad", "requests_total", "user_id", 12000))
+
+	rows := p.CurrentRows()
+	found := false
+	for _, r := range rows {
+		if r.Aggregate == "metric_attribute_cardinality" && r.Service == "ad" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("CurrentRows missing cardinality row: %+v", rows)
+	}
+	if rep := col.Snapshot().Service("ad"); rep != nil && len(rep.Findings) != 0 {
+		t.Errorf("CurrentRows fed the collector: findings = %+v", rep.Findings)
+	}
+
+	p.AggregateRows()
+	rep := col.Snapshot().Service("ad")
+	if rep == nil || len(rep.Findings) != 1 || rep.Findings[0].RuleID != "MET-001" {
+		t.Errorf("AggregateRows must still feed the collector, got %+v", rep)
+	}
+}
+
+// Soak observability: items/sec is derived from monotonic per-signal item
+// counters (argus_items_consumed_total).
+func TestPipelineItemCounters(t *testing.T) {
+	p, _ := newPipeline(t)
+	p.ConsumeTraces(testTraces("checkout", 3))
+	p.ConsumeMetrics(testMetrics("ad", "m", "a", 2)) // 2 datapoints = 2 items
+	p.ConsumeMetrics(testMetrics("ad", "m", "a", 1))
+	tr, me, lo := p.ItemsConsumed()
+	if tr != 3 || me != 3 || lo != 0 {
+		t.Errorf("ItemsConsumed() = %d,%d,%d, want 3,3,0", tr, me, lo)
+	}
+}
+
 // Architecture rule 3: O(1) steady-state allocations per item. Processing
 // must not allocate more per item as accumulated state grows.
 func TestBoundedSteadyStateAllocations(t *testing.T) {

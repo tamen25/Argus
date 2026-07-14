@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/collector/pdata/plog"
@@ -57,6 +58,9 @@ type Pipeline struct {
 
 	mu        sync.Mutex
 	exemplars map[string]*exemplarCounts // per service, current window only
+
+	// monotonic per-signal item counts (soak/serve self-metrics)
+	traceItems, metricItems, logItems atomic.Int64
 }
 
 // exemplarCounts backs the exemplar_coverage aggregate: cheap counters, reset
@@ -86,6 +90,7 @@ func NewPipeline(col *rules.Collector, opts TrackerOpts) *Pipeline {
 func (p *Pipeline) ConsumeTraces(td ptrace.Traces) {
 	p.traces.ObserveTraces(td)
 	for _, it := range model.FromTraces(td) {
+		p.traceItems.Add(1)
 		p.col.ObserveItem(it)
 		p.spanNames.Observe(it.Service, []string{"span.name"}, it.Span.Name)
 		p.observeResource(it)
@@ -96,6 +101,7 @@ func (p *Pipeline) ConsumeTraces(td ptrace.Traces) {
 // attribute values additionally feed the cardinality sketches for MET-001.
 func (p *Pipeline) ConsumeMetrics(md pmetric.Metrics) {
 	for _, it := range model.FromMetrics(md) {
+		p.metricItems.Add(1)
 		p.col.ObserveItem(it)
 		for k, v := range it.Metric.Attrs {
 			p.card.Observe(it.Service, []string{it.Metric.Name, k}, stringify(v))
@@ -121,14 +127,32 @@ func (p *Pipeline) ConsumeMetrics(md pmetric.Metrics) {
 // ConsumeLogs processes one logs payload and discards it.
 func (p *Pipeline) ConsumeLogs(ld plog.Logs) {
 	for _, it := range model.FromLogs(ld) {
+		p.logItems.Add(1)
 		p.col.ObserveItem(it)
 		p.observeResource(it)
 	}
 }
 
+// ItemsConsumed reports monotonic per-signal item totals (traces, metrics,
+// logs) since startup — the basis for items/sec self-metrics.
+func (p *Pipeline) ItemsConsumed() (traces, metrics, logs int64) {
+	return p.traceItems.Load(), p.metricItems.Load(), p.logItems.Load()
+}
+
 // AggregateRows snapshots all trackers into the collector and returns the
 // rows for inspection.
 func (p *Pipeline) AggregateRows() []rules.AggregateRow {
+	rows := p.CurrentRows()
+	for _, r := range rows {
+		p.col.ObserveAggregate(r)
+	}
+	return rows
+}
+
+// CurrentRows returns the current aggregate rows WITHOUT evaluating them into
+// the collector — the read-only view for HTTP handlers, where repeated
+// scrapes must not inflate observation counts.
+func (p *Pipeline) CurrentRows() []rules.AggregateRow {
 	var rows []rules.AggregateRow
 	p.mu.Lock()
 	for svc, ec := range p.exemplars {
@@ -147,9 +171,6 @@ func (p *Pipeline) AggregateRows() []rules.AggregateRow {
 	rows = append(rows, p.bucketSigs.Rows()...)
 	rows = append(rows, p.resAttrs.Rows()...)
 	rows = append(rows, p.traces.Rows()...)
-	for _, r := range rows {
-		p.col.ObserveAggregate(r)
-	}
 	return rows
 }
 
