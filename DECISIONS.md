@@ -2,6 +2,9 @@
 
 Every scope cut / deviation from the master plan. One line + rationale. Newest first.
 
+- 2026-07-14 — Rule schema gained an OPTIONAL `calibration:` block (param/source/aggregate/field/kind) tying one params key to the distribution that informs it — the data-driven alternative to hardcoding rule→distribution mappings inside the calibrate command; additive, strict-loader-validated, no existing rule file becomes invalid. Flagged per the no-silent-schema-changes rule.
+- 2026-07-14 — `calibration.param` may be the dotted literal `service_violation.threshold_ratio`: ARG-LOG-001's threshold is the item-rollup ratio, which lives outside `params`.
+
 - 2026-07-12 — MET-002 validates unit non-emptiness only; full UCUM grammar validation deferred past v0.1 (would need a UCUM parser dependency for marginal gain).
 - 2026-07-12 — MET-004 approximates the spec's 14-day horizon with the engine tumbling window (same approximation family as LOG-001); bucket layouts compared via canonical signature strings counted by HLL.
 - 2026-07-12 — ARG-MET-001 is coverage-based (any exemplar in window passes the service) via a dedicated exemplar_coverage aggregate: per-point ratio semantics would fail every honest instrumentation because exemplars are sparse by design.

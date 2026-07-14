@@ -18,3 +18,7 @@ service_violation:
   threshold_ratio: 0.5
 remediation:
   template: logs-without-trace-context
+calibration:
+  param: service_violation.threshold_ratio
+  source: finding_ratio
+  kind: ratio

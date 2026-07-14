@@ -21,3 +21,9 @@ params:
   max_span_names: 200
 remediation:
   template: unbounded-span-name
+calibration:
+  param: max_span_names
+  source: aggregate
+  aggregate: span_name_cardinality
+  field: cardinality
+  kind: count

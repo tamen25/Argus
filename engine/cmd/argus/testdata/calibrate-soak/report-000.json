@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-07-14T02:00:00Z",
+  "argus_version": "soak-test",
+  "spec_version": "e6ee22274284",
+  "window": "1m0s",
+  "rule_set_complete": false,
+  "finding_counts": {"ARG-LOG-001": 2},
+  "snapshot": {
+    "fleet_score": 84.7,
+    "services": [
+      {
+        "service": "checkout",
+        "spec_score": 100,
+        "category": "Excellent",
+        "results": [],
+        "findings": [
+          {
+            "rule_id": "ARG-LOG-001",
+            "rule_name": "logs carry trace correlation",
+            "source": "argus",
+            "service": "checkout",
+            "impact": "important",
+            "description": "d",
+            "confidence": "sampled",
+            "stats": {"observed": 100, "violations": 62, "ratio": 0.62}
+          }
+        ]
+      },
+      {
+        "service": "cart",
+        "spec_score": 90,
+        "category": "Excellent",
+        "results": [],
+        "findings": [
+          {
+            "rule_id": "ARG-LOG-001",
+            "rule_name": "logs carry trace correlation",
+            "source": "argus",
+            "service": "cart",
+            "impact": "important",
+            "description": "d",
+            "confidence": "sampled",
+            "stats": {"observed": 80, "violations": 44, "ratio": 0.55}
+          }
+        ]
+      }
+    ],
+    "rules_evaluated": ["ARG-LOG-001", "SPA-003"]
+  }
+}

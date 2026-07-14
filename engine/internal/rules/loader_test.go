@@ -113,6 +113,57 @@ params:
 	}
 }
 
+const calibratableRule = `
+schema: argus.rules/v1
+id: SPA-003
+source: spec
+name: bounded span name count
+description: test
+target: span
+impact: important
+evaluation:
+  mode: aggregate
+  aggregate: span_name_cardinality
+  criteria: "agg.cardinality < params.max_span_names"
+params:
+  max_span_names: 200
+calibration:
+  param: max_span_names
+  source: aggregate
+  aggregate: span_name_cardinality
+  field: cardinality
+  kind: count
+`
+
+// The optional calibration block names the distribution that can propose a
+// better value for one params key — criteria are never touched.
+func TestLoaderParsesCalibrationBlock(t *testing.T) {
+	rs, err := LoadBytes([]byte(calibratableRule))
+	if err != nil {
+		t.Fatalf("LoadBytes: %v", err)
+	}
+	c := rs[0].Calibration
+	if c.Param != "max_span_names" || c.Source != "aggregate" ||
+		c.Aggregate != "span_name_cardinality" || c.Field != "cardinality" || c.Kind != "count" {
+		t.Errorf("calibration = %+v", c)
+	}
+}
+
+func TestLoaderRejectsBadCalibration(t *testing.T) {
+	cases := map[string]string{
+		"unknown kind":        strings.Replace(calibratableRule, "kind: count", "kind: average", 1),
+		"unknown source":      strings.Replace(calibratableRule, "source: aggregate", "source: vibes", 1),
+		"param not in params": strings.Replace(calibratableRule, "param: max_span_names", "param: nope", 1),
+		"aggregate source needs aggregate name": strings.Replace(calibratableRule,
+			"  aggregate: span_name_cardinality\n  field: cardinality\n", "", 1),
+	}
+	for name, yaml := range cases {
+		if _, err := LoadBytes([]byte(yaml)); err == nil {
+			t.Errorf("%s: want error, got none", name)
+		}
+	}
+}
+
 func TestLoaderRejectsDuplicateIDs(t *testing.T) {
 	if _, err := LoadBytes([]byte(validRule), []byte(validRule)); err == nil {
 		t.Error("want duplicate-id error, got nil")

@@ -22,3 +22,9 @@ params:
   max_values: 3
 remediation:
   template: missing-resource-attributes
+calibration:
+  param: max_values
+  source: aggregate
+  aggregate: resource_attr_cardinality
+  field: cardinality
+  kind: small_count
