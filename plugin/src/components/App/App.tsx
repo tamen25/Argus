@@ -1,25 +1,49 @@
 import React from 'react';
-import { Route, Routes } from 'react-router-dom';
 import { AppRootProps } from '@grafana/data';
-import { ROUTES } from '../../constants';
-const PageOne = React.lazy(() => import('../../pages/PageOne'));
-const PageTwo = React.lazy(() => import('../../pages/PageTwo'));
-const PageThree = React.lazy(() => import('../../pages/PageThree'));
-const PageFour = React.lazy(() => import('../../pages/PageFour'));
+import { EmbeddedScene, SceneApp, SceneAppPage, SceneFlexItem, SceneFlexLayout, SceneReactObject, useSceneApp } from '@grafana/scenes';
+import { PLUGIN_BASE_URL, ROUTES } from '../../constants';
+import { OverviewContent } from '../Overview/OverviewContent';
+import { ScoresContent } from '../Scores/ScoresContent';
 
-function App(props: AppRootProps) {
-  return (
-    <Routes>
-      <Route path={ROUTES.Two} element={<PageTwo />} />
-      <Route path={`${ROUTES.Three}/:id?`} element={<PageThree />} />
+// Scenes app shell (master plan §8: Scenes for all data-bound pages);
+// page content stays plain @grafana/ui React rendered via SceneReactObject.
+function reactScene(component: React.ComponentType) {
+  return () =>
+    new EmbeddedScene({
+      body: new SceneFlexLayout({
+        children: [
+          new SceneFlexItem({
+            body: new SceneReactObject({ component }),
+          }),
+        ],
+      }),
+    });
+}
 
-      {/* Full-width page (this page will have no side navigation) */}
-      <Route path={ROUTES.Four} element={<PageFour />} />
+function getSceneApp() {
+  return new SceneApp({
+    pages: [
+      new SceneAppPage({
+        title: 'Overview',
+        subTitle: 'Fleet instrumentation health — Instrumentation Score over the live telemetry mirror',
+        url: `${PLUGIN_BASE_URL}/${ROUTES.Overview}`,
+        routePath: `${ROUTES.Overview}/*`,
+        getScene: reactScene(OverviewContent),
+      }),
+      new SceneAppPage({
+        title: 'Scores',
+        subTitle: 'Per-service findings — evidence, confidence, and remediation patches',
+        url: `${PLUGIN_BASE_URL}/${ROUTES.Scores}`,
+        routePath: `${ROUTES.Scores}/*`,
+        getScene: reactScene(ScoresContent),
+      }),
+    ],
+  });
+}
 
-      {/* Default page */}
-      <Route path="*" element={<PageOne />} />
-    </Routes>
-  );
+function App(_props: AppRootProps) {
+  const scene = useSceneApp(getSceneApp);
+  return <scene.Component model={scene} />;
 }
 
 export default App;
