@@ -2,6 +2,8 @@
 
 Every scope cut / deviation from the master plan. One line + rationale. Newest first.
 
+- 2026-07-14 — TraceTracker rewritten to key traces GLOBALLY by trace ID (was per service,trace): the 2.5h soak showed every downstream service scoring orphan/missing-root 1.00 because parents and roots lived in other services' fragments. Orphans/rootlessness now attribute to the break-point services (dangling parent references), falling back to all participants only when caps hide the break. Memory envelope roughly doubles worst-case (still capped); documented in rule pages.
+- 2026-07-14 — Collector aggregate-rule state changed from append-per-tick violation slices to counters + latest-wins evidence ring (MaxEvidence): the soak caught RSS +38%/2.5h from unbounded aggFindings growth in serve mode. Aggregate finding evidence now shows the LATEST rows, not the first ones.
 - 2026-07-14 — Rule schema gained an OPTIONAL `calibration:` block (param/source/aggregate/field/kind) tying one params key to the distribution that informs it — the data-driven alternative to hardcoding rule→distribution mappings inside the calibrate command; additive, strict-loader-validated, no existing rule file becomes invalid. Flagged per the no-silent-schema-changes rule.
 - 2026-07-14 — `calibration.param` may be the dotted literal `service_violation.threshold_ratio`: ARG-LOG-001's threshold is the item-rollup ratio, which lives outside `params`.
 

@@ -13,23 +13,31 @@ import (
 )
 
 // DefaultMaxTrackedTraces bounds trace states per generation. Memory: a
-// trace state holds span/parent ID sets (8 bytes each, span count capped),
-// so worst case ≈ cap × maxSpansPerTrace × 16B ≈ 64MiB at 8192 × 512.
+// trace state holds span/parent ID sets (8 bytes each, span count capped)
+// plus small per-parent service sets, so worst case ≈ cap ×
+// maxSpansPerTrace × ~32B ≈ 128MiB at 8192 × 512; real traces sit far
+// below both caps.
 const DefaultMaxTrackedTraces = 8192
 
 // maxSpansPerTrace caps per-trace span-ID retention (bounded memory).
 const maxSpansPerTrace = 512
 
-type traceKey struct {
-	service string
-	traceID pcommon.TraceID
-}
+// maxServicesPerTrace caps the participating-service set per trace.
+const maxServicesPerTrace = 64
 
+// traceState is GLOBAL per trace ID — spans from every service resolve into
+// the same state. The first live soak run proved why: keyed per (service,
+// trace), every downstream service scored orphan/missing-root 1.00 because
+// its parents and the root lived in other services' fragments.
 type traceState struct {
-	spans   map[pcommon.SpanID]struct{}
-	parents map[pcommon.SpanID]struct{}
-	hasRoot bool
-	elem    *list.Element
+	spans map[pcommon.SpanID]struct{}
+	// parents maps a referenced parent span ID to the services whose spans
+	// reference it — unresolved parents are attributed to those services
+	// (the break is visible where the dangling reference was emitted).
+	parents  map[pcommon.SpanID]map[string]struct{}
+	services map[string]struct{}
+	hasRoot  bool
+	elem     *list.Element
 }
 
 // TraceTracker accumulates per-trace span topology on the sampled stream to
@@ -49,9 +57,9 @@ type TraceTracker struct {
 	now       func() time.Time
 	rotatedAt time.Time
 
-	cur  map[traceKey]*traceState
+	cur  map[pcommon.TraceID]*traceState
 	lru  *list.List
-	prev map[traceKey]*traceState
+	prev map[pcommon.TraceID]*traceState
 
 	evictions int64
 }
@@ -60,7 +68,7 @@ type TraceTracker struct {
 func NewTraceTracker(maxTraces int, window time.Duration, now func() time.Time) *TraceTracker {
 	return &TraceTracker{
 		max: maxTraces, window: window, now: now, rotatedAt: now(),
-		cur: make(map[traceKey]*traceState), lru: list.New(),
+		cur: make(map[pcommon.TraceID]*traceState), lru: list.New(),
 	}
 }
 
@@ -75,7 +83,7 @@ func (t *TraceTracker) rotateLocked() {
 	} else {
 		t.prev = t.cur
 	}
-	t.cur = make(map[traceKey]*traceState)
+	t.cur = make(map[pcommon.TraceID]*traceState)
 	t.lru.Init()
 	t.rotatedAt = now
 }
@@ -98,38 +106,50 @@ func (t *TraceTracker) ObserveTraces(td ptrace.Traces) {
 			spans := sss.At(j).Spans()
 			for k := 0; k < spans.Len(); k++ {
 				sp := spans.At(k)
-				t.observeSpanLocked(traceKey{svc, sp.TraceID()}, sp)
+				t.observeSpanLocked(svc, sp)
 			}
 		}
 	}
 }
 
-func (t *TraceTracker) observeSpanLocked(k traceKey, sp ptrace.Span) {
-	st, ok := t.cur[k]
+func (t *TraceTracker) observeSpanLocked(svc string, sp ptrace.Span) {
+	id := sp.TraceID()
+	st, ok := t.cur[id]
 	if !ok {
 		if len(t.cur) >= t.max {
 			back := t.lru.Back()
 			if back == nil {
 				return
 			}
-			victim := back.Value.(traceKey)
+			victim := back.Value.(pcommon.TraceID)
 			delete(t.cur, victim)
 			t.lru.Remove(back)
 			t.evictions++
 		}
-		st = &traceState{spans: make(map[pcommon.SpanID]struct{}, 8), parents: make(map[pcommon.SpanID]struct{}, 8)}
-		st.elem = t.lru.PushFront(k)
-		t.cur[k] = st
+		st = &traceState{
+			spans:    make(map[pcommon.SpanID]struct{}, 8),
+			parents:  make(map[pcommon.SpanID]map[string]struct{}, 8),
+			services: make(map[string]struct{}, 4),
+		}
+		st.elem = t.lru.PushFront(id)
+		t.cur[id] = st
 	} else {
 		t.lru.MoveToFront(st.elem)
+	}
+	if len(st.services) < maxServicesPerTrace {
+		st.services[svc] = struct{}{}
 	}
 	if len(st.spans) < maxSpansPerTrace {
 		st.spans[sp.SpanID()] = struct{}{}
 	}
 	if sp.ParentSpanID().IsEmpty() {
 		st.hasRoot = true
+	} else if refs, seen := st.parents[sp.ParentSpanID()]; seen {
+		if len(refs) < maxServicesPerTrace {
+			refs[svc] = struct{}{}
+		}
 	} else if len(st.parents) < maxSpansPerTrace {
-		st.parents[sp.ParentSpanID()] = struct{}{}
+		st.parents[sp.ParentSpanID()] = map[string]struct{}{svc: {}}
 	}
 }
 
@@ -149,7 +169,10 @@ func (t *TraceTracker) TracesTracked() int {
 }
 
 // Rows emits one trace_health aggregate per service from the completed
-// (previous) generation: traces, orphan_ratio, missing_root_ratio.
+// (previous) generation: traces the service participated in, and the
+// fraction of those with orphaned spans / no root — attributed to the
+// services whose spans reference the unresolved parents (the visible break
+// point), never collectively.
 func (t *TraceTracker) Rows() []rules.AggregateRow {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -157,20 +180,43 @@ func (t *TraceTracker) Rows() []rules.AggregateRow {
 
 	type counts struct{ traces, orphaned, rootless int64 }
 	perSvc := map[string]*counts{}
-	for k, st := range t.prev {
-		c, ok := perSvc[k.service]
+	svcCounts := func(svc string) *counts {
+		c, ok := perSvc[svc]
 		if !ok {
 			c = &counts{}
-			perSvc[k.service] = c
+			perSvc[svc] = c
 		}
-		c.traces++
+		return c
+	}
+
+	for _, st := range t.prev {
+		for svc := range st.services {
+			svcCounts(svc).traces++
+		}
+		// services holding a dangling parent reference in this trace
+		breakPoints := map[string]struct{}{}
+		for p, refs := range st.parents {
+			if _, resolved := st.spans[p]; resolved {
+				continue
+			}
+			for svc := range refs {
+				breakPoints[svc] = struct{}{}
+			}
+		}
+		for svc := range breakPoints {
+			svcCounts(svc).orphaned++
+		}
 		if !st.hasRoot {
-			c.rootless++
-		}
-		for p := range st.parents {
-			if _, seen := st.spans[p]; !seen {
-				c.orphaned++
-				break
+			if len(breakPoints) > 0 {
+				for svc := range breakPoints {
+					svcCounts(svc).rootless++
+				}
+			} else {
+				// no root and no visible break (cap truncation): honest upper
+				// bound — every participant carries it
+				for svc := range st.services {
+					svcCounts(svc).rootless++
+				}
 			}
 		}
 	}

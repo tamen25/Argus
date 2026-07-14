@@ -76,6 +76,59 @@ func TestTraceTrackerOrphanAndMissingRoot(t *testing.T) {
 	}
 }
 
+// Traces are resolved ACROSS services: a checkout span whose parent lives in
+// the frontend's batch is not an orphan, and a downstream service is not
+// "rootless" just because the root span belongs to the entry service. The
+// first live soak run scored orphan/missing-root 1.00 on every service
+// because judgement was fragmented per (service, trace).
+func TestTraceTrackerResolvesAcrossServices(t *testing.T) {
+	now := time.Unix(0, 0)
+	tt := NewTraceTracker(100, time.Hour, func() time.Time { return now })
+
+	// one healthy distributed trace: frontend owns the root, checkout's span
+	// points at frontend's child span
+	tt.ObserveTraces(mkTrace("frontend", 1, []spanSpec{
+		{name: "GET /", id: 1, kind: ptrace.SpanKindServer},
+		{name: "call checkout", id: 2, parent: 1, kind: ptrace.SpanKindClient},
+	}))
+	tt.ObserveTraces(mkTrace("checkout", 1, []spanSpec{
+		{name: "checkout", id: 3, parent: 2, kind: ptrace.SpanKindServer},
+	}))
+
+	// one genuinely broken trace, break visible at cart (parent never seen,
+	// no root anywhere)
+	tt.ObserveTraces(mkTrace("cart", 2, []spanSpec{
+		{name: "lost", id: 5, parent: 9, kind: ptrace.SpanKindInternal},
+	}))
+
+	now = now.Add(61 * time.Minute)
+	rows := tt.Rows()
+
+	for _, svc := range []string{"frontend", "checkout"} {
+		f := rowsFor(rows, "trace_health", svc)
+		if f == nil {
+			t.Fatalf("no trace_health row for %s: %+v", svc, rows)
+		}
+		if or := f["orphan_ratio"].(float64); or != 0 {
+			t.Errorf("%s orphan_ratio = %v, want 0 (parent resolves cross-service)", svc, or)
+		}
+		if mr := f["missing_root_ratio"].(float64); mr != 0 {
+			t.Errorf("%s missing_root_ratio = %v, want 0 (root lives with the entry service)", svc, mr)
+		}
+	}
+
+	f := rowsFor(rows, "trace_health", "cart")
+	if f == nil {
+		t.Fatalf("no trace_health row for cart: %+v", rows)
+	}
+	if or := f["orphan_ratio"].(float64); or != 1 {
+		t.Errorf("cart orphan_ratio = %v, want 1 (break point is attributed)", or)
+	}
+	if mr := f["missing_root_ratio"].(float64); mr != 1 {
+		t.Errorf("cart missing_root_ratio = %v, want 1", mr)
+	}
+}
+
 func TestTraceTrackerCurrentGenerationNotReported(t *testing.T) {
 	now := time.Unix(0, 0)
 	tt := NewTraceTracker(100, time.Hour, func() time.Time { return now })
