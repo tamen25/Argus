@@ -1,0 +1,20 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "quote"}}]},
+      "scopeMetrics": [
+        {
+          "scope": {"name": "otel"},
+          "metrics": [
+            {"name": "quote_request_duration_seconds", "unit": "", "histogram": {"aggregationTemporality": 2, "dataPoints": [
+              {"attributes": [], "count": "5", "sum": 0.7}
+            ]}},
+            {"name": "quote_cache_hits", "unit": "1", "sum": {"aggregationTemporality": 2, "isMonotonic": true, "dataPoints": [
+              {"attributes": [], "asInt": "12"}
+            ]}}
+          ]
+        }
+      ]
+    }
+  ]
+}

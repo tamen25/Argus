@@ -2,6 +2,12 @@
 
 Every scope cut / deviation from the master plan. One line + rationale. Newest first.
 
+- 2026-07-12 — MET-002 validates unit non-emptiness only; full UCUM grammar validation deferred past v0.1 (would need a UCUM parser dependency for marginal gain).
+- 2026-07-12 — MET-004 approximates the spec's 14-day horizon with the engine tumbling window (same approximation family as LOG-001); bucket layouts compared via canonical signature strings counted by HLL.
+- 2026-07-12 — ARG-MET-001 is coverage-based (any exemplar in window passes the service) via a dedicated exemplar_coverage aggregate: per-point ratio semantics would fail every honest instrumentation because exemplars are sparse by design.
+- 2026-07-12 — ARG-RES-004 max_values=3: rolling deploys legitimately run 2-3 service.version values concurrently; flagged for tuning.
+- 2026-07-12 — Master-plan rules 13 (deprecated semconv attrs) and 14 (duplicate telemetry) DEFERRED past the fanout: 13 needs a vendored semconv registry to be honest (curated lists rot), 14's multi-pipeline heuristic is too false-positive-prone for v0.1. 18 rules ship vs. the 15 target, so the count gate holds. Flagged to the user in the fanout summary.
+- 2026-07-12 — SPA-001/SPA-005 (internal-span and short-span counts per trace) not implemented: both need per-trace span-count/duration state beyond what the bounded TraceTracker keeps for orphan/root detection; candidates for the next rules batch.
 - 2026-07-12 — LOG-001 approximates the spec's "14 days" clause as "any DEBUG in prod during the window": stream windows cannot see 14-day history until score persistence accumulates (revisit when Postgres history exists).
 - 2026-07-12 — ARG-LOG-001 threshold 0.5 (service fails when >50% of log volume lacks trace_id): non-request-path logs legitimately uncorrelated; flagged for tuning.
 - 2026-07-12 — SPA-003 threshold: upstream criteria is TODO; Argus ships max_span_names=200 as initial default, flagged for tuning before v0.1.

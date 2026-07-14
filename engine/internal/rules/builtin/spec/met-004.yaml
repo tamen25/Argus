@@ -1,0 +1,20 @@
+# Implements spec rule MET-004 (rules/spec/upstream/MET-004.md): histograms
+# consistently use the same buckets per metric name. Master-plan rule 12
+# (consistency half; presence of explicit bounds is ARG-MET-002).
+# The spec's 14-day horizon is approximated by the engine's tumbling window
+# (same approximation as LOG-001, see DECISIONS.md).
+schema: argus.rules/v1
+id: MET-004
+source: spec
+name: histogram buckets are consistent per metric
+description: >-
+  All histogram series of one metric name MUST use the same bucket layout.
+  Mixed layouts break quantile math when aggregating across instances.
+target: metric
+impact: normal
+evaluation:
+  mode: aggregate
+  aggregate: histogram_bucket_signatures
+  criteria: "agg.cardinality <= 1"
+remediation:
+  template: histogram-bucket-mismatch

@@ -1,0 +1,4 @@
+[
+  {"Service": "quote", "Aggregate": "histogram_bucket_signatures",
+   "Fields": {"metric": "quote_request_duration_seconds", "cardinality": 3}}
+]

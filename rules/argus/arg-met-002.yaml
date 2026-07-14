@@ -1,0 +1,17 @@
+# Argus extension rule (NOT part of the spec score). Master-plan rule 12
+# (presence half): classic histograms must ship explicit bucket bounds at
+# all — a boundless histogram is a sum/count pair pretending.
+schema: argus.rules/v1
+id: ARG-MET-002
+source: argus
+name: histograms have explicit bucket bounds
+description: >-
+  Classic histogram data points MUST define explicit bucket bounds;
+  without them no quantiles can ever be computed from the data.
+target: metric
+impact: important
+evaluation:
+  mode: item
+  criteria: "metric.type != 'histogram' || size(metric.bucket_bounds) > 0"
+remediation:
+  template: histogram-bucket-mismatch

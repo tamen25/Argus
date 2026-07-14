@@ -1,15 +1,15 @@
 {
-  "fleet_score": 58.333333333333336,
+  "fleet_score": 36.36363636363637,
   "services": [
     {
-      "service": "ad",
-      "spec_score": 58.333333333333336,
-      "category": "Needs Improvement",
+      "service": "quote",
+      "spec_score": 36.36363636363637,
+      "category": "Poor",
       "results": [
         {
           "rule_id": "ARG-MET-002",
           "impact": "important",
-          "passed": true
+          "passed": false
         },
         {
           "rule_id": "ARG-RES-001",
@@ -27,14 +27,14 @@
           "passed": false
         },
         {
-          "rule_id": "MET-001",
+          "rule_id": "MET-002",
           "impact": "important",
           "passed": false
         },
         {
-          "rule_id": "MET-002",
-          "impact": "important",
-          "passed": true
+          "rule_id": "MET-004",
+          "impact": "normal",
+          "passed": false
         },
         {
           "rule_id": "MET-005",
@@ -47,61 +47,15 @@
           "passed": true
         }
       ],
-      "extension_score": 58.333333333333336,
+      "extension_score": 33.33333333333333,
       "findings": [
         {
-          "rule_id": "ARG-RES-002",
-          "rule_name": "service.version is present",
+          "rule_id": "ARG-MET-002",
+          "rule_name": "histograms have explicit bucket bounds",
           "source": "argus",
-          "service": "ad",
+          "service": "quote",
           "impact": "important",
-          "description": "Resource attributes SHOULD contain service.version. Without it, regressions cannot be correlated to deploys — the most common first question of any incident.",
-          "confidence": "sampled",
-          "stats": {
-            "observed": 1,
-            "violations": 1,
-            "ratio": 1
-          },
-          "evidence": [
-            {
-              "kind": "metric",
-              "summary": "metric http_server_request_duration_seconds",
-              "attrs": {
-                "http.route": "/ads"
-              }
-            }
-          ]
-        },
-        {
-          "rule_id": "ARG-RES-003",
-          "rule_name": "deployment.environment.name is present",
-          "source": "argus",
-          "service": "ad",
-          "impact": "normal",
-          "description": "Resource attributes SHOULD contain deployment.environment.name. Without it, prod and staging telemetry blend — and rules like LOG-001 cannot even identify production.",
-          "confidence": "sampled",
-          "stats": {
-            "observed": 1,
-            "violations": 1,
-            "ratio": 1
-          },
-          "evidence": [
-            {
-              "kind": "metric",
-              "summary": "metric http_server_request_duration_seconds",
-              "attrs": {
-                "http.route": "/ads"
-              }
-            }
-          ]
-        },
-        {
-          "rule_id": "MET-001",
-          "rule_name": "metric attributes have bound cardinality",
-          "source": "spec",
-          "service": "ad",
-          "impact": "important",
-          "description": "Attribute keys on metrics, aggregated by metric name, MUST have fewer than 10,000 unique values within a 1-hour window. High-cardinality attributes explode active series, degrading query performance and driving storage cost.",
+          "description": "Classic histogram data points MUST define explicit bucket bounds; without them no quantiles can ever be computed from the data.",
           "confidence": "sampled",
           "stats": {
             "observed": 2,
@@ -110,23 +64,86 @@
           },
           "evidence": [
             {
-              "kind": "aggregate",
-              "attrs": {
-                "attribute": "user_id",
-                "cardinality": 48211,
-                "metric": "app_ads_ad_requests_total",
-                "window": "1h"
-              }
+              "kind": "metric",
+              "summary": "metric quote_request_duration_seconds"
             }
           ]
         },
         {
-          "rule_id": "MET-005",
-          "rule_name": "metric names do not embed the unit",
-          "source": "spec",
-          "service": "ad",
+          "rule_id": "ARG-RES-002",
+          "rule_name": "service.version is present",
+          "source": "argus",
+          "service": "quote",
+          "impact": "important",
+          "description": "Resource attributes SHOULD contain service.version. Without it, regressions cannot be correlated to deploys — the most common first question of any incident.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 2,
+            "violations": 2,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "metric",
+              "summary": "metric quote_request_duration_seconds"
+            },
+            {
+              "kind": "metric",
+              "summary": "metric quote_cache_hits"
+            }
+          ]
+        },
+        {
+          "rule_id": "ARG-RES-003",
+          "rule_name": "deployment.environment.name is present",
+          "source": "argus",
+          "service": "quote",
           "impact": "normal",
-          "description": "Metric names MUST NOT contain the metric unit (e.g. collection.duration.seconds) — the unit belongs in the unit field, and name-embedded units drift when the unit changes.",
+          "description": "Resource attributes SHOULD contain deployment.environment.name. Without it, prod and staging telemetry blend — and rules like LOG-001 cannot even identify production.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 2,
+            "violations": 2,
+            "ratio": 1
+          },
+          "evidence": [
+            {
+              "kind": "metric",
+              "summary": "metric quote_request_duration_seconds"
+            },
+            {
+              "kind": "metric",
+              "summary": "metric quote_cache_hits"
+            }
+          ]
+        },
+        {
+          "rule_id": "MET-002",
+          "rule_name": "metrics have a unit",
+          "source": "spec",
+          "service": "quote",
+          "impact": "important",
+          "description": "Metrics MUST carry a unit of measurement (UCUM). A metric without a unit cannot be interpreted — 1MB or 1GB is the whole difference in the world.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 2,
+            "violations": 1,
+            "ratio": 0.5
+          },
+          "evidence": [
+            {
+              "kind": "metric",
+              "summary": "metric quote_request_duration_seconds"
+            }
+          ]
+        },
+        {
+          "rule_id": "MET-004",
+          "rule_name": "histogram buckets are consistent per metric",
+          "source": "spec",
+          "service": "quote",
+          "impact": "normal",
+          "description": "All histogram series of one metric name MUST use the same bucket layout. Mixed layouts break quantile math when aggregating across instances.",
           "confidence": "sampled",
           "stats": {
             "observed": 1,
@@ -135,11 +152,31 @@
           },
           "evidence": [
             {
-              "kind": "metric",
-              "summary": "metric http_server_request_duration_seconds",
+              "kind": "aggregate",
               "attrs": {
-                "http.route": "/ads"
+                "cardinality": 3,
+                "metric": "quote_request_duration_seconds"
               }
+            }
+          ]
+        },
+        {
+          "rule_id": "MET-005",
+          "rule_name": "metric names do not embed the unit",
+          "source": "spec",
+          "service": "quote",
+          "impact": "normal",
+          "description": "Metric names MUST NOT contain the metric unit (e.g. collection.duration.seconds) — the unit belongs in the unit field, and name-embedded units drift when the unit changes.",
+          "confidence": "sampled",
+          "stats": {
+            "observed": 2,
+            "violations": 1,
+            "ratio": 0.5
+          },
+          "evidence": [
+            {
+              "kind": "metric",
+              "summary": "metric quote_request_duration_seconds"
             }
           ]
         }
