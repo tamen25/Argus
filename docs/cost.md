@@ -57,7 +57,7 @@ report as complete.
 |---|---|---|---|
 | `SeriesSource` | Mimir | cardinality API, series per `service_name` | active-series cost (metrics) |
 | `LogBytesSource` | Loki | `sum by (service_name) (bytes_over_time(…[window]))` | log ingest cost |
-| `StorageSource` | S3 / MinIO | object inventory by storage class | storage cost *(slice 4)* |
+| `StorageSource` | S3 / MinIO | object inventory by storage class | storage cost |
 
 Metric **ingest-byte** attribution is deliberately not inferred from the
 sampled mirror; metrics cost is attributed through active series (Mimir's real
@@ -110,9 +110,26 @@ This is an honest **lower bound**: label combinations multiply series further,
 and the estimate is flagged as an estimate. New drivers (log bytes, trace
 bytes) extend pricing to more rule types without touching the pricer.
 
+## Storage lifecycle savings
+
+Argus inventories object storage by class (S3 `ListObjectsV2`, streamed so
+memory stays bounded over millions of objects; MinIO works via the same
+S3-compatible API on the kind cluster) and models cold-tiering savings:
+
+> Moving 1,000 GB from `STANDARD` to `GLACIER_IR` costs \$4.00/mo instead of
+> \$23.00/mo — **\$19.00/mo saved.**
+
+`DefaultLifecycleRules()` supplies the common transition candidates; each is
+kept only when the source class actually holds bytes and the target is both
+**priced and cheaper** on *your* pricing — an unpriced class is unknown, not
+free, and is never recommended. Whether the data is cold enough to tolerate a
+slower-retrieval class is your call; Argus only prices the move.
+
 ## Honesty
 
 Costs are **modeled, not billed** — they are exactly as accurate as the rates
 you supply, and the report says so. Attribution from a sampled telemetry
 mirror carries the same sampling caveats as scores; poller-derived volumes
-(which see everything) are preferred for cost wherever available.
+(which see everything) are preferred for cost wherever available. Lifecycle
+recommendations price a transition; they never assess whether your retention
+or retrieval requirements permit it.
