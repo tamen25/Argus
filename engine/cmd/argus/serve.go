@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -48,7 +49,7 @@ func newServeCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (/healthz, /metrics, /api/report, /api/aggregates)")
+	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (/healthz, /metrics, /api/report, /api/aggregates, /api/servicegraph)")
 	cmd.Flags().StringVar(&specVerFile, "spec-version-file", ".instrumentation-score-version", "file with the pinned Instrumentation Score spec version, echoed in reports")
 	cmd.Flags().StringVar(&otlpAddr, "otlp-grpc", "", "OTLP gRPC listen address (e.g. :4317); empty disables ingest")
 	cmd.Flags().StringVar(&rulesDir, "rules", "", "extra rule YAML directory overriding/extending built-ins")
@@ -183,6 +184,54 @@ func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline
 			rows = []rules.AggregateRow{}
 		}
 		writeJSON(w, rows)
+	})
+	// /api/servicegraph joins caller→callee edges (resolved cross-service
+	// parent references, completed trace generation only) with the latest
+	// per-service scores — the plugin's service graph page. Scores are
+	// pointers: a service can appear in an edge before it has been scored.
+	mux.HandleFunc("/api/servicegraph", func(w http.ResponseWriter, _ *http.Request) {
+		type graphNode struct {
+			Service   string   `json:"service"`
+			SpecScore *float64 `json:"spec_score,omitempty"`
+			Findings  int      `json:"findings"`
+		}
+		type graphEdge struct {
+			Source string `json:"source"`
+			Target string `json:"target"`
+			Traces int64  `json:"traces"`
+		}
+		snap := col.Snapshot()
+		nodes := map[string]*graphNode{}
+		for i := range snap.Services {
+			svc := &snap.Services[i]
+			score := svc.SpecScore
+			nodes[svc.ServiceName] = &graphNode{Service: svc.ServiceName, SpecScore: &score, Findings: len(svc.Findings)}
+		}
+		edges := []graphEdge{}
+		for _, r := range pipe.CurrentRows() {
+			if r.Aggregate != "service_dependency" {
+				continue
+			}
+			callee, _ := r.Fields["callee"].(string)
+			traces, _ := r.Fields["traces"].(int64)
+			edges = append(edges, graphEdge{Source: r.Service, Target: callee, Traces: traces})
+			for _, s := range []string{r.Service, callee} {
+				if _, ok := nodes[s]; !ok {
+					nodes[s] = &graphNode{Service: s}
+				}
+			}
+		}
+		nodeList := make([]graphNode, 0, len(nodes))
+		for _, n := range nodes {
+			nodeList = append(nodeList, *n)
+		}
+		sort.Slice(nodeList, func(i, j int) bool { return nodeList[i].Service < nodeList[j].Service })
+		writeJSON(w, map[string]any{
+			"generated_at": time.Now().UTC(),
+			"window":       window.String(),
+			"nodes":        nodeList,
+			"edges":        edges,
+		})
 	})
 	// /api/remediation?rule=ID&service=NAME renders the rule's patch template
 	// for a finding present in the CURRENT snapshot — 404 otherwise, so the

@@ -4,6 +4,7 @@ import { EmbeddedScene, SceneApp, SceneAppPage, SceneFlexItem, SceneFlexLayout, 
 import { PLUGIN_BASE_URL, ROUTES } from '../../constants';
 import { OverviewContent } from '../Overview/OverviewContent';
 import { ScoresContent } from '../Scores/ScoresContent';
+import { ServiceGraphContent } from '../ServiceGraph/ServiceGraphContent';
 
 // Scenes app shell (master plan §8: Scenes for all data-bound pages);
 // page content stays plain @grafana/ui React rendered via SceneReactObject.
@@ -36,6 +37,13 @@ function getSceneApp() {
         url: `${PLUGIN_BASE_URL}/${ROUTES.Scores}`,
         routePath: `${ROUTES.Scores}/*`,
         getScene: reactScene(ScoresContent),
+      }),
+      new SceneAppPage({
+        title: 'Service graph',
+        subTitle: 'Who calls whom — trace-derived topology, nodes colored by Instrumentation Score',
+        url: `${PLUGIN_BASE_URL}/${ROUTES.ServiceGraph}`,
+        routePath: `${ROUTES.ServiceGraph}/*`,
+        getScene: reactScene(ServiceGraphContent),
       }),
     ],
   });

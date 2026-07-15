@@ -103,6 +103,90 @@ func TestAPIRemediation(t *testing.T) {
 	}
 }
 
+func consumeLinkedSpan(p *ingest.Pipeline, svc string, traceID, spanID, parentID byte) {
+	td := ptrace.NewTraces()
+	rsp := td.ResourceSpans().AppendEmpty()
+	rsp.Resource().Attributes().PutStr("service.name", svc)
+	sp := rsp.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	sp.SetName("op")
+	sp.SetTraceID([16]byte{traceID})
+	sp.SetSpanID([8]byte{spanID})
+	if parentID != 0 {
+		sp.SetParentSpanID([8]byte{parentID})
+	}
+	p.ConsumeTraces(td)
+}
+
+// /api/servicegraph joins caller→callee trace edges with the latest scores —
+// the plugin's service graph page. Read-only, like every /api endpoint.
+func TestAPIServiceGraph(t *testing.T) {
+	rs, err := builtin.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng, err := rules.NewEngine(rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	col := rules.NewCollector(eng)
+	// controllable clock: edges come from the completed trace generation
+	now := time.Unix(1_700_000_000, 0)
+	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{Window: time.Minute, Now: func() time.Time { return now }})
+	mux := http.NewServeMux()
+	registerAPI(mux, col, pipe, rs, "test-spec-sha", time.Minute)
+
+	// one distributed trace: frontend root + client span, checkout server
+	// span whose parent is frontend's client span
+	consumeLinkedSpan(pipe, "frontend", 1, 1, 0)
+	consumeLinkedSpan(pipe, "frontend", 1, 2, 1)
+	consumeLinkedSpan(pipe, "checkout", 1, 3, 2)
+	// past the window but under 2× — the generation completes instead of
+	// aging out entirely
+	now = now.Add(90 * time.Second)
+
+	var got struct {
+		Window string `json:"window"`
+		Nodes  []struct {
+			Service   string   `json:"service"`
+			SpecScore *float64 `json:"spec_score"`
+			Findings  int      `json:"findings"`
+		} `json:"nodes"`
+		Edges []struct {
+			Source string `json:"source"`
+			Target string `json:"target"`
+			Traces int64  `json:"traces"`
+		} `json:"edges"`
+	}
+	// twice: repeated scrapes must not change collector state or the answer
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/servicegraph", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("bad JSON: %v", err)
+		}
+	}
+
+	if len(got.Edges) != 1 || got.Edges[0].Source != "frontend" || got.Edges[0].Target != "checkout" || got.Edges[0].Traces != 1 {
+		t.Errorf("edges = %+v, want frontend→checkout ×1", got.Edges)
+	}
+	if got.Window != time.Minute.String() {
+		t.Errorf("window = %q", got.Window)
+	}
+	seen := map[string]bool{}
+	for _, n := range got.Nodes {
+		seen[n.Service] = true
+		if n.SpecScore == nil {
+			t.Errorf("node %s has no spec_score despite being scored", n.Service)
+		}
+	}
+	if !seen["frontend"] || !seen["checkout"] {
+		t.Errorf("nodes = %+v, want frontend and checkout", got.Nodes)
+	}
+}
+
 // /api/aggregates exposes raw aggregate rows (the calibrate input); repeated
 // scrapes must not change collector state.
 func TestAPIAggregates(t *testing.T) {

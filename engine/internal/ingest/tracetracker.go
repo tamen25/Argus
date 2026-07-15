@@ -25,19 +25,31 @@ const maxSpansPerTrace = 512
 // maxServicesPerTrace caps the participating-service set per trace.
 const maxServicesPerTrace = 64
 
+// svcOverflow marks spans from services beyond maxServicesPerTrace: they
+// still resolve parent references but carry no caller attribution.
+const svcOverflow = 0xFF
+
+// maxGraphEdges caps distinct (caller, callee) pairs per Rows() call — a
+// defensive bound; real fleets sit at (distinct services)² far below it.
+const maxGraphEdges = 4096
+
 // traceState is GLOBAL per trace ID — spans from every service resolve into
 // the same state. The first live soak run proved why: keyed per (service,
 // trace), every downstream service scored orphan/missing-root 1.00 because
 // its parents and the root lived in other services' fragments.
 type traceState struct {
-	spans map[pcommon.SpanID]struct{}
+	// spans maps each seen span ID to the index of its service in svcList
+	// (svcOverflow past the service cap) — parent resolution plus the
+	// caller side of service_dependency edges.
+	spans map[pcommon.SpanID]uint8
 	// parents maps a referenced parent span ID to the services whose spans
 	// reference it — unresolved parents are attributed to those services
 	// (the break is visible where the dangling reference was emitted).
-	parents  map[pcommon.SpanID]map[string]struct{}
-	services map[string]struct{}
-	hasRoot  bool
-	elem     *list.Element
+	parents map[pcommon.SpanID]map[string]struct{}
+	svcIdx  map[string]uint8
+	svcList []string
+	hasRoot bool
+	elem    *list.Element
 }
 
 // TraceTracker accumulates per-trace span topology on the sampled stream to
@@ -127,20 +139,27 @@ func (t *TraceTracker) observeSpanLocked(svc string, sp ptrace.Span) {
 			t.evictions++
 		}
 		st = &traceState{
-			spans:    make(map[pcommon.SpanID]struct{}, 8),
-			parents:  make(map[pcommon.SpanID]map[string]struct{}, 8),
-			services: make(map[string]struct{}, 4),
+			spans:   make(map[pcommon.SpanID]uint8, 8),
+			parents: make(map[pcommon.SpanID]map[string]struct{}, 8),
+			svcIdx:  make(map[string]uint8, 4),
 		}
 		st.elem = t.lru.PushFront(id)
 		t.cur[id] = st
 	} else {
 		t.lru.MoveToFront(st.elem)
 	}
-	if len(st.services) < maxServicesPerTrace {
-		st.services[svc] = struct{}{}
+	idx, seen := st.svcIdx[svc]
+	if !seen {
+		if len(st.svcList) < maxServicesPerTrace {
+			idx = uint8(len(st.svcList))
+			st.svcIdx[svc] = idx
+			st.svcList = append(st.svcList, svc)
+		} else {
+			idx = svcOverflow
+		}
 	}
 	if len(st.spans) < maxSpansPerTrace {
-		st.spans[sp.SpanID()] = struct{}{}
+		st.spans[sp.SpanID()] = idx
 	}
 	if sp.ParentSpanID().IsEmpty() {
 		st.hasRoot = true
@@ -189,18 +208,42 @@ func (t *TraceTracker) Rows() []rules.AggregateRow {
 		return c
 	}
 
+	type edge struct{ caller, callee string }
+	edgeTraces := map[edge]int64{}
+
 	for _, st := range t.prev {
-		for svc := range st.services {
+		for svc := range st.svcIdx {
 			svcCounts(svc).traces++
 		}
 		// services holding a dangling parent reference in this trace
 		breakPoints := map[string]struct{}{}
+		// resolved cross-service references: caller→callee edges, deduped
+		// per trace so an edge counts traces, not spans
+		seenEdges := map[edge]struct{}{}
 		for p, refs := range st.parents {
-			if _, resolved := st.spans[p]; resolved {
+			idx, resolved := st.spans[p]
+			if !resolved {
+				for svc := range refs {
+					breakPoints[svc] = struct{}{}
+				}
 				continue
 			}
-			for svc := range refs {
-				breakPoints[svc] = struct{}{}
+			if idx == svcOverflow {
+				continue
+			}
+			caller := st.svcList[idx]
+			for callee := range refs {
+				e := edge{caller, callee}
+				if callee == caller {
+					continue
+				}
+				if _, dup := seenEdges[e]; dup {
+					continue
+				}
+				seenEdges[e] = struct{}{}
+				if _, known := edgeTraces[e]; known || len(edgeTraces) < maxGraphEdges {
+					edgeTraces[e]++
+				}
 			}
 		}
 		for svc := range breakPoints {
@@ -214,14 +257,14 @@ func (t *TraceTracker) Rows() []rules.AggregateRow {
 			} else {
 				// no root and no visible break (cap truncation): honest upper
 				// bound — every participant carries it
-				for svc := range st.services {
+				for svc := range st.svcIdx {
 					svcCounts(svc).rootless++
 				}
 			}
 		}
 	}
 
-	rows := make([]rules.AggregateRow, 0, len(perSvc))
+	rows := make([]rules.AggregateRow, 0, len(perSvc)+len(edgeTraces))
 	for svc, c := range perSvc {
 		rows = append(rows, rules.AggregateRow{
 			Service:   svc,
@@ -234,5 +277,23 @@ func (t *TraceTracker) Rows() []rules.AggregateRow {
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Service < rows[j].Service })
+
+	edges := make([]edge, 0, len(edgeTraces))
+	for e := range edgeTraces {
+		edges = append(edges, e)
+	}
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].caller != edges[j].caller {
+			return edges[i].caller < edges[j].caller
+		}
+		return edges[i].callee < edges[j].callee
+	})
+	for _, e := range edges {
+		rows = append(rows, rules.AggregateRow{
+			Service:   e.caller,
+			Aggregate: "service_dependency",
+			Fields:    map[string]any{"callee": e.callee, "traces": edgeTraces[e]},
+		})
+	}
 	return rows
 }

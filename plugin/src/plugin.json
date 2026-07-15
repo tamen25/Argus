@@ -40,6 +40,13 @@
     },
     {
       "type": "page",
+      "name": "Service graph",
+      "path": "/a/%PLUGIN_ID%/service-graph",
+      "addToNav": true,
+      "defaultNav": false
+    },
+    {
+      "type": "page",
       "icon": "cog",
       "name": "Configuration",
       "path": "/plugins/%PLUGIN_ID%",

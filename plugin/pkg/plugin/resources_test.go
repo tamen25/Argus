@@ -34,6 +34,10 @@ func fakeEngine(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"rule_id":"RES-005","formats":{"alloy.river":"// patch"}}`))
 	})
+	mux.HandleFunc("/api/servicegraph", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"nodes":[{"service":"frontend","spec_score":92.5,"findings":1}],"edges":[{"source":"frontend","target":"checkout","traces":42}]}`))
+	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -86,6 +90,30 @@ func TestScoresResourceProxiesReport(t *testing.T) {
 	}
 	if rep.SpecVersion != "test-sha" || rep.Snapshot.FleetScore != 84.7 {
 		t.Errorf("report = %+v", rep)
+	}
+}
+
+// /servicegraph proxies the engine's node/edge graph for the service graph page.
+func TestServiceGraphResourceProxies(t *testing.T) {
+	app := testApp(t, fakeEngine(t).URL)
+	res := callResource(t, app, "/servicegraph")
+	if res.Status != http.StatusOK {
+		t.Fatalf("status = %d body=%s", res.Status, res.Body)
+	}
+	var graph struct {
+		Nodes []struct {
+			Service string `json:"service"`
+		} `json:"nodes"`
+		Edges []struct {
+			Source string `json:"source"`
+			Traces int64  `json:"traces"`
+		} `json:"edges"`
+	}
+	if err := json.Unmarshal(res.Body, &graph); err != nil {
+		t.Fatal(err)
+	}
+	if len(graph.Nodes) != 1 || len(graph.Edges) != 1 || graph.Edges[0].Traces != 42 {
+		t.Errorf("graph = %+v", graph)
 	}
 }
 
