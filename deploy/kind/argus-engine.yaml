@@ -32,6 +32,11 @@ spec:
             - serve
             - --addr=:8080
             - --otlp-grpc=:4317
+            # Dev-cluster feedback loop: trace-derived aggregates (service
+            # graph edges, trace health) only surface after a completed
+            # window generation — 15m shows them fast. Soak/production use
+            # the 1h default.
+            - --cardinality-window=15m
           ports:
             - {name: http, containerPort: 8080}
             - {name: otlp-grpc, containerPort: 4317}

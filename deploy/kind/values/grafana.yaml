@@ -12,6 +12,20 @@ grafana.ini:
     # Argus plugin loads unsigned during development (Phase 1+).
     allow_loading_unsigned_plugins: tamen25-argus-app
 
+# The built Argus app plugin, copied onto the kind node:
+#   cd plugin && npm run build
+#   GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/gpx_argus_linux_amd64 ./pkg
+#   docker exec argus-control-plane mkdir -p /var/lib/argus/plugins
+#   docker cp plugin/dist argus-control-plane:/var/lib/argus/plugins/tamen25-argus-app
+extraVolumes:
+  - name: argus-plugin
+    hostPath:
+      path: /var/lib/argus/plugins
+extraVolumeMounts:
+  - name: argus-plugin
+    mountPath: /var/lib/grafana/plugins
+    readOnly: true
+
 datasources:
   datasources.yaml:
     apiVersion: 1
