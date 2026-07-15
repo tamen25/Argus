@@ -45,13 +45,30 @@ The loader is **strict**: an unknown key is an error, because a mistyped rate
 that silently prices at zero is worse than a failed load. The schema tag is
 checked so a future format bump fails loudly instead of parsing to nonsense.
 
+## Where the usage comes from
+
+`Usage` is measured by backend sources, each behind an interface (the cost
+core never imports a concrete client). Every source is optional — a stack with
+only Mimir still produces an active-series report — and `Gather` composes
+whatever is wired, returning any source error rather than presenting a partial
+report as complete.
+
+| Source | Backend | Query | Feeds |
+|---|---|---|---|
+| `SeriesSource` | Mimir | cardinality API, series per `service_name` | active-series cost (metrics) |
+| `LogBytesSource` | Loki | `sum by (service_name) (bytes_over_time(…[window]))` | log ingest cost |
+| `StorageSource` | S3 / MinIO | object inventory by storage class | storage cost *(slice 4)* |
+
+Metric **ingest-byte** attribution is deliberately not inferred from the
+sampled mirror; metrics cost is attributed through active series (Mimir's real
+driver), which the cardinality API reports exactly. Trace-byte attribution
+lands with the storage inventory.
+
 ## How usage becomes cost
 
-The cost core takes a plain `Usage` value — per-`(service, team, signal)`
-ingest bytes and active series, plus object-storage bytes by class — measured
-by the backend pollers (Mimir/Loki/Tempo/S3, each behind an interface; the
-cost core never imports a client). Pricing is **deterministic**: the same
-usage and rates always produce the same report, byte-for-byte.
+The cost core takes that `Usage` value and prices it. Pricing is
+**deterministic**: the same usage and rates always produce the same report,
+byte-for-byte.
 
 | Input | Unit | Extrapolation |
 |---|---|---|
