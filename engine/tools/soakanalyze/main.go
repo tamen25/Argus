@@ -8,6 +8,7 @@ package main
 import (
 	"encoding/csv"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -23,11 +24,14 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: soakanalyze <soak-output-dir>")
+	warmup := flag.Duration("warmup", 2*time.Hour,
+		"exclude this initial span from the memory verdict (2× the aggregate window: generation fill, not leak)")
+	flag.Parse()
+	if flag.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "usage: soakanalyze [-warmup 2h] <soak-output-dir>")
 		os.Exit(2)
 	}
-	out, err := analyze(os.Args[1])
+	out, err := analyzeWithWarmup(flag.Arg(0), *warmup)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "soakanalyze:", err)
 		os.Exit(1)
@@ -45,6 +49,10 @@ type sample struct {
 }
 
 func analyze(dir string) (string, error) {
+	return analyzeWithWarmup(dir, 2*time.Hour)
+}
+
+func analyzeWithWarmup(dir string, warmup time.Duration) (string, error) {
 	samples, err := readMetrics(filepath.Join(dir, "metrics.csv"))
 	if err != nil {
 		return "", err
@@ -53,7 +61,7 @@ func analyze(dir string) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Soak analysis — %s\n\n", filepath.Base(dir))
 	fmt.Fprintf(&b, "## Run verdicts\n\n")
-	writeMemoryVerdict(&b, samples)
+	writeMemoryVerdict(&b, samples, warmup)
 	writeRotationVerdict(&b, samples)
 	writeErrorVerdict(&b, dir)
 	writeThroughput(&b, samples)
@@ -112,7 +120,28 @@ func readMetrics(path string) ([]sample, error) {
 	return out, nil
 }
 
-func writeMemoryVerdict(b *strings.Builder, s []sample) {
+// writeMemoryVerdict judges RSS growth on post-warmup samples only: the
+// first ~2×window of a run is the two aggregate generations filling toward
+// their bounded plateau (soak-3: 40→105MB fill, then a rotation-synced
+// sawtooth around 95MB), which is exactly what bounded memory looks like.
+func writeMemoryVerdict(b *strings.Builder, s []sample, warmup time.Duration) {
+	note := ""
+	if warmup > 0 {
+		cut := s[0].ts.Add(warmup)
+		var kept []sample
+		for _, x := range s {
+			if !x.ts.Before(cut) {
+				kept = append(kept, x)
+			}
+		}
+		if len(kept) >= 4 {
+			s = kept
+			note = fmt.Sprintf(" · warmup %s excluded", warmup)
+		} else {
+			note = fmt.Sprintf(" · run shorter than the warmup (%s) — verdict includes generation fill", warmup)
+		}
+	}
+
 	q := len(s) / 4
 	if q == 0 {
 		q = 1
@@ -133,7 +162,7 @@ func writeMemoryVerdict(b *strings.Builder, s []sample) {
 	if growth > flatGrowthPercent {
 		verdict = fmt.Sprintf("GROWING beyond the %d%% bound — investigate before trusting bounded-memory claims", flatGrowthPercent)
 	}
-	fmt.Fprintf(b, "- memory: %s (rss median %.1fMB → %.1fMB, %+.1f%%)\n", verdict, f/1e6, l/1e6, growth)
+	fmt.Fprintf(b, "- memory: %s (rss median %.1fMB → %.1fMB, %+.1f%%%s)\n", verdict, f/1e6, l/1e6, growth, note)
 }
 
 func writeRotationVerdict(b *strings.Builder, s []sample) {
