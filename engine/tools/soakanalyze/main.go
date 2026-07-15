@@ -6,20 +6,18 @@
 package main
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/report"
 	"github.com/tamen25/Argus/engine/internal/rules"
+	"github.com/tamen25/Argus/engine/internal/soak"
 	"github.com/tamen25/Argus/engine/internal/stats"
 )
 
@@ -43,17 +41,12 @@ func main() {
 // which the bounded-memory verdict fails.
 const flatGrowthPercent = 15
 
-type sample struct {
-	ts                                time.Time
-	rss, pairs, evictions, itemsTotal float64
-}
-
 func analyze(dir string) (string, error) {
 	return analyzeWithWarmup(dir, 2*time.Hour)
 }
 
 func analyzeWithWarmup(dir string, warmup time.Duration) (string, error) {
-	samples, err := readMetrics(filepath.Join(dir, "metrics.csv"))
+	samples, err := soak.ReadMetrics(filepath.Join(dir, "metrics.csv"))
 	if err != nil {
 		return "", err
 	}
@@ -65,6 +58,9 @@ func analyzeWithWarmup(dir string, warmup time.Duration) (string, error) {
 	writeRotationVerdict(&b, samples)
 	writeErrorVerdict(&b, dir)
 	writeThroughput(&b, samples)
+	// Interrupted runs (daemon outage, engine restart) under-represent
+	// steady state; the same disclosure calibrate stamps on proposals.
+	fmt.Fprintf(&b, "- run continuity: %s\n", soak.CheckContinuity(samples))
 
 	if rows, name, err := lastJSON[[]rules.AggregateRow](dir, "aggregates-*.json"); err == nil {
 		fmt.Fprintf(&b, "\n## Distributions (from %s)\n\n", name)
@@ -77,60 +73,17 @@ func analyzeWithWarmup(dir string, warmup time.Duration) (string, error) {
 	return b.String(), nil
 }
 
-func readMetrics(path string) ([]sample, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-	r := csv.NewReader(f)
-	header, err := r.Read()
-	if err != nil {
-		return nil, err
-	}
-	col := map[string]int{}
-	for i, h := range header {
-		col[h] = i
-	}
-	var out []sample
-	for {
-		rec, err := r.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		num := func(name string) float64 {
-			v, _ := strconv.ParseFloat(rec[col[name]], 64)
-			return v
-		}
-		ts, _ := time.Parse(time.RFC3339, rec[col["ts"]])
-		out = append(out, sample{
-			ts:         ts,
-			rss:        num("rss_bytes"),
-			pairs:      num("pairs_tracked"),
-			evictions:  num("evictions_total"),
-			itemsTotal: num("items_traces") + num("items_metrics") + num("items_logs"),
-		})
-	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("%s: no samples", path)
-	}
-	return out, nil
-}
-
 // writeMemoryVerdict judges RSS growth on post-warmup samples only: the
 // first ~2×window of a run is the two aggregate generations filling toward
 // their bounded plateau (soak-3: 40→105MB fill, then a rotation-synced
 // sawtooth around 95MB), which is exactly what bounded memory looks like.
-func writeMemoryVerdict(b *strings.Builder, s []sample, warmup time.Duration) {
+func writeMemoryVerdict(b *strings.Builder, s []soak.Sample, warmup time.Duration) {
 	note := ""
 	if warmup > 0 {
-		cut := s[0].ts.Add(warmup)
-		var kept []sample
+		cut := s[0].TS.Add(warmup)
+		var kept []soak.Sample
 		for _, x := range s {
-			if !x.ts.Before(cut) {
+			if !x.TS.Before(cut) {
 				kept = append(kept, x)
 			}
 		}
@@ -148,10 +101,10 @@ func writeMemoryVerdict(b *strings.Builder, s []sample, warmup time.Duration) {
 	}
 	first, last := make([]float64, 0, q), make([]float64, 0, q)
 	for _, x := range s[:q] {
-		first = append(first, x.rss)
+		first = append(first, x.RSS)
 	}
 	for _, x := range s[len(s)-q:] {
-		last = append(last, x.rss)
+		last = append(last, x.RSS)
 	}
 	f, l := stats.Median(first), stats.Median(last)
 	growth := 0.0
@@ -165,10 +118,10 @@ func writeMemoryVerdict(b *strings.Builder, s []sample, warmup time.Duration) {
 	fmt.Fprintf(b, "- memory: %s (rss median %.1fMB → %.1fMB, %+.1f%%%s)\n", verdict, f/1e6, l/1e6, growth, note)
 }
 
-func writeRotationVerdict(b *strings.Builder, s []sample) {
+func writeRotationVerdict(b *strings.Builder, s []soak.Sample) {
 	rotated := false
 	for i := 1; i < len(s); i++ {
-		if s[i].pairs < s[i-1].pairs && s[i-1].pairs > 0 {
+		if s[i].Pairs < s[i-1].Pairs && s[i-1].Pairs > 0 {
 			rotated = true
 			break
 		}
@@ -178,7 +131,7 @@ func writeRotationVerdict(b *strings.Builder, s []sample) {
 	} else {
 		fmt.Fprintf(b, "- window rotation: NOT observed — run shorter than the window, or rotation broken\n")
 	}
-	fmt.Fprintf(b, "- evictions (last): %.0f\n", s[len(s)-1].evictions)
+	fmt.Fprintf(b, "- evictions (last): %.0f\n", s[len(s)-1].Evictions)
 }
 
 func writeErrorVerdict(b *strings.Builder, dir string) {
@@ -196,13 +149,13 @@ func writeErrorVerdict(b *strings.Builder, dir string) {
 	}
 }
 
-func writeThroughput(b *strings.Builder, s []sample) {
+func writeThroughput(b *strings.Builder, s []soak.Sample) {
 	first, last := s[0], s[len(s)-1]
-	elapsed := last.ts.Sub(first.ts).Seconds()
+	elapsed := last.TS.Sub(first.TS).Seconds()
 	if elapsed <= 0 {
 		return
 	}
-	fmt.Fprintf(b, "- items/sec (avg): %.1f over %s\n", (last.itemsTotal-first.itemsTotal)/elapsed, last.ts.Sub(first.ts))
+	fmt.Fprintf(b, "- items/sec (avg): %.1f over %s\n", (last.ItemsTotal-first.ItemsTotal)/elapsed, last.TS.Sub(first.TS))
 }
 
 // lastJSON decodes the lexicographically last match of pattern (zero-padded

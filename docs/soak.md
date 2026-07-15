@@ -44,6 +44,10 @@ Output lands in `soak-output/<UTC timestamp>/` (gitignored).
   boundaries, never grow monotonically.
 - **No receiver errors** — `engine-errors.log` stays empty; engine pod has
   zero restarts (`final-pods.txt`).
+- **Continuity** — the analyzer flags sampling gaps (>3× the median
+  cadence) and engine restarts (item counters going backwards) and labels
+  the run **SEGMENTED**; `rules calibrate` stamps the same disclosure on
+  any proposal built from that run's evidence.
 
 ## Analyzing
 

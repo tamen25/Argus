@@ -15,6 +15,7 @@ import (
 	"github.com/tamen25/Argus/engine/internal/report"
 	"github.com/tamen25/Argus/engine/internal/rules"
 	"github.com/tamen25/Argus/engine/internal/rules/builtin"
+	"github.com/tamen25/Argus/engine/internal/soak"
 	"github.com/tamen25/Argus/engine/internal/store"
 )
 
@@ -125,6 +126,15 @@ func runCalibrate(ctx context.Context, opts *calibrateOptions) (string, error) {
 		}
 	}
 
+	// Evidence quality travels with the evidence: a segmented soak (daemon
+	// outages, engine restarts) under-represents steady state.
+	var disclosures []string
+	if samples, err := soak.ReadMetrics(filepath.Join(opts.soakDir, "metrics.csv")); err != nil {
+		disclosures = append(disclosures, "run continuity not verifiable — no readable metrics.csv in the soak dir")
+	} else if c := soak.CheckContinuity(samples); c.Segmented() {
+		disclosures = append(disclosures, "evidence from a "+c.String()+" soak run — distributions may under-represent steady state")
+	}
+
 	props := calibrate.Propose(in)
 	if err := os.MkdirAll(opts.outDir, 0o755); err != nil {
 		return "", err
@@ -144,5 +154,5 @@ func runCalibrate(ctx context.Context, opts *calibrateOptions) (string, error) {
 		}
 	}
 
-	return calibrate.Render(props), nil
+	return calibrate.Render(props, disclosures...), nil
 }
