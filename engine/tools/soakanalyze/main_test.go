@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tamen25/Argus/engine/internal/soak"
 )
 
 // The analyzer turns a soak output dir into the summary the calibrate
@@ -38,10 +40,27 @@ func TestAnalyzeSoakDir(t *testing.T) {
 		"ARG-LOG-001", "2 services",
 		// last fleet score echoed
 		"fleet score (last): 84.7",
+		// clean fixture: continuity is affirmed, not just silent
+		"run continuity: continuous",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("summary missing %q\n--- got ---\n%s", want, out)
 		}
+	}
+}
+
+// An interrupted run (daemon outage, engine restart) must be labeled
+// SEGMENTED in the verdicts — its distributions under-represent steady state.
+func TestAnalyzeSegmentedRun(t *testing.T) {
+	out, err := analyze("testdata/soakdir-segmented")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "run continuity: SEGMENTED") {
+		t.Errorf("segmented run not disclosed:\n%s", out)
+	}
+	if !strings.Contains(out, "gap") || !strings.Contains(out, "restart") {
+		t.Errorf("gap/restart detail missing:\n%s", out)
 	}
 }
 
@@ -56,7 +75,7 @@ func TestAnalyzeMissingDir(t *testing.T) {
 // as +67% growth.
 func TestMemoryVerdictExcludesWarmup(t *testing.T) {
 	start := time.Date(2026, 7, 14, 17, 0, 0, 0, time.UTC)
-	var s []sample
+	var s []soak.Sample
 	for i := 0; i < 24; i++ { // 4h at 10-min samples
 		rss := 100e6 // plateau after warmup: 95-105MB sawtooth
 		if i%2 == 1 {
@@ -65,7 +84,7 @@ func TestMemoryVerdictExcludesWarmup(t *testing.T) {
 		if i < 12 { // first 2h: filling from 40MB
 			rss = 40e6 + float64(i)*5e6
 		}
-		s = append(s, sample{ts: start.Add(time.Duration(i) * 10 * time.Minute), rss: rss})
+		s = append(s, soak.Sample{TS: start.Add(time.Duration(i) * 10 * time.Minute), RSS: rss})
 	}
 
 	var with, without strings.Builder
@@ -87,9 +106,9 @@ func TestMemoryVerdictExcludesWarmup(t *testing.T) {
 // silently judging nothing.
 func TestMemoryVerdictShortRunFallsBack(t *testing.T) {
 	start := time.Date(2026, 7, 14, 17, 0, 0, 0, time.UTC)
-	var s []sample
+	var s []soak.Sample
 	for i := 0; i < 6; i++ {
-		s = append(s, sample{ts: start.Add(time.Duration(i) * time.Minute), rss: 50e6})
+		s = append(s, soak.Sample{TS: start.Add(time.Duration(i) * time.Minute), RSS: 50e6})
 	}
 	var b strings.Builder
 	writeMemoryVerdict(&b, s, 2*time.Hour)

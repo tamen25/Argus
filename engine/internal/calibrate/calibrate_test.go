@@ -195,6 +195,23 @@ func TestOverrideYAMLRoundTrips(t *testing.T) {
 	}
 }
 
+// Disclosures (segmented soak, unverifiable continuity) render at the top
+// of the proposal document — evidence quality is part of the proposal.
+func TestRenderCarriesDisclosures(t *testing.T) {
+	in := Input{
+		Rules:      []*rules.Rule{loadRule(t, spa003)},
+		Aggregates: rowsFor(map[string][]float64{"span_name_cardinality": {40, 130}}),
+	}
+	out := Render(Propose(in), "evidence from a SEGMENTED soak run — 1 gap(s), 1 engine restart(s)")
+	if !strings.Contains(out, "SEGMENTED") {
+		t.Errorf("disclosure missing from proposal header:\n%s", out)
+	}
+	// disclosure must precede the table so a reviewer can't miss it
+	if strings.Index(out, "SEGMENTED") > strings.Index(out, "| Rule |") {
+		t.Errorf("disclosure rendered below the table:\n%s", out)
+	}
+}
+
 // Same input, same bytes — reviewability depends on it.
 func TestRenderDeterministic(t *testing.T) {
 	in := Input{

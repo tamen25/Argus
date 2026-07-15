@@ -124,10 +124,15 @@ func toFloat(v any) (float64, bool) {
 	return 0, false
 }
 
-// Render writes the human review table (Markdown).
-func Render(props []Proposal) string {
+// Render writes the human review table (Markdown). Disclosures — evidence
+// quality caveats like a segmented soak run — render above the table where
+// a reviewer cannot miss them.
+func Render(props []Proposal, disclosures ...string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Proposed threshold overrides\n\n")
+	for _, d := range disclosures {
+		fmt.Fprintf(&b, "> ⚠️ %s\n\n", d)
+	}
 	if len(props) == 0 {
 		fmt.Fprintf(&b, "No calibratable rule had observations — nothing proposed.\n")
 		return b.String()

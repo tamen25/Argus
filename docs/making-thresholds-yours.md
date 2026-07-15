@@ -57,6 +57,10 @@ threshold sitting exactly on P99 would page on the next normal deploy.
 
 ## Caveats the output repeats
 
+- A soak interrupted by daemon outages or engine restarts is labeled
+  **SEGMENTED** at the top of the proposal — its distributions may
+  under-represent steady state. Prefer regenerating from an unbroken run.
+
 - `finding_ratio` sources (ARG-LOG-001) see **failing services only** —
   services already passing carry no stats in reports. Aggregate sources
   cover every tracked service.

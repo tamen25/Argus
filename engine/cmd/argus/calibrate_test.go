@@ -66,6 +66,22 @@ func TestRunCalibrateFromSoakDir(t *testing.T) {
 	}
 }
 
+// A soak dir whose metrics.csv shows gaps/restarts must stamp the proposal
+// with the segmented-run disclosure (evidence quality travels with the
+// evidence).
+func TestRunCalibrateDisclosesSegmentedRun(t *testing.T) {
+	md, err := runCalibrate(context.Background(), &calibrateOptions{
+		soakDir: filepath.Join("testdata", "calibrate-soak-segmented"),
+		outDir:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(md, "SEGMENTED") {
+		t.Errorf("segmented soak not disclosed in proposal:\n%s", md)
+	}
+}
+
 func TestRunCalibrateRequiresData(t *testing.T) {
 	if _, err := runCalibrate(context.Background(), &calibrateOptions{soakDir: "testdata/nope", outDir: t.TempDir()}); err == nil {
 		t.Error("want error for missing soak dir")
