@@ -1,10 +1,10 @@
-# ARGUS — Master Build Plan (Claude Code Handoff)
+# ARGUS — Master Build Plan
 
 > Repository: **https://github.com/tamen25/Argus** · License: Apache-2.0 · Codename confirmed available.
 
 ---
 
-## 0. How to use this document (instructions to Claude Code)
+## 0. How to use this document (instructions to the build agent)
 
 - This document is the single source of truth. Read it fully before writing any code.
 - Work **phase by phase, in order**. Do not start a phase until the previous phase's **Exit Gate** is met. Exit gates are non-negotiable: they exist to prevent 85%-done syndrome.
@@ -301,7 +301,7 @@ Cardinality explosion; broken trace propagation; missing service.name; deploy re
 
 ---
 
-## 10. Parallel track (NOT for Claude Code in this repo — human calendar item)
+## 10. Parallel track (NOT for the build agent in this repo — human calendar item)
 ~4 hrs/week: OBI (`opentelemetry-ebpf-instrumentation`) upstream contributions and Instrumentation Score spec rule contributions. Keep strictly out of the Argus repo.
 
 ## 11. Resume bullets this project is engineered to produce
