@@ -5,7 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/tamen25/Argus/engine/internal/cost"
 )
+
+// SeriesSource must satisfy the cost port (structural check, test-only import
+// so production mimir code stays decoupled from cost).
+var _ cost.SeriesSource = SeriesSource{}
 
 func TestLabelValues(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +54,29 @@ func TestLabelCardinality(t *testing.T) {
 	}
 	if n != 48211 {
 		t.Errorf("cardinality = %d, want 48211 (distinct values, not series)", n)
+	}
+}
+
+func TestSeriesCountByLabel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/prometheus/api/v1/cardinality/label_values" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		if got := r.URL.Query()["label_names[]"]; len(got) != 1 || got[0] != "service_name" {
+			t.Errorf("label_names = %v", got)
+		}
+		// per-value series counts feed active-series cost attribution
+		_, _ = w.Write([]byte(`{"labels":[{"label_name":"service_name","series_count":12000,"cardinality":[{"label_value":"checkout","series_count":8000},{"label_value":"cart","series_count":4000}]}]}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	got, err := c.SeriesCountByLabel(context.Background(), "service_name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["checkout"] != 8000 || got["cart"] != 4000 {
+		t.Errorf("series counts = %v, want checkout 8000 cart 4000", got)
 	}
 }
 

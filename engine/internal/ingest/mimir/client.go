@@ -65,6 +65,54 @@ func (c *Client) LabelCardinality(ctx context.Context, metric, label string) (in
 	return 0, nil
 }
 
+// SeriesCountByLabel returns the active series count per value of a label
+// (Mimir cardinality API) — the basis for active-series cost attribution
+// (e.g. label "service_name" → series per service).
+func (c *Client) SeriesCountByLabel(ctx context.Context, label string) (map[string]int64, error) {
+	var out struct {
+		Labels []struct {
+			LabelName   string `json:"label_name"`
+			Cardinality []struct {
+				LabelValue  string `json:"label_value"`
+				SeriesCount int64  `json:"series_count"`
+			} `json:"cardinality"`
+		} `json:"labels"`
+	}
+	q := url.Values{}
+	q.Add("label_names[]", label)
+	u := fmt.Sprintf("%s/prometheus/api/v1/cardinality/label_values?%s", c.base, q.Encode())
+	if err := c.get(ctx, u, &out); err != nil {
+		return nil, err
+	}
+	counts := map[string]int64{}
+	for _, l := range out.Labels {
+		if l.LabelName != label {
+			continue
+		}
+		for _, v := range l.Cardinality {
+			counts[v.LabelValue] = v.SeriesCount
+		}
+	}
+	return counts, nil
+}
+
+// SeriesSource adapts a Client to cost.SeriesSource for a chosen service
+// label (default "service_name"). Kept here so cost/ never imports a concrete
+// client; the method set satisfies the port structurally.
+type SeriesSource struct {
+	Client *Client
+	Label  string
+}
+
+// ActiveSeriesByService satisfies cost.SeriesSource.
+func (s SeriesSource) ActiveSeriesByService(ctx context.Context) (map[string]int64, error) {
+	label := s.Label
+	if label == "" {
+		label = "service_name"
+	}
+	return s.Client.SeriesCountByLabel(ctx, label)
+}
+
 func (c *Client) get(ctx context.Context, u string, into any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
