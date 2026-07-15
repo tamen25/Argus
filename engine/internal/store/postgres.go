@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5" // migrate pgx driver
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/tamen25/Argus/engine/internal/cost"
 	"github.com/tamen25/Argus/engine/internal/rules"
 )
 
@@ -112,6 +115,46 @@ func (p *Postgres) SaveSnapshot(ctx context.Context, snap *rules.Snapshot, meta 
 		return 0, err
 	}
 	return id, nil
+}
+
+// SaveCostSnapshot persists a priced cost report (Phase 2 showback history).
+// The full report is stored as JSONB; total and currency stay queryable.
+func (p *Postgres) SaveCostSnapshot(ctx context.Context, report cost.Report, takenAt time.Time) (int64, error) {
+	payload, err := json.Marshal(report)
+	if err != nil {
+		return 0, err
+	}
+	var id int64
+	err = p.pool.QueryRow(ctx,
+		`INSERT INTO cost_snapshots (taken_at, currency, total_monthly, payload)
+		 VALUES ($1, $2, $3, $4) RETURNING id`,
+		takenAt, report.Currency, report.TotalMonthly, payload).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+// LastCostSnapshot returns the most recent cost report strictly before
+// `before`. No prior snapshot is not an error — it returns (nil, zero, nil),
+// so a first run trends against an empty baseline instead of failing.
+func (p *Postgres) LastCostSnapshot(ctx context.Context, before time.Time) (*cost.Report, time.Time, error) {
+	var payload []byte
+	var takenAt time.Time
+	err := p.pool.QueryRow(ctx,
+		`SELECT payload, taken_at FROM cost_snapshots WHERE taken_at < $1 ORDER BY taken_at DESC LIMIT 1`,
+		before).Scan(&payload, &takenAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, time.Time{}, nil
+	}
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	var report cost.Report
+	if err := json.Unmarshal(payload, &report); err != nil {
+		return nil, time.Time{}, err
+	}
+	return &report, takenAt, nil
 }
 
 // RuleRatios returns every persisted finding's violation ratio grouped by

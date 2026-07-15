@@ -125,6 +125,17 @@ kept only when the source class actually holds bytes and the target is both
 free, and is never recommended. Whether the data is cold enough to tolerate a
 slower-retrieval class is your call; Argus only prices the move.
 
+## Week-over-week trends
+
+Each priced report is persisted to Postgres (`cost_snapshots`, full report as
+JSONB plus queryable total). `Trend(current, previous)` computes per-line and
+total deltas so showback answers *"what moved, and by how much?"* — a line new
+this week shows as a full increase, a vanished line as a full decrease.
+
+Percent change is **0 against a zero baseline**: a brand-new cost line has no
+prior to divide by, so it is never reported as infinite growth. The first ever
+run trends against an empty baseline rather than failing.
+
 ## Honesty
 
 Costs are **modeled, not billed** — they are exactly as accurate as the rates
