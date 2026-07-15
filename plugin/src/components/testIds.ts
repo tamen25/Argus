@@ -1,7 +1,6 @@
 export const testIds = {
   appConfig: {
-    apiKey: 'data-testid ac-api-key',
-    apiUrl: 'data-testid ac-api-url',
+    engineUrl: 'data-testid ac-engine-url',
     submit: 'data-testid ac-submit-form',
   },
   overview: {

@@ -4,7 +4,9 @@
 history, and proves — with an AI-agent benchmark — whether your observability can actually
 diagnose an incident.
 
-> Status: **Phase 0 — Foundation.** Pre-release scaffolding. Nothing here is usable yet.
+> Status: **Phase 1 — Score engine.** `argus score` (18 rules: 10 spec + 8 argus extensions),
+> remediation templates, evidence-based threshold calibration, and the Grafana app
+> (Overview / Scores / Service graph) run against a live LGTM stack. v0.1 tag pending final review.
 > Roadmap and full specification: [docs/argus-master-build-plan.md](docs/argus-master-build-plan.md).
 
 ## What Argus will do
@@ -26,6 +28,20 @@ OpenTelemetry semantic conventions (the same registry [OTel Weaver](https://gith
 validates at dev time) and extends them with cost attribution, alert backtesting, remediation
 generation, and a live-environment agent benchmark that is scenario-compatible with
 [ITBench](https://github.com/itbench-hub/ITBench).
+
+## What it looks like
+
+Live otel-demo fleet on the dev cluster — fleet Instrumentation Score with worst-first
+triage, and a trace-derived service graph whose nodes are colored by each service's score:
+
+![Fleet overview](docs/img/plugin-overview.png)
+
+![Service graph](docs/img/plugin-service-graph.png)
+
+Per-service findings carry evidence, a sampled/verified confidence badge, and a rendered
+remediation patch (Alloy River + Collector YAML) behind a copy button:
+
+![Scores and findings](docs/img/plugin-scores.png)
 
 ## Repository layout
 

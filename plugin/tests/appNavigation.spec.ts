@@ -80,7 +80,10 @@ test.describe('argus app', () => {
   test('scores drills into a finding and opens the remediation panel', async ({ gotoPage, page }) => {
     await gotoPage(`/${ROUTES.Scores}`);
     await expect(page.getByText('bounded metric attribute cardinality')).toBeVisible();
-    await expect(page.getByText('sampled')).toBeVisible();
+    // exact + scoped: the footnote paragraph also contains the word "sampled"
+    await expect(
+      page.getByTestId('data-testid scores-finding').getByText('sampled', { exact: true })
+    ).toBeVisible();
     await page.getByRole('button', { name: /view remediation/i }).click();
     await expect(page.getByText(/e2e patch body/).first()).toBeVisible();
     await expect(page.getByRole('button', { name: /copy/i }).first()).toBeVisible();
