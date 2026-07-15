@@ -1,0 +1,6 @@
+schema: argus.pricing/v2
+currency: USD
+ingest:
+  per_gb: 0.50
+active_series:
+  per_million: 0.20

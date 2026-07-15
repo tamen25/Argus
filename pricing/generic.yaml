@@ -1,0 +1,25 @@
+# Argus pricing template — generic / cloud-agnostic.
+#
+# All rates are 0 so nothing is priced until you fill them in. Copy this,
+# derive each rate from your own infrastructure spend, and point
+# `argus cost --pricing` at the result. Storage class names are free-form —
+# use whatever your object store reports (e.g. hot/warm/cold, or MinIO's
+# single default class).
+schema: argus.pricing/v1
+currency: USD
+
+ingest:
+  per_gb: 0.0
+  per_gb_by_signal:
+    logs: 0.0
+    metrics: 0.0
+    traces: 0.0
+
+active_series:
+  per_million: 0.0
+
+storage:
+  per_gb_month_by_class:
+    # MinIO and single-class stores report one class; name it whatever your
+    # inventory returns.
+    STANDARD: 0.0

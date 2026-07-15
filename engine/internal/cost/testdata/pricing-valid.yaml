@@ -1,0 +1,13 @@
+schema: argus.pricing/v1
+currency: USD
+ingest:
+  per_gb: 0.50
+  per_gb_by_signal:
+    logs: 0.40
+active_series:
+  per_million: 0.20
+storage:
+  per_gb_month_by_class:
+    STANDARD: 0.023
+    STANDARD_IA: 0.0125
+    GLACIER_IR: 0.004

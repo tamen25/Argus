@@ -1,0 +1,8 @@
+schema: argus.pricing/v1
+currency: USD
+ingest:
+  per_gb: 0.50
+  per_gb_pre_signal:   # typo: pre_signal instead of per_gb_by_signal
+    logs: 0.40
+active_series:
+  per_million: 0.20
