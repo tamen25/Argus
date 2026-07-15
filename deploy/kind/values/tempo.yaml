@@ -3,6 +3,21 @@
 tempo:
   retention: 720h
 
+  # Service graph + span metrics for Grafana's trace explorer: the
+  # metrics-generator derives traces_service_graph_* / traces_spanmetrics_*
+  # from ingested traces and remote-writes them to Mimir (same gateway the
+  # Alloy metric pipeline uses). The Tempo datasource's serviceMap points at
+  # the Mimir datasource (values/grafana.yaml).
+  metricsGenerator:
+    enabled: true
+    remoteWriteUrl: "http://mimir-gateway.lgtm.svc/api/v1/push"
+  overrides:
+    defaults:
+      metrics_generator:
+        processors:
+          - service-graphs
+          - span-metrics
+
 persistence:
   enabled: true
   size: 10Gi

@@ -46,3 +46,12 @@ datasources:
         uid: tempo
         access: proxy
         url: http://tempo.lgtm.svc:3200
+        jsonData:
+          # Service Graph tab in the trace explorer: reads the
+          # metrics-generator's traces_service_graph_* series from Mimir.
+          serviceMap:
+            datasourceUid: mimir
+          nodeGraph:
+            enabled: true
+          tracesToLogsV2:
+            datasourceUid: loki
