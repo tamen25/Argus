@@ -27,6 +27,11 @@
           "passed": true
         },
         {
+          "rule_id": "ARG-RES-004",
+          "impact": "normal",
+          "passed": true
+        },
+        {
           "rule_id": "LOG-001",
           "impact": "important",
           "passed": false
@@ -42,7 +47,7 @@
           "passed": true
         }
       ],
-      "extension_score": 75,
+      "extension_score": 78.57142857142857,
       "findings": [
         {
           "rule_id": "ARG-RES-002",
@@ -144,6 +149,11 @@
           "passed": true
         },
         {
+          "rule_id": "ARG-RES-004",
+          "impact": "normal",
+          "passed": true
+        },
+        {
           "rule_id": "LOG-001",
           "impact": "important",
           "passed": true
@@ -159,7 +169,7 @@
           "passed": true
         }
       ],
-      "extension_score": 50,
+      "extension_score": 57.14285714285714,
       "findings": [
         {
           "rule_id": "ARG-LOG-001",

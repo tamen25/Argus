@@ -1,10 +1,10 @@
 {
-  "fleet_score": 80.95238095238095,
+  "fleet_score": 88.88888888888887,
   "services": [
     {
       "service": "\u003cunknown\u003e",
-      "spec_score": 42.857142857142854,
-      "category": "Poor",
+      "spec_score": 66.66666666666666,
+      "category": "Needs Improvement",
       "results": [
         {
           "rule_id": "ARG-RES-001",
@@ -22,9 +22,24 @@
           "passed": false
         },
         {
+          "rule_id": "ARG-SPA-002",
+          "impact": "normal",
+          "passed": true
+        },
+        {
           "rule_id": "RES-005",
           "impact": "critical",
           "passed": false
+        },
+        {
+          "rule_id": "SPA-002",
+          "impact": "normal",
+          "passed": true
+        },
+        {
+          "rule_id": "SPA-003",
+          "impact": "important",
+          "passed": true
         },
         {
           "rule_id": "SPA-004",
@@ -32,7 +47,7 @@
           "passed": true
         }
       ],
-      "extension_score": 44.44444444444444,
+      "extension_score": 54.54545454545454,
       "findings": [
         {
           "rule_id": "ARG-RES-002",
@@ -126,8 +141,28 @@
           "passed": false
         },
         {
+          "rule_id": "ARG-RES-004",
+          "impact": "normal",
+          "passed": true
+        },
+        {
+          "rule_id": "ARG-SPA-002",
+          "impact": "normal",
+          "passed": true
+        },
+        {
           "rule_id": "RES-005",
           "impact": "critical",
+          "passed": true
+        },
+        {
+          "rule_id": "SPA-002",
+          "impact": "normal",
+          "passed": true
+        },
+        {
+          "rule_id": "SPA-003",
+          "impact": "important",
           "passed": true
         },
         {
@@ -136,7 +171,7 @@
           "passed": true
         }
       ],
-      "extension_score": 77.77777777777779,
+      "extension_score": 84.61538461538461,
       "findings": [
         {
           "rule_id": "ARG-RES-003",
@@ -193,8 +228,23 @@
           "passed": false
         },
         {
+          "rule_id": "ARG-SPA-002",
+          "impact": "normal",
+          "passed": true
+        },
+        {
           "rule_id": "RES-005",
           "impact": "critical",
+          "passed": true
+        },
+        {
+          "rule_id": "SPA-002",
+          "impact": "normal",
+          "passed": true
+        },
+        {
+          "rule_id": "SPA-003",
+          "impact": "important",
           "passed": true
         },
         {
@@ -203,7 +253,7 @@
           "passed": true
         }
       ],
-      "extension_score": 0,
+      "extension_score": 18.181818181818183,
       "findings": [
         {
           "rule_id": "ARG-RES-001",
