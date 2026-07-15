@@ -80,6 +80,10 @@ type Rule struct {
 	// Calibration never touches criteria — only params the spec leaves open
 	// and argus-extension params.
 	Calibration CalibrationSpec `yaml:"calibration"`
+	// Cost optionally declares how the cost engine prices this rule's
+	// findings (estimated_monthly_cost). Data, not code: the deterministic
+	// pricer reads the driver + quantity field, never rule-specific logic.
+	Cost CostSpec `yaml:"cost"`
 }
 
 // Evaluation holds the CEL criteria. Criteria evaluates to true on SUCCESS
@@ -119,6 +123,18 @@ type CalibrationSpec struct {
 	//   small_count — ceil(P99) + 1             (single-digit value spreads)
 	//   ratio       — min(1, P99 + max(0.05, 2×MAD)) rounded to 2 decimals
 	Kind string `yaml:"kind"`
+}
+
+// CostSpec declares how the cost engine prices a rule's findings. The pricer
+// reads QuantityField from each finding (Details, then the worst Evidence
+// sample) and multiplies by the Driver's unit rate.
+type CostSpec struct {
+	// Driver selects the pricing basis: currently "active_series" (the
+	// quantity is a series count priced against active_series.per_million).
+	Driver string `yaml:"driver"`
+	// QuantityField names the numeric field in the finding holding the
+	// cost-bearing quantity (e.g. "series").
+	QuantityField string `yaml:"quantity_field"`
 }
 
 // ServiceViolationParam is the dotted calibration target for the item-rule
@@ -181,5 +197,16 @@ func (r *Rule) validate() error {
 			return fmt.Errorf("rule %q: calibration.source=aggregate requires aggregate and field", r.ID)
 		}
 	}
+	if d := r.Cost.Driver; d != "" {
+		if !validCostDrivers[d] {
+			return fmt.Errorf("rule %q: invalid cost.driver %q", r.ID, d)
+		}
+		if r.Cost.QuantityField == "" {
+			return fmt.Errorf("rule %q: cost.driver requires cost.quantity_field", r.ID)
+		}
+	}
 	return nil
 }
+
+// validCostDrivers are the pricing bases the cost engine understands.
+var validCostDrivers = map[string]bool{"active_series": true}

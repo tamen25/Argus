@@ -113,3 +113,19 @@ calibration:
 Criteria are never calibrated. For spec rules, only params the spec leaves
 open may carry a calibration block. Formulas and caveats:
 [Making the thresholds yours](../making-thresholds-yours.md).
+
+## Cost (optional)
+
+A rule may declare how the cost engine prices its findings
+(`estimated_monthly_cost`). Data, not code — the deterministic pricer reads
+the driver and quantity field, never rule-specific logic.
+
+```yaml
+cost:
+  driver: active_series        # pricing basis (active_series today)
+  quantity_field: cardinality  # finding field holding the cost-bearing count
+```
+
+The quantity is taken from the finding's poller-verified `Details` first, then
+the worst (max) truncated evidence sample. Unpriceable findings are left unset,
+never zero. See [Cost & showback](../cost.md).

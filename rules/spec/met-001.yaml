@@ -31,3 +31,10 @@ calibration:
   aggregate: metric_attribute_cardinality
   field: cardinality
   kind: count
+# Prices the finding: each distinct attribute value drives ~one active series
+# for the metric, so the observed cardinality × the active-series rate is the
+# monthly cost of this high-cardinality label. An honest lower bound (label
+# combinations multiply series further); the estimate is flagged as such.
+cost:
+  driver: active_series
+  quantity_field: cardinality
