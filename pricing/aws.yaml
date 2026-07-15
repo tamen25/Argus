@@ -1,0 +1,38 @@
+# Argus pricing template — self-hosted LGTM on AWS.
+#
+# These are a STARTING POINT, not a bill. Self-hosted LGTM has no per-GB
+# invoice; the cost is the compute + storage you run it on, amortized into
+# unit rates. Replace every number with your own: divide your monthly EKS +
+# EBS + S3 spend by the volume/series/bytes those resources carried.
+#
+# Storage classes use AWS S3 list prices (us-east-1, mid-2025); ingest and
+# active-series rates are illustrative amortized compute — calibrate them.
+schema: argus.pricing/v1
+currency: USD
+
+ingest:
+  # $/GB ingested (extrapolated to a monthly bill from the measured window).
+  per_gb: 0.35
+  per_gb_by_signal:
+    # Logs are cheap to ingest, expensive to store; traces the reverse. Split
+    # them once you have per-signal compute attribution.
+    logs: 0.30
+    metrics: 0.35
+    traces: 0.40
+
+active_series:
+  # $/million active series per month — Mimir's dominant driver (ingester
+  # memory). Your real rate ≈ (ingester + store-gateway monthly $) / (millions
+  # of active series).
+  per_million: 8.00
+
+storage:
+  # $/GB-month by S3 storage class (AWS list prices).
+  per_gb_month_by_class:
+    STANDARD: 0.023
+    STANDARD_IA: 0.0125
+    INTELLIGENT_TIERING: 0.023
+    ONEZONE_IA: 0.01
+    GLACIER_IR: 0.004
+    GLACIER: 0.0036
+    DEEP_ARCHIVE: 0.00099
