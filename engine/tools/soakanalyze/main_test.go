@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // The analyzer turns a soak output dir into the summary the calibrate
@@ -47,5 +48,52 @@ func TestAnalyzeSoakDir(t *testing.T) {
 func TestAnalyzeMissingDir(t *testing.T) {
 	if _, err := analyze("testdata/nope"); err == nil {
 		t.Error("want error for missing dir")
+	}
+}
+
+// Soak-3 lesson: the first ~2×window of a run is generation fill, not leak.
+// The memory verdict must baseline AFTER warmup or a healthy plateau reads
+// as +67% growth.
+func TestMemoryVerdictExcludesWarmup(t *testing.T) {
+	start := time.Date(2026, 7, 14, 17, 0, 0, 0, time.UTC)
+	var s []sample
+	for i := 0; i < 24; i++ { // 4h at 10-min samples
+		rss := 100e6 // plateau after warmup: 95-105MB sawtooth
+		if i%2 == 1 {
+			rss = 95e6
+		}
+		if i < 12 { // first 2h: filling from 40MB
+			rss = 40e6 + float64(i)*5e6
+		}
+		s = append(s, sample{ts: start.Add(time.Duration(i) * 10 * time.Minute), rss: rss})
+	}
+
+	var with, without strings.Builder
+	writeMemoryVerdict(&without, s, 0)
+	writeMemoryVerdict(&with, s, 2*time.Hour)
+
+	if !strings.Contains(without.String(), "GROWING") {
+		t.Errorf("without warmup exclusion the fill phase should read as growth: %s", without.String())
+	}
+	if !strings.Contains(with.String(), "memory: flat") {
+		t.Errorf("with warmup excluded the plateau must read flat: %s", with.String())
+	}
+	if !strings.Contains(with.String(), "warmup") {
+		t.Errorf("verdict must disclose the excluded warmup: %s", with.String())
+	}
+}
+
+// Runs shorter than the warmup keep all samples and say so, instead of
+// silently judging nothing.
+func TestMemoryVerdictShortRunFallsBack(t *testing.T) {
+	start := time.Date(2026, 7, 14, 17, 0, 0, 0, time.UTC)
+	var s []sample
+	for i := 0; i < 6; i++ {
+		s = append(s, sample{ts: start.Add(time.Duration(i) * time.Minute), rss: 50e6})
+	}
+	var b strings.Builder
+	writeMemoryVerdict(&b, s, 2*time.Hour)
+	if !strings.Contains(b.String(), "shorter than the warmup") {
+		t.Errorf("short-run fallback must be disclosed: %s", b.String())
 	}
 }

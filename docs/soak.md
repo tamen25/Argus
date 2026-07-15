@@ -34,9 +34,12 @@ Output lands in `soak-output/<UTC timestamp>/` (gitignored).
 
 ## Success criteria
 
-- **Flat memory after warmup** — first-quarter vs last-quarter RSS median
-  within 15%. The Deployment's 256Mi limit is part of the test: an OOMKill
-  is a failed soak.
+- **Flat memory after warmup** — post-warmup first-quarter vs last-quarter
+  RSS median within 15%. The first ~2×window is the two aggregate
+  generations filling toward their bounded plateau (soak-3 measured
+  40→105MB fill, then a rotation-synced sawtooth around 95MB) — the
+  analyzer excludes it (`-warmup`, default 2h). The Deployment's 256Mi
+  limit is part of the test: an OOMKill is a failed soak.
 - **Window rotation observable** — `pairs_tracked` must sawtooth at
   boundaries, never grow monotonically.
 - **No receiver errors** — `engine-errors.log` stays empty; engine pod has
