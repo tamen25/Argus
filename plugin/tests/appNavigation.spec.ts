@@ -1,9 +1,10 @@
 import { test, expect } from './fixtures';
 import { ROUTES } from '../src/constants';
 
-// Smoke for the six-screen demo path's first two screens: Overview renders
-// the fleet score from the (mocked) engine; Scores shows a finding with its
-// confidence badge and opens the remediation panel.
+// Smoke for the Phase 1 pages: Overview renders the fleet score from the
+// (mocked) engine; Scores shows a finding with its confidence badge and
+// opens the remediation panel; Service graph draws trace-derived topology
+// with its sampling caveat.
 const report = {
   generated_at: '2026-07-14T12:00:00Z',
   argus_version: 'e2e',
@@ -46,12 +47,25 @@ const remediation = {
   },
 };
 
+const serviceGraph = {
+  generated_at: '2026-07-14T12:00:00Z',
+  window: '1m0s',
+  nodes: [
+    { service: 'frontend', spec_score: 92.5, findings: 0 },
+    { service: 'cart', spec_score: 76.9, findings: 1 },
+  ],
+  edges: [{ source: 'frontend', target: 'cart', traces: 42 }],
+};
+
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/plugins/*/resources/scores', (route) =>
     route.fulfill({ json: report })
   );
   await page.route('**/api/plugins/*/resources/remediation*', (route) =>
     route.fulfill({ json: remediation })
+  );
+  await page.route('**/api/plugins/*/resources/servicegraph', (route) =>
+    route.fulfill({ json: serviceGraph })
   );
 });
 
@@ -70,5 +84,11 @@ test.describe('argus app', () => {
     await page.getByRole('button', { name: /view remediation/i }).click();
     await expect(page.getByText(/e2e patch body/).first()).toBeVisible();
     await expect(page.getByRole('button', { name: /copy/i }).first()).toBeVisible();
+  });
+
+  test('service graph draws the topology and keeps the sampling caveat visible', async ({ gotoPage, page }) => {
+    await gotoPage(`/${ROUTES.ServiceGraph}`);
+    await expect(page.getByText(/absence here is not evidence of absence/i)).toBeVisible();
+    await expect(page.getByText('frontend').first()).toBeVisible();
   });
 });

@@ -9,9 +9,10 @@ import (
 // only ever talks to Grafana; this backend holds the engine connection
 // (master plan §3.3 — plus §8: /resources/scores et al.).
 var engineRoutes = map[string]string{
-	"/scores":      "/api/report",
-	"/aggregates":  "/api/aggregates",
-	"/remediation": "/api/remediation",
+	"/scores":       "/api/report",
+	"/aggregates":   "/api/aggregates",
+	"/remediation":  "/api/remediation",
+	"/servicegraph": "/api/servicegraph",
 }
 
 func (a *App) registerRoutes(mux *http.ServeMux) {

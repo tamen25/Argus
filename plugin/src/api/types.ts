@@ -49,6 +49,26 @@ export interface Report {
   snapshot: Snapshot;
 }
 
+export interface GraphNode {
+  service: string;
+  // absent when the service was seen in trace edges but not scored yet
+  spec_score?: number;
+  findings: number;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  traces: number;
+}
+
+export interface ServiceGraph {
+  generated_at: string;
+  window: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
 export interface Remediation {
   rule_id: string;
   service: string;

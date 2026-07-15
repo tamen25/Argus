@@ -129,6 +129,65 @@ func TestTraceTrackerResolvesAcrossServices(t *testing.T) {
 	}
 }
 
+// The tracker already sees who calls whom (resolved cross-service parent
+// references); service_dependency rows expose that as caller→callee edges
+// for the plugin's service graph. Edges count traces, not spans; self-calls
+// and unresolved parents produce no edges.
+func TestTraceTrackerServiceDependencyEdges(t *testing.T) {
+	now := time.Unix(0, 0)
+	tt := NewTraceTracker(100, time.Hour, func() time.Time { return now })
+
+	// trace 1: frontend → checkout → payment
+	tt.ObserveTraces(mkTrace("frontend", 1, []spanSpec{
+		{name: "GET /", id: 1, kind: ptrace.SpanKindServer},
+		{name: "call checkout", id: 2, parent: 1, kind: ptrace.SpanKindClient},
+	}))
+	tt.ObserveTraces(mkTrace("checkout", 1, []spanSpec{
+		{name: "checkout", id: 3, parent: 2, kind: ptrace.SpanKindServer},
+		{name: "call payment", id: 4, parent: 3, kind: ptrace.SpanKindClient},
+	}))
+	tt.ObserveTraces(mkTrace("payment", 1, []spanSpec{
+		{name: "charge", id: 5, parent: 4, kind: ptrace.SpanKindServer},
+	}))
+
+	// trace 2: frontend → checkout again — the edge counts traces, not spans
+	tt.ObserveTraces(mkTrace("frontend", 2, []spanSpec{
+		{name: "GET /", id: 1, kind: ptrace.SpanKindServer},
+		{name: "call checkout", id: 2, parent: 1, kind: ptrace.SpanKindClient},
+	}))
+	tt.ObserveTraces(mkTrace("checkout", 2, []spanSpec{
+		{name: "checkout", id: 3, parent: 2, kind: ptrace.SpanKindServer},
+	}))
+
+	// trace 3: broken at cart (parent never resolves) — no edge invented
+	tt.ObserveTraces(mkTrace("cart", 3, []spanSpec{
+		{name: "lost", id: 5, parent: 9, kind: ptrace.SpanKindInternal},
+	}))
+
+	now = now.Add(61 * time.Minute)
+	rows := tt.Rows()
+
+	edges := map[string]int64{} // "caller→callee" → traces
+	for _, r := range rows {
+		if r.Aggregate != "service_dependency" {
+			continue
+		}
+		edges[r.Service+"→"+r.Fields["callee"].(string)] = r.Fields["traces"].(int64)
+	}
+	want := map[string]int64{
+		"frontend→checkout": 2,
+		"checkout→payment":  1,
+	}
+	if len(edges) != len(want) {
+		t.Errorf("edges = %v, want exactly %v (no self-edges, nothing from cart)", edges, want)
+	}
+	for k, n := range want {
+		if edges[k] != n {
+			t.Errorf("edge %s = %d traces, want %d", k, edges[k], n)
+		}
+	}
+}
+
 func TestTraceTrackerCurrentGenerationNotReported(t *testing.T) {
 	now := time.Unix(0, 0)
 	tt := NewTraceTracker(100, time.Hour, func() time.Time { return now })

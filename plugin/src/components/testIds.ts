@@ -13,4 +13,7 @@ export const testIds = {
     finding: 'data-testid scores-finding',
     remediation: 'data-testid scores-remediation',
   },
+  serviceGraph: {
+    container: 'data-testid service-graph-container',
+  },
 };
