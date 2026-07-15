@@ -164,6 +164,49 @@ func TestLoaderRejectsBadCalibration(t *testing.T) {
 	}
 }
 
+const costRule = `
+schema: argus.rules/v1
+id: MET-001
+source: spec
+name: bounded metric attribute cardinality
+description: test
+target: metric
+impact: important
+evaluation:
+  mode: aggregate
+  aggregate: metric_attribute_cardinality
+  criteria: "agg.cardinality < params.max_cardinality"
+params:
+  max_cardinality: 10000
+cost:
+  driver: active_series
+  quantity_field: series
+`
+
+// The optional cost block declares how the cost engine prices this rule's
+// findings — data, not code.
+func TestLoaderParsesCostBlock(t *testing.T) {
+	rs, err := LoadBytes([]byte(costRule))
+	if err != nil {
+		t.Fatalf("LoadBytes: %v", err)
+	}
+	if c := rs[0].Cost; c.Driver != "active_series" || c.QuantityField != "series" {
+		t.Errorf("cost = %+v", c)
+	}
+}
+
+func TestLoaderRejectsBadCost(t *testing.T) {
+	cases := map[string]string{
+		"unknown driver":     strings.Replace(costRule, "driver: active_series", "driver: magic", 1),
+		"driver no quantity": strings.Replace(costRule, "  quantity_field: series\n", "", 1),
+	}
+	for name, yaml := range cases {
+		if _, err := LoadBytes([]byte(yaml)); err == nil {
+			t.Errorf("%s: want error, got none", name)
+		}
+	}
+}
+
 func TestLoaderRejectsDuplicateIDs(t *testing.T) {
 	if _, err := LoadBytes([]byte(validRule), []byte(validRule)); err == nil {
 		t.Error("want duplicate-id error, got nil")

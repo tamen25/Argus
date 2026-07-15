@@ -82,6 +82,34 @@ they are never multiplied by the window. Mixing those two up is the classic
 showback error; Argus keeps them distinct and documents which is which in
 every report.
 
+## Pricing findings — the signature move
+
+Every quality finding that has a cost dimension is priced: `argus score`
+attaches an `estimated_monthly_cost` so the report reads *"score 61, and here's
+the invoice for why."*
+
+Which findings are priced is **data, not code** — a rule declares a `cost:`
+block naming the pricing driver and the finding field that carries the
+cost-bearing quantity:
+
+```yaml
+# rules/spec/met-001.yaml
+cost:
+  driver: active_series      # priced against active_series.per_million
+  quantity_field: cardinality
+```
+
+For `MET-001` (bounded metric-attribute cardinality), each distinct value of a
+high-cardinality label drives roughly one active series for the metric, so the
+observed cardinality × the active-series rate is that label's monthly cost.
+The pricer reads the quantity from the finding (poller-verified `Details`
+first, else the worst truncated evidence sample, so cost is never understated)
+and leaves any finding it can't price **unset** — never a fabricated `$0`.
+
+This is an honest **lower bound**: label combinations multiply series further,
+and the estimate is flagged as an estimate. New drivers (log bytes, trace
+bytes) extend pricing to more rule types without touching the pricer.
+
 ## Honesty
 
 Costs are **modeled, not billed** — they are exactly as accurate as the rates
