@@ -2,7 +2,7 @@
   "fleet_score": 100,
   "services": [
     {
-      "service": "checkout",
+      "service": "frontend",
       "spec_score": 100,
       "category": "Excellent",
       "results": [
@@ -55,7 +55,7 @@
       "extension_score": 100
     },
     {
-      "service": "quote",
+      "service": "payment",
       "spec_score": 100,
       "category": "Excellent",
       "results": [
@@ -67,12 +67,17 @@
         {
           "rule_id": "ARG-RES-002",
           "impact": "important",
-          "passed": false
+          "passed": true
         },
         {
           "rule_id": "ARG-RES-003",
           "impact": "normal",
-          "passed": false
+          "passed": true
+        },
+        {
+          "rule_id": "ARG-RES-004",
+          "impact": "normal",
+          "passed": true
         },
         {
           "rule_id": "ARG-SPA-002",
@@ -100,55 +105,7 @@
           "passed": true
         }
       ],
-      "extension_score": 54.54545454545454,
-      "findings": [
-        {
-          "rule_id": "ARG-RES-002",
-          "rule_name": "service.version is present",
-          "source": "argus",
-          "service": "quote",
-          "impact": "important",
-          "description": "Resource attributes SHOULD contain service.version. Without it, regressions cannot be correlated to deploys — the most common first question of any incident.",
-          "confidence": "sampled",
-          "stats": {
-            "observed": 1,
-            "violations": 1,
-            "ratio": 1
-          },
-          "evidence": [
-            {
-              "kind": "span",
-              "summary": "span CalculateQuote",
-              "attrs": {
-                "service.name": "quote"
-              }
-            }
-          ]
-        },
-        {
-          "rule_id": "ARG-RES-003",
-          "rule_name": "deployment.environment.name is present",
-          "source": "argus",
-          "service": "quote",
-          "impact": "normal",
-          "description": "Resource attributes SHOULD contain deployment.environment.name. Without it, prod and staging telemetry blend — and rules like LOG-001 cannot even identify production.",
-          "confidence": "sampled",
-          "stats": {
-            "observed": 1,
-            "violations": 1,
-            "ratio": 1
-          },
-          "evidence": [
-            {
-              "kind": "span",
-              "summary": "span CalculateQuote",
-              "attrs": {
-                "service.name": "quote"
-              }
-            }
-          ]
-        }
-      ]
+      "extension_score": 100
     }
   ],
   "rules_evaluated": [

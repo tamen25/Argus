@@ -1,4 +1,4 @@
-package rules
+package rules_test
 
 import (
 	"encoding/json"
@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
-	"github.com/tamen25/Argus/engine/internal/model"
+	"github.com/tamen25/Argus/engine/internal/ingest"
+	"github.com/tamen25/Argus/engine/internal/rules"
 )
 
 var update = flag.Bool("update", false, "rewrite golden expected.json files")
@@ -21,12 +23,18 @@ var update = flag.Bool("update", false, "rewrite golden expected.json files")
 // (traces.json, metrics.json, logs.json) and aggregates.json rows; the
 // expected output is the full Snapshot in expected.json. The rules evaluated
 // are the repo's real built-in rules from /rules.
+//
+// Inputs flow through the REAL ingest pipeline (trackers included) on a
+// fixed clock that then advances past one window, so completed-window
+// aggregates like trace_health are exercised end-to-end — the soak-3
+// orphan false positive (per-service trace judgement) lived exactly in the
+// gap between rule goldens and tracker unit tests.
 func TestGolden(t *testing.T) {
-	rs, err := LoadDir(repoRules(t, "spec"), repoRules(t, "argus"))
+	rs, err := rules.LoadDir(repoRules(t, "spec"), repoRules(t, "argus"))
 	if err != nil {
 		t.Fatalf("loading built-in rules: %v", err)
 	}
-	eng, err := NewEngine(rs)
+	eng, err := rules.NewEngine(rs)
 	if err != nil {
 		t.Fatalf("engine: %v", err)
 	}
@@ -41,7 +49,13 @@ func TestGolden(t *testing.T) {
 		}
 		t.Run(dir.Name(), func(t *testing.T) {
 			base := filepath.Join("testdata", "golden", dir.Name())
-			c := NewCollector(eng)
+			c := rules.NewCollector(eng)
+
+			now := time.Unix(1_700_000_000, 0) // fixed epoch: goldens stay deterministic
+			pipe := ingest.NewPipeline(c, ingest.TrackerOpts{
+				Window: time.Hour,
+				Now:    func() time.Time { return now },
+			})
 
 			if b, err := os.ReadFile(filepath.Join(base, "traces.json")); err == nil {
 				var um ptrace.JSONUnmarshaler
@@ -49,9 +63,7 @@ func TestGolden(t *testing.T) {
 				if err != nil {
 					t.Fatalf("traces.json: %v", err)
 				}
-				for _, it := range model.FromTraces(td) {
-					c.ObserveItem(it)
-				}
+				pipe.ConsumeTraces(td)
 			}
 			if b, err := os.ReadFile(filepath.Join(base, "metrics.json")); err == nil {
 				var um pmetric.JSONUnmarshaler
@@ -59,9 +71,7 @@ func TestGolden(t *testing.T) {
 				if err != nil {
 					t.Fatalf("metrics.json: %v", err)
 				}
-				for _, it := range model.FromMetrics(md) {
-					c.ObserveItem(it)
-				}
+				pipe.ConsumeMetrics(md)
 			}
 			if b, err := os.ReadFile(filepath.Join(base, "logs.json")); err == nil {
 				var um plog.JSONUnmarshaler
@@ -69,12 +79,10 @@ func TestGolden(t *testing.T) {
 				if err != nil {
 					t.Fatalf("logs.json: %v", err)
 				}
-				for _, it := range model.FromLogs(ld) {
-					c.ObserveItem(it)
-				}
+				pipe.ConsumeLogs(ld)
 			}
 			if b, err := os.ReadFile(filepath.Join(base, "aggregates.json")); err == nil {
-				var rows []AggregateRow
+				var rows []rules.AggregateRow
 				if err := json.Unmarshal(b, &rows); err != nil {
 					t.Fatalf("aggregates.json: %v", err)
 				}
@@ -82,6 +90,11 @@ func TestGolden(t *testing.T) {
 					c.ObserveAggregate(row)
 				}
 			}
+
+			// cross one window boundary: completed-window aggregates
+			// (trace_health) judge the finished generation
+			now = now.Add(61 * time.Minute)
+			pipe.AggregateRows()
 
 			got, err := json.MarshalIndent(c.Snapshot(), "", "  ")
 			if err != nil {
