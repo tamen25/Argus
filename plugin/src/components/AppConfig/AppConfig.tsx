@@ -3,102 +3,54 @@ import { lastValueFrom } from 'rxjs';
 import { css } from '@emotion/css';
 import { AppPluginMeta, GrafanaTheme2, PluginConfigPageProps, PluginMeta } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
-import { Button, Field, FieldSet, Input, SecretInput, useStyles2 } from '@grafana/ui';
+import { Button, Field, FieldSet, Input, useStyles2 } from '@grafana/ui';
 import { testIds } from '../testIds';
 
 type AppPluginSettings = {
-  apiUrl?: string;
-};
-
-type State = {
-  // The URL to reach our custom API.
-  apiUrl: string;
-  // Tells us if the API key secret is set.
-  isApiKeySet: boolean;
-  // A secret key for our custom API.
-  apiKey: string;
+  engineUrl?: string;
 };
 
 export interface AppConfigProps extends PluginConfigPageProps<AppPluginMeta<AppPluginSettings>> {}
 
+// The only thing Argus needs configured: where the engine lives. The plugin
+// backend proxies every browser request through this URL — no credentials,
+// the engine API is read-only by design.
 const AppConfig = ({ plugin }: AppConfigProps) => {
   const s = useStyles2(getStyles);
-  const { enabled, pinned, jsonData, secureJsonFields } = plugin.meta;
-  const [state, setState] = useState<State>({
-    apiUrl: jsonData?.apiUrl || '',
-    apiKey: '',
-    isApiKeySet: Boolean(secureJsonFields?.apiKey),
-  });
+  const { enabled, pinned, jsonData } = plugin.meta;
+  const [engineUrl, setEngineUrl] = useState(jsonData?.engineUrl ?? '');
 
-  const isSubmitDisabled = Boolean(!state.apiUrl || (!state.isApiKeySet && !state.apiKey));
+  const onChange = (event: ChangeEvent<HTMLInputElement>) => setEngineUrl(event.target.value.trim());
 
-  const onResetApiKey = () =>
-    setState({
-      ...state,
-      apiKey: '',
-      isApiKeySet: false,
-    });
-
-  const onChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setState({
-      ...state,
-      [event.target.name]: event.target.value.trim(),
-    });
-  };
-
-  const onSubmit = () => {
-    if (isSubmitDisabled) {
+  const onSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!engineUrl) {
       return;
     }
-
-    updatePluginAndReload(plugin.meta.id, {
-      enabled,
-      pinned,
-      jsonData: {
-        apiUrl: state.apiUrl,
-      },
-      // This cannot be queried later by the frontend.
-      // We don't want to override it in case it was set previously and left untouched now.
-      secureJsonData: state.isApiKeySet
-        ? undefined
-        : {
-            apiKey: state.apiKey,
-          },
-    });
+    updatePluginAndReload(plugin.meta.id, { enabled, pinned, jsonData: { engineUrl } });
   };
 
   return (
     <form onSubmit={onSubmit}>
-      <FieldSet label="API Settings">
-        <Field label="API Key" description="A secret key for authenticating to our custom API">
-          <SecretInput
-            width={60}
-            id="config-api-key"
-            data-testid={testIds.appConfig.apiKey}
-            name="apiKey"
-            value={state.apiKey}
-            isConfigured={state.isApiKeySet}
-            placeholder={'Your secret API key'}
-            onChange={onChange}
-            onReset={onResetApiKey}
-          />
-        </Field>
-
-        <Field label="API Url" description="" className={s.marginTop}>
+      <FieldSet label="Engine connection">
+        <Field
+          label="Engine URL"
+          description="Base URL of the argus engine HTTP API. The plugin backend proxies all browser requests through it; the health check pings its /healthz."
+        >
           <Input
             width={60}
-            name="apiUrl"
-            id="config-api-url"
-            data-testid={testIds.appConfig.apiUrl}
-            value={state.apiUrl}
-            placeholder={`E.g.: http://mywebsite.com/api/v1`}
+            name="engineUrl"
+            id="config-engine-url"
+            data-testid={testIds.appConfig.engineUrl}
+            value={engineUrl}
+            placeholder="http://argus-engine.argus.svc:8080"
             onChange={onChange}
           />
         </Field>
 
         <div className={s.marginTop}>
-          <Button type="submit" data-testid={testIds.appConfig.submit} disabled={isSubmitDisabled}>
-            Save API settings
+          <Button type="submit" data-testid={testIds.appConfig.submit} disabled={!engineUrl}>
+            Save engine settings
           </Button>
         </div>
       </FieldSet>
@@ -109,9 +61,6 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
 export default AppConfig;
 
 const getStyles = (theme: GrafanaTheme2) => ({
-  colorWeak: css`
-    color: ${theme.colors.text.secondary};
-  `,
   marginTop: css`
     margin-top: ${theme.spacing(3)};
   `,
