@@ -60,3 +60,22 @@ npm run test:ci   # jest (components mock the backend)
 npm run e2e       # playwright smoke: Overview + Scores + Service graph against mocked resources
 npm run build
 ```
+
+### Deploying into the kind cluster's Grafana
+
+The dev Grafana (`deploy/kind/values/grafana.yaml`) mounts
+`/var/lib/argus/plugins` from the kind node as its plugin directory:
+
+```bash
+cd plugin && npm run build
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/gpx_argus_linux_amd64 ./pkg
+docker exec argus-control-plane mkdir -p /var/lib/argus/plugins
+docker cp dist argus-control-plane:/var/lib/argus/plugins/tamen25-argus-app
+kubectl rollout restart deployment/grafana -n lgtm
+# one-time: enable the app
+curl -u admin:argus-dev -X POST http://localhost:3000/api/plugins/tamen25-argus-app/settings \
+  -H 'Content-Type: application/json' -d '{"enabled":true}'
+```
+
+The backend's default `engineUrl` (`http://argus-engine.argus.svc:8080`)
+already matches the kind deployment — no settings needed.
