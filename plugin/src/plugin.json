@@ -47,6 +47,13 @@
     },
     {
       "type": "page",
+      "name": "Spend",
+      "path": "/a/%PLUGIN_ID%/spend",
+      "addToNav": true,
+      "defaultNav": false
+    },
+    {
+      "type": "page",
       "icon": "cog",
       "name": "Configuration",
       "path": "/plugins/%PLUGIN_ID%",

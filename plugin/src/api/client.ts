@@ -1,11 +1,15 @@
 import { getBackendSrv } from '@grafana/runtime';
 import pluginJson from '../plugin.json';
-import { Remediation, Report, ServiceGraph } from './types';
+import { Remediation, Report, ServiceGraph, Showback } from './types';
 
 const base = `/api/plugins/${pluginJson.id}/resources`;
 
 export function fetchReport(): Promise<Report> {
   return getBackendSrv().get<Report>(`${base}/scores`);
+}
+
+export function fetchCost(): Promise<Showback> {
+  return getBackendSrv().get<Showback>(`${base}/cost`);
 }
 
 export function fetchServiceGraph(): Promise<ServiceGraph> {

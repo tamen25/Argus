@@ -75,3 +75,60 @@ export interface Remediation {
   template: string;
   formats: Record<string, string>;
 }
+
+// Mirrors engine/internal/cost Showback JSON.
+export interface CostLine {
+  service: string;
+  team?: string;
+  signal: string;
+  ingest_monthly: number;
+  active_series_monthly: number;
+  total_monthly: number;
+}
+
+export interface StorageLine {
+  class: string;
+  gb: number;
+  monthly: number;
+}
+
+export interface CostReport {
+  currency: string;
+  lines: CostLine[];
+  storage: StorageLine[];
+  total_monthly: number;
+}
+
+export interface LifecycleRec {
+  from_class: string;
+  to_class: string;
+  gb: number;
+  current_monthly: number;
+  projected_monthly: number;
+  savings_monthly: number;
+}
+
+export interface TrendLine {
+  service: string;
+  team?: string;
+  signal: string;
+  current: number;
+  previous: number;
+  delta: number;
+  percent_delta: number;
+}
+
+export interface CostTrend {
+  currency: string;
+  lines: TrendLine[];
+  total_delta: number;
+}
+
+export interface Showback {
+  generated_at: string;
+  window: string;
+  report: CostReport;
+  lifecycle?: LifecycleRec[];
+  trend?: CostTrend;
+  notes?: string[];
+}

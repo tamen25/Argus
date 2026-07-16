@@ -5,6 +5,7 @@ import { PLUGIN_BASE_URL, ROUTES } from '../../constants';
 import { OverviewContent } from '../Overview/OverviewContent';
 import { ScoresContent } from '../Scores/ScoresContent';
 import { ServiceGraphContent } from '../ServiceGraph/ServiceGraphContent';
+import { SpendContent } from '../Spend/SpendContent';
 
 // Scenes app shell (master plan §8: Scenes for all data-bound pages);
 // page content stays plain @grafana/ui React rendered via SceneReactObject.
@@ -44,6 +45,13 @@ function getSceneApp() {
         url: `${PLUGIN_BASE_URL}/${ROUTES.ServiceGraph}`,
         routePath: `${ROUTES.ServiceGraph}/*`,
         getScene: reactScene(ServiceGraphContent),
+      }),
+      new SceneAppPage({
+        title: 'Spend',
+        subTitle: 'Showback — what each service and signal costs, storage lifecycle savings, and week-over-week trends',
+        url: `${PLUGIN_BASE_URL}/${ROUTES.Spend}`,
+        routePath: `${ROUTES.Spend}/*`,
+        getScene: reactScene(SpendContent),
       }),
     ],
   });

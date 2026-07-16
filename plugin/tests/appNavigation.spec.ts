@@ -57,6 +57,21 @@ const serviceGraph = {
   edges: [{ source: 'frontend', target: 'cart', traces: 42 }],
 };
 
+const showback = {
+  generated_at: '2026-07-14T12:00:00Z',
+  window: '1h0m0s',
+  report: {
+    currency: 'USD',
+    lines: [{ service: 'cart', signal: 'logs', ingest_monthly: 12.34, active_series_monthly: 0, total_monthly: 12.34 }],
+    storage: [{ class: 'STANDARD', gb: 1000, monthly: 23 }],
+    total_monthly: 35.34,
+  },
+  lifecycle: [
+    { from_class: 'STANDARD', to_class: 'GLACIER_IR', gb: 1000, current_monthly: 23, projected_monthly: 4, savings_monthly: 19 },
+  ],
+  notes: ['Costs are modeled from your pricing.yaml, not billed.'],
+};
+
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/plugins/*/resources/scores', (route) =>
     route.fulfill({ json: report })
@@ -66,6 +81,9 @@ test.beforeEach(async ({ page }) => {
   );
   await page.route('**/api/plugins/*/resources/servicegraph', (route) =>
     route.fulfill({ json: serviceGraph })
+  );
+  await page.route('**/api/plugins/*/resources/cost', (route) =>
+    route.fulfill({ json: showback })
   );
 });
 
@@ -93,5 +111,12 @@ test.describe('argus app', () => {
     await gotoPage(`/${ROUTES.ServiceGraph}`);
     await expect(page.getByText(/absence here is not evidence of absence/i)).toBeVisible();
     await expect(page.getByText('frontend').first()).toBeVisible();
+  });
+
+  test('spend shows the monthly total, lifecycle savings, and the modeled-not-billed note', async ({ gotoPage, page }) => {
+    await gotoPage(`/${ROUTES.Spend}`);
+    await expect(page.getByText(/35\.34/)).toBeVisible();
+    await expect(page.getByText(/STANDARD → GLACIER_IR/)).toBeVisible();
+    await expect(page.getByText(/modeled from your pricing/i)).toBeVisible();
   });
 });
