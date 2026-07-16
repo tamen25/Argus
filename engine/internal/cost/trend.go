@@ -4,21 +4,21 @@ import "sort"
 
 // TrendReport is week-over-week cost movement between two reports.
 type TrendReport struct {
-	Currency   string
-	Lines      []TrendLine
-	TotalDelta float64 // current total − previous total
+	Currency   string      `json:"currency"`
+	Lines      []TrendLine `json:"lines"`
+	TotalDelta float64     `json:"total_delta"` // current total − previous total
 }
 
 // TrendLine is one (service, signal) line's movement. A line new this period
 // has Previous 0; one that vanished has Current 0 (and a negative Delta).
 type TrendLine struct {
-	Service      string
-	Team         string
-	Signal       string
-	Current      float64
-	Previous     float64
-	Delta        float64 // Current − Previous
-	PercentDelta float64 // Delta / Previous × 100; 0 when Previous is 0
+	Service      string  `json:"service"`
+	Team         string  `json:"team,omitempty"`
+	Signal       string  `json:"signal"`
+	Current      float64 `json:"current"`
+	Previous     float64 `json:"previous"`
+	Delta        float64 `json:"delta"`         // Current − Previous
+	PercentDelta float64 `json:"percent_delta"` // Delta / Previous × 100; 0 when Previous is 0
 }
 
 // Trend computes per-line and total deltas between cur and prev. Deterministic

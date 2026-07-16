@@ -42,27 +42,27 @@ type StorageObject struct {
 
 // Report is the attributed monthly cost breakdown — the showback document.
 type Report struct {
-	Currency     string
-	Lines        []Line        // per (service, team, signal), sorted
-	Storage      []StorageLine // per storage class, sorted
-	TotalMonthly float64
+	Currency     string        `json:"currency"`
+	Lines        []Line        `json:"lines"`   // per (service, team, signal), sorted
+	Storage      []StorageLine `json:"storage"` // per storage class, sorted
+	TotalMonthly float64       `json:"total_monthly"`
 }
 
 // Line is one service/signal's attributed monthly cost.
 type Line struct {
-	Service             string
-	Team                string
-	Signal              string
-	IngestMonthly       float64
-	ActiveSeriesMonthly float64
-	TotalMonthly        float64
+	Service             string  `json:"service"`
+	Team                string  `json:"team,omitempty"`
+	Signal              string  `json:"signal"`
+	IngestMonthly       float64 `json:"ingest_monthly"`
+	ActiveSeriesMonthly float64 `json:"active_series_monthly"`
+	TotalMonthly        float64 `json:"total_monthly"`
 }
 
 // StorageLine is one storage class's monthly cost.
 type StorageLine struct {
-	Class   string
-	GB      float64
-	Monthly float64
+	Class   string  `json:"class"`
+	GB      float64 `json:"gb"`
+	Monthly float64 `json:"monthly"`
 }
 
 type lineKey struct{ service, team, signal string }
