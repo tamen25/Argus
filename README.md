@@ -31,6 +31,10 @@ generation, and a live-environment agent benchmark that is scenario-compatible w
 
 ## What it looks like
 
+A quick tour — fleet overview, per-service findings with remediation, and Spend showback:
+
+![Argus plugin tour](docs/img/demo.gif)
+
 Live otel-demo fleet on the dev cluster — fleet Instrumentation Score with worst-first
 triage, and a trace-derived service graph whose nodes are colored by each service's score:
 
