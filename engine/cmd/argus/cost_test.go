@@ -33,7 +33,11 @@ func TestRunCostRequiresASource(t *testing.T) {
 
 // A bad pricing path surfaces the loader error, not a panic.
 func TestRunCostBadPricing(t *testing.T) {
-	_, err := runCost(context.Background(), &costOptions{pricingPath: "nope.yaml", window: time.Hour, mimirURL: "http://x"})
+	_, err := runCost(context.Background(), &costOptions{
+		pricingPath:      "nope.yaml",
+		window:           time.Hour,
+		costSourceConfig: costSourceConfig{mimirURL: "http://x"},
+	})
 	if err == nil {
 		t.Error("want error for missing pricing file")
 	}

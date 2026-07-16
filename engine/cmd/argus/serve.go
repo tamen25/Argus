@@ -37,26 +37,55 @@ func newServeCmd() *cobra.Command {
 		interval    time.Duration
 		maxPairs    int
 		window      time.Duration
+		cost        serveCostConfig
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run the argus engine: OTLP receiver + /metrics score export + /healthz",
+		Short: "Run the argus engine: OTLP receiver + /metrics score export + /healthz + /api/cost",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return serve(cmd.Context(), serveConfig{
 				addr: addr, otlpAddr: otlpAddr, rulesDir: rulesDir,
 				specVersionFile: specVerFile,
 				interval:        interval, maxPairs: maxPairs, window: window,
+				cost: cost,
 			})
 		},
 	}
-	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (/healthz, /metrics, /api/report, /api/aggregates, /api/servicegraph)")
+	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (/healthz, /metrics, /api/report, /api/aggregates, /api/servicegraph, /api/cost)")
 	cmd.Flags().StringVar(&specVerFile, "spec-version-file", ".instrumentation-score-version", "file with the pinned Instrumentation Score spec version, echoed in reports")
 	cmd.Flags().StringVar(&otlpAddr, "otlp-grpc", "", "OTLP gRPC listen address (e.g. :4317); empty disables ingest")
 	cmd.Flags().StringVar(&rulesDir, "rules", "", "extra rule YAML directory overriding/extending built-ins")
 	cmd.Flags().DurationVar(&interval, "score-interval", 30*time.Second, "how often scores are recomputed and exported")
 	cmd.Flags().IntVar(&maxPairs, "max-tracked-pairs", ingest.DefaultMaxTrackedPairs, "cardinality sketch pair cap per window generation (LRU eviction beyond)")
 	cmd.Flags().DurationVar(&window, "cardinality-window", ingest.DefaultWindow, "tumbling window for cardinality aggregates")
+
+	// Cost showback endpoint (Phase 2): serves /api/cost when --cost-pricing is
+	// set; otherwise /api/cost 404s and the plugin shows "not configured".
+	f := cmd.Flags()
+	f.StringVar(&cost.pricingPath, "cost-pricing", "", "pricing.yaml enabling the /api/cost showback endpoint")
+	f.DurationVar(&cost.window, "cost-window", time.Hour, "measurement window for cost ingest-rate extrapolation")
+	f.DurationVar(&cost.cacheTTL, "cost-cache-ttl", time.Minute, "how long /api/cost caches a showback before recomputing")
+	f.StringVar(&cost.storeDSN, "cost-store-dsn", "", "Postgres DSN: persist cost snapshots and trend week-over-week")
+	f.StringVar(&cost.mimirURL, "cost-mimir-url", "", "Mimir base URL for active-series attribution")
+	f.StringVar(&cost.mimirTenant, "cost-mimir-tenant", "", "Mimir X-Scope-OrgID")
+	f.StringVar(&cost.lokiURL, "cost-loki-url", "", "Loki base URL for log-bytes attribution")
+	f.StringVar(&cost.lokiTenant, "cost-loki-tenant", "", "Loki X-Scope-OrgID")
+	f.StringVar(&cost.serviceLabel, "cost-service-label", "service_name", "label used to attribute cost by service")
+	f.StringVar(&cost.s3Bucket, "cost-s3-bucket", "", "object-storage bucket to inventory")
+	f.StringVar(&cost.s3Prefix, "cost-s3-prefix", "", "key prefix to scope the inventory")
+	f.StringVar(&cost.s3Region, "cost-s3-region", "", "AWS region (empty uses the default chain)")
+	f.StringVar(&cost.s3Endpoint, "cost-s3-endpoint", "", "custom S3 endpoint (e.g. MinIO)")
+	f.BoolVar(&cost.s3PathStyle, "cost-s3-path-style", false, "use path-style addressing (MinIO)")
 	return cmd
+}
+
+// serveCostConfig holds the /api/cost wiring for serve.
+type serveCostConfig struct {
+	costSourceConfig
+	pricingPath string
+	window      time.Duration
+	cacheTTL    time.Duration
+	storeDSN    string
 }
 
 type serveConfig struct {
@@ -65,6 +94,7 @@ type serveConfig struct {
 	interval                 time.Duration
 	maxPairs                 int
 	window                   time.Duration
+	cost                     serveCostConfig
 }
 
 // serve runs the HTTP endpoints (and, when configured, the OTLP receiver and
@@ -82,6 +112,14 @@ func serve(ctx context.Context, cfg serveConfig) error {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+
+	// Cost showback endpoint (independent of OTLP ingest). Configured →
+	// cached live report; unconfigured → 404 the plugin renders gracefully.
+	if closeStore, err := registerCostEndpoint(ctx, mux, cfg.cost); err != nil {
+		return err
+	} else if closeStore != nil {
+		defer closeStore()
+	}
 
 	// Optional ingest + score export loop.
 	if cfg.otlpAddr != "" {
