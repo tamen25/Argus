@@ -10,6 +10,31 @@ kind: Namespace
 metadata:
   name: argus
 ---
+# Dev pricing for the /api/cost showback endpoint. Modeled rates — see
+# pricing/aws.yaml; calibrate to your own infra spend before trusting numbers.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argus-pricing
+  namespace: argus
+data:
+  pricing.yaml: |
+    schema: argus.pricing/v1
+    currency: USD
+    ingest:
+      per_gb: 0.35
+      per_gb_by_signal:
+        logs: 0.30
+        metrics: 0.35
+        traces: 0.40
+    active_series:
+      per_million: 8.00
+    storage:
+      per_gb_month_by_class:
+        STANDARD: 0.023
+        STANDARD_IA: 0.0125
+        GLACIER_IR: 0.004
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,6 +62,13 @@ spec:
             # window generation — 15m shows them fast. Soak/production use
             # the 1h default.
             - --cardinality-window=15m
+            # Cost showback (Phase 2): active-series cost from Mimir, log-bytes
+            # from Loki. Storage (S3/MinIO) needs bucket creds — left off dev.
+            - --cost-pricing=/etc/argus/pricing.yaml
+            - --cost-mimir-url=http://mimir-gateway.lgtm.svc
+            - --cost-loki-url=http://loki-gateway.lgtm.svc
+          volumeMounts:
+            - {name: pricing, mountPath: /etc/argus, readOnly: true}
           ports:
             - {name: http, containerPort: 8080}
             - {name: otlp-grpc, containerPort: 4317}
@@ -49,6 +81,9 @@ spec:
             # Bounded-memory rule 3: the soak run must stay flat well under
             # this ceiling; an OOMKill here is a failed soak, not an ops issue.
             limits: {cpu: "1", memory: 256Mi}
+      volumes:
+        - name: pricing
+          configMap: {name: argus-pricing}
 ---
 apiVersion: v1
 kind: Service

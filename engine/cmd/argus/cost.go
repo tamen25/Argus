@@ -10,9 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/tamen25/Argus/engine/internal/cost"
-	"github.com/tamen25/Argus/engine/internal/ingest/loki"
-	"github.com/tamen25/Argus/engine/internal/ingest/mimir"
-	"github.com/tamen25/Argus/engine/internal/ingest/objstore"
 	"github.com/tamen25/Argus/engine/internal/store"
 )
 
@@ -20,19 +17,13 @@ import (
 var errOverBudget = errors.New("monthly cost over budget")
 
 type costOptions struct {
+	costSourceConfig
 	pricingPath string
 	window      time.Duration
 	output      string
 	outPath     string
 	storeDSN    string
 	failOver    float64
-
-	mimirURL, mimirTenant string
-	lokiURL, lokiTenant   string
-	serviceLabel          string
-
-	s3Bucket, s3Prefix, s3Region, s3Endpoint string
-	s3PathStyle                              bool
 }
 
 func newCostCmd() *cobra.Command {
@@ -93,25 +84,9 @@ func runCost(ctx context.Context, opts *costOptions) (cost.Showback, error) {
 		return cost.Showback{}, err
 	}
 
-	var srcs cost.Sources
-	if opts.mimirURL != "" {
-		srcs.Series = mimir.SeriesSource{Client: mimir.New(opts.mimirURL, opts.mimirTenant), Label: opts.serviceLabel}
-	}
-	if opts.lokiURL != "" {
-		srcs.Logs = loki.New(opts.lokiURL, opts.lokiTenant).WithServiceLabel(opts.serviceLabel)
-	}
-	if opts.s3Bucket != "" {
-		lister, err := objstore.NewS3Lister(ctx, objstore.S3Config{
-			Bucket: opts.s3Bucket, Prefix: opts.s3Prefix, Region: opts.s3Region,
-			Endpoint: opts.s3Endpoint, PathStyle: opts.s3PathStyle,
-		})
-		if err != nil {
-			return cost.Showback{}, fmt.Errorf("s3: %w", err)
-		}
-		srcs.Storage = objstore.StorageSource{Lister: lister}
-	}
-	if srcs.Series == nil && srcs.Logs == nil && srcs.Storage == nil {
-		return cost.Showback{}, errors.New("configure at least one source: --mimir-url, --loki-url, or --s3-bucket")
+	srcs, err := buildCostSources(ctx, opts.costSourceConfig)
+	if err != nil {
+		return cost.Showback{}, err
 	}
 
 	var snapStore cost.SnapshotStore

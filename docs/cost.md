@@ -136,6 +136,16 @@ Percent change is **0 against a zero baseline**: a brand-new cost line has no
 prior to divide by, so it is never reported as infinite growth. The first ever
 run trends against an empty baseline rather than failing.
 
+## Live endpoint (plugin Spend page)
+
+`argus serve --cost-pricing pricing.yaml --cost-mimir-url … --cost-loki-url …`
+exposes **`/api/cost`**, the showback JSON the plugin's Spend page reads
+(through its backend proxy). The result is cached for `--cost-cache-ttl`
+(default 1m) so the page's polling never hammers the backends, and — with
+`--cost-store-dsn` — each refresh persists a snapshot for week-over-week
+trends. With no `--cost-pricing`, `/api/cost` returns 404 and the page shows
+"not configured" rather than a misleading `$0`.
+
 ## Honesty
 
 Costs are **modeled, not billed** — they are exactly as accurate as the rates
