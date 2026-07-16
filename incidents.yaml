@@ -25,6 +25,25 @@
 
 version: 1
 incidents:
+  - id: 2026-07-16-adfailure-spike-baseline
+    title: "adFailure ON for the Phase 3 fidelity-spike alert baseline (first live for:-divergence measurement)"
+    start: "2026-07-16T21:16:00Z"
+    end:   "2026-07-16T21:30:05Z"
+    services: [ad]
+    expected_alerts: [SpanErrorRatioInstant, HighSpanErrorRatio]
+    induced: true
+    fault: scenarios/faults/toggle-flag.sh
+    notes: >-
+      First incident with live ruler rules running (deploy/kind/mimir-rules).
+      Flag patched ON 21:05Z but the ad service's flagd stream was stale from
+      the flagd restart — fault effective only after an ad rollout ~21:16Z.
+      adFailure errors ~1/10 of GetAds (~2 error spans per 5m window): sparse
+      signal, thresholds at 5% and 2% flapped (fired 21:21:04Z / resolved
+      21:22:36Z), settled at 1% + load-generator scaled 3x during the window.
+      SpanErrorRatioInstant (for:0) fired per service 21:24:05-21:27:05Z;
+      HighSpanErrorRatio (for:5m) fired exactly +5m (accounting 21:29:05Z).
+      Ruler group reload at 21:26:06Z RESET pending for:-clocks (ad's pending
+      from ~21:19 wiped) — rule edits destroy live alert state mid-incident.
   - id: 2026-07-12-adfailure-toggle-test
     title: "adFailure feature flag ON — flagd fault-injection mechanism verification"
     start: "2026-07-12T03:02:39Z"

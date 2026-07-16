@@ -60,6 +60,27 @@ adopting backtest hits the same cold start: you cannot quantify replay
 fidelity for `for:` semantics without a live baseline. The engine must say
 so rather than claim validated fidelity it cannot have.
 
+**First live measurement (2026-07-16 21:16–21:30 UTC, incident
+`2026-07-16-adfailure-spike-baseline`):** with the adFailure fault active,
+`SpanErrorRatioInstant` (`for: 0`) went active per service between 21:24:05
+and 21:27:05, and `HighSpanErrorRatio` (`for: 5m`) fired **exactly +5m** after
+its pending start (accounting: active 21:24:05 → firing 21:29:05). Three
+additional live behaviors any replay must reproduce or disclose:
+
+1. **Rule edits reset `for:` clocks.** Reloading the rule group at 21:26:06
+   wiped all pending state — ad's pending from ~21:19 restarted at 21:26:05.
+   A backtest of a rule set that changed mid-history diverges from live
+   unless it replays each rule-file era separately.
+2. **Sparse signals flap thresholds.** The fault produced ~2 error spans per
+   5m rate window; at thresholds near the signal level (5%, 2%) the alert
+   fired and resolved within 92 seconds. Pages/week estimates must model
+   this quantization, not assume smooth ratios.
+3. **Fault ≠ fault-visible.** The flag flipped at 21:05 but the ad service
+   held a stale flagd stream until a pod restart at ~21:16 — ground-truth
+   incident windows (incidents.yaml) and telemetry-visible impact windows
+   differ, and TTD must be measured against the latter with the former
+   disclosed.
+
 ### (c) Retention bounds the usable window
 
 Mimir's `compactor_blocks_retention_period` (365d on the dev cluster) bounds
