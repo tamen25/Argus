@@ -14,8 +14,16 @@ type SnapshotStore interface {
 	LastCostSnapshot(ctx context.Context, before time.Time) (*Report, time.Time, error)
 }
 
-// modeledNote is the standing honesty caveat on every cost report.
-const modeledNote = "Costs are modeled from your pricing.yaml, not billed — they are as accurate as your rates."
+// modeledNote and calibrationNote are the standing honesty caveats on every
+// cost report (architecture rule 7). Self-hosted LGTM has no invoice, so a
+// dollar figure here is a model — and the shipped rate templates are
+// illustrative until the user calibrates them. Both facts ride on every
+// rendering (Markdown, JSON, and the plugin Spend page) so a screenshot can
+// never present a modeled number as a billed one.
+const (
+	modeledNote     = "Costs are modeled from your pricing.yaml, not billed — they are as accurate as your rates."
+	calibrationNote = "Shipped pricing templates are illustrative: S3 storage classes use AWS list prices, but ingest and active-series rates are estimates — edit pricing.yaml to match your environment."
+)
 
 // Assemble runs the showback pipeline end to end: gather usage from the wired
 // sources, price it, model lifecycle savings, and — when a store is provided —
@@ -34,7 +42,7 @@ func Assemble(ctx context.Context, p *Pricing, srcs Sources, window time.Duratio
 		Window:      window.String(),
 		Report:      report,
 		Lifecycle:   LifecycleSavings(usage.Storage, DefaultLifecycleRules(), p),
-		Notes:       []string{modeledNote},
+		Notes:       []string{modeledNote, calibrationNote},
 	}
 
 	if store != nil {
