@@ -43,6 +43,13 @@ remediation patch (Alloy River + Collector YAML) behind a copy button:
 
 ![Scores and findings](docs/img/plugin-scores.png)
 
+Spend attributes the stack's modeled monthly cost by service and signal — showback for
+self-hosted LGTM. The dollar figures come from *your* `pricing.yaml` rates; the shipped
+templates are illustrative (S3 storage classes use AWS list prices, compute rates are
+estimates to calibrate), and the page says so on every view:
+
+![Spend showback](docs/img/plugin-spend.png)
+
 ## Repository layout
 
 ```
