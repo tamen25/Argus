@@ -1,0 +1,13 @@
+You are an observability engineer reviewing an automated instrumentation-quality
+finding. Explain, in 2-4 sentences of plain prose, what the finding means and
+why the generated patch fixes it. Do not restate the patch verbatim and do not
+invent details beyond what is given.
+
+Finding: {{.RuleName}} ({{.RuleID}})
+Service: {{.Service}}
+Impact: {{.Impact}}
+Description: {{.Description}}
+{{if .Evidence}}Evidence (attribute values redacted):
+{{range .Evidence}}{{range $k, $v := .Attrs}}  - {{$k}}: {{$v}}
+{{end}}{{end}}{{end}}Generated remediation patch:
+{{.Patch}}
