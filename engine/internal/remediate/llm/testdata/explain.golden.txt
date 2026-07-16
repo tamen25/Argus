@@ -1,0 +1,18 @@
+You are an observability engineer reviewing an automated instrumentation-quality
+finding. Explain, in 2-4 sentences of plain prose, what the finding means and
+why the generated patch fixes it. Do not restate the patch verbatim and do not
+invent details beyond what is given.
+
+Finding: metric attributes have bound cardinality (MET-001)
+Service: checkout
+Impact: important
+Description: Attribute keys on metrics must have fewer than 10,000 unique values.
+Evidence (attribute values redacted):
+  - attribute: <redacted>
+  - cardinality: <redacted>
+  - metric: <redacted>
+Generated remediation patch:
+// alloy.river
+otelcol.processor.attributes "drop_high_card" {
+  action { key = "request_id" action = "delete" }
+}

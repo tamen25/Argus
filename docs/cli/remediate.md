@@ -18,6 +18,11 @@ argus remediate --report report.json --finding ARG-LOG-001 --service checkout
 | `--service` | *(all)* | scope to one service |
 | `--rules` | *(built-ins)* | extra rule dir (same override semantics as `score`) |
 | `--out` | `remediations` | output directory: `<service>-<template>.alloy.river` / `.collector.yaml` |
+| `--explain` | off | also write an LLM prose explanation per finding (needs `--llm-endpoint`) |
+| `--llm-endpoint` | | OpenAI-compatible chat completions URL |
+| `--llm-model` | | model name |
+| `--llm-api-key-env` | `OPENAI_API_KEY` | env var holding the API key |
+| `--llm-no-redact` | off | send attribute values to the LLM (redaction is **on** by default) |
 
 Rendering is deterministic and template substitution uses only the
 finding's own evidence (metric/attribute names, observed cardinality,
@@ -42,5 +47,26 @@ unknown-template error listing what exists. Each template's header states
 the *preferred* fix (usually SDK-side) and what the collector-side patch
 costs you — honesty over convenience, always.
 
-LLM-drafted explanation text arrives in Phase 2 and will never modify these
-deterministic patches.
+## LLM explanations (`--explain`)
+
+With `--explain` and an OpenAI-compatible endpoint, Argus writes a
+`<service>-<template>.explanation.md` next to each patch — plain-prose context
+for *why* the finding matters and *how* the patch fixes it.
+
+```bash
+export OPENAI_API_KEY=sk-…
+argus remediate --report report.json --finding MET-001 --explain \
+  --llm-endpoint https://api.example.com/v1/chat/completions --llm-model gpt-x
+```
+
+The LLM sits strictly at the **edge** (architecture rule 2): it explains the
+already-generated deterministic patch and **never changes the patch or the
+score**. Any OpenAI-compatible endpoint works — a remote API or a self-hosted
+compatible server.
+
+**Redaction is on by default** (rule 8): attribute *values* are stripped
+before anything reaches the endpoint (keys are kept so the model sees the
+shape), and free-text evidence summaries are dropped. `--llm-no-redact` opts
+out explicitly and is reported in the run summary. Prompt *templates* are
+versioned with golden tests; model *output* is never tested — it's prose, not a
+control signal.
