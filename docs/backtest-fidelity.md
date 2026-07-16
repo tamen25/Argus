@@ -1,0 +1,121 @@
+# Backtest fidelity — Phase 3 spike design note
+
+> **Spike charter** (master plan §6.4, mandatory first task of Phase 3):
+> characterize the known failure modes of historical alert-rule replay
+> *before* building the backtest engine, so its reports state their fidelity
+> caveats from day one. Timebox: **2026-07-17 → 2026-07-24**. This note is the
+> spike's deliverable and grows as findings land; the engine's report footer
+> will always state which caveats applied to a given run.
+
+## Why replay is not re-execution
+
+`argus backtest` answers "would these rules have fired?" by re-evaluating rule
+expressions over historical Mimir data. That is **not** the same computation
+the ruler ran (or would have run) live, and the differences are exactly the
+failure modes below. A backtest that hides them produces confident nonsense —
+the one thing Argus never ships (architecture rule 7).
+
+## Failure modes and findings
+
+### (a) Rules that reference recording rules
+
+An alert like `service:span_errors:ratio_rate5m > 0.05` reads a series that
+only exists if the recording rule producing it ran historically. Replaying it
+against history where the recording rule wasn't loaded finds **no data at
+all** — silently, because absent series are not errors in PromQL.
+
+**Approach (implemented in the spike, `engine/internal/backtest/deps.go`):**
+static dependency analysis over the parsed expressions of the loaded rule set.
+Every vector selector is classified:
+
+| Class | Meaning | Replay treatment |
+|---|---|---|
+| plain series | scraped/ingested metric | replay directly |
+| defined recording | recording rule in the loaded set | **synthesis mode**: evaluate its expression inline |
+| external recording | colon-form name, not in the loaded set | cannot synthesize — flag the rule, don't guess |
+
+Synthesis-mode caveats (to quantify during the spike week): inline evaluation
+computes the recording rule at query time over raw series, while the live
+ruler evaluated it on its own `interval` and *stored* the result — staleness,
+evaluation jitter, and subquery-vs-stored semantics can all diverge. Findings
+land here.
+
+### (b) `for:` clauses and staleness under replay
+
+A `for: 5m` alert fires only after its condition held for 5 continuous
+minutes *of ruler evaluations*. Replay reconstructs that state by stepping
+queries through time, which differs from live evaluation in lookback-delta
+handling, staleness markers, and evaluation alignment.
+
+**Live baseline started 2026-07-17:** the dev Mimir ruler now runs the spike
+rule group (`deploy/kind/mimir-rules/argus-spike.yaml`) — a recording rule,
+an alert with `for: 5m`, and an identical twin with `for: 0` — so replayed
+firings can be compared against the real `ALERTS`/`ALERTS_FOR_STATE` series
+those rules write from today onward. Divergence numbers land here after
+enough sessions (and at least one induced fault) accumulate.
+
+**Finding (2026-07-17):** the dev cluster had **zero** live rule history
+before today — `ALERTS` was empty, the ruler had no rule groups. Any project
+adopting backtest hits the same cold start: you cannot quantify replay
+fidelity for `for:` semantics without a live baseline. The engine must say
+so rather than claim validated fidelity it cannot have.
+
+### (c) Retention bounds the usable window
+
+Mimir's `compactor_blocks_retention_period` (365d on the dev cluster) bounds
+how far back replay can see — but the *actual* bound is the earliest data,
+not the configured retention.
+
+**Approach (implemented, `engine/internal/backtest/window.go`):**
+`UsableWindow` binary-searches the earliest timestamp with data
+(O(log n) instant queries) and the report states the window it actually
+covered. Never fail silently on an over-wide `--from`.
+
+### (d) History is holed, not just bounded — measured
+
+The textbook version of this failure mode is series renames/relabels breaking
+continuity. The dev cluster showed a stronger version on day one:
+
+**Finding (2026-07-17, measured):** probing `count(target_info)` at 1h stride
+over the last 6 calendar days found **36 hours of data in 4–5 discontinuous
+sessions** (07-11 23:00–07-12 03:00, 07-14 06:00–21:00, 07-15 08:00–20:00,
+07-16 05:00–08:00, …) — the dev machine is only on during work sessions.
+Presence is **not monotone**, so "find the earliest sample" is not enough.
+
+**Approach (implemented, `engine/internal/backtest/segments.go`):** `Segments`
+sweeps the range at a configurable stride and returns maximal presence runs.
+The backtest evaluates **within segments only** and reports coverage — e.g.
+"36h evaluated across a 144h calendar window (25%)". A `for:` state that
+would span a gap boundary is undefined and the affected rule gets flagged.
+Per-series continuity (renames) uses the same primitive with a per-series
+matcher; a real disappearance exists in dev history (`flagd-ui` container
+removed 2026-07-11, see `incidents.yaml`) to validate against.
+
+## Consequences for the engine design
+
+1. **Fidelity caveats are structured data**, not prose: each replay result
+   carries the list of caveats that applied (synthesized recording rules,
+   coverage ratio, flagged gap-crossing `for:` states, external deps).
+   The report footer renders them; `backtest diff` refuses to compare runs
+   whose caveat sets differ materially.
+2. **Coverage before verdicts**: a rule set can only be scored against the
+   segments both the rules and the incidents actually cover; incidents
+   (from `incidents.yaml`) falling outside telemetry segments are reported
+   as *unverifiable*, not as misses.
+3. **Synthetic history is a first-class need** (master plan §3.2): real dev
+   accumulation produces short gappy sessions; demos and CI need the
+   `synth-history` generator to exercise multi-week continuous scenarios.
+4. Adapters implement two ports (`InstantQuerier` today; a range/matrix port
+   for the replay evaluator next) — Mimir concretes stay in an adapter
+   package per architecture rule 1.
+
+## Spike status
+
+- [x] Rule-file loading (Prometheus/Mimir ruler format, strict) — `rules.go`
+- [x] Recording-rule dependency detection — `deps.go`
+- [x] Usable-window probe — `window.go`
+- [x] Presence-segment mapping + live measurement on dev history — `segments.go`
+- [x] Live ruler baseline running for `for:`-divergence data — `deploy/kind/mimir-rules/`
+- [ ] Replay evaluator prototype (instant-query stepping + for-state tracking)
+- [ ] Quantified (a)/(b) divergence vs the live baseline (needs accumulated sessions + ≥1 induced fault)
+- [ ] Decision: promql engine embedding vs query stepping for v0.3 (record in DECISIONS.md)

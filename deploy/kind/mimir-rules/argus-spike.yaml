@@ -1,0 +1,32 @@
+# Phase 3 fidelity-spike rule group (master plan §6.4, failure mode (b)):
+# these run LIVE in the dev Mimir ruler from 2026-07-17 so the spike can
+# compare replayed firings against real ALERTS series over the same window.
+# The pair HighSpanErrorRatio (for: 5m) / SpanErrorRatioInstant (for: 0)
+# isolates `for:`-clause divergence; the recording rule + dependent alert
+# exercise failure mode (a) with a live baseline.
+#
+# Load with: deploy/kind/load-spike-rules.sh
+name: argus-spike
+interval: 1m
+rules:
+  - record: service:span_errors:ratio_rate5m
+    expr: |
+      sum by (service) (rate(traces_spanmetrics_calls_total{status_code="STATUS_CODE_ERROR"}[5m]))
+      /
+      sum by (service) (rate(traces_spanmetrics_calls_total[5m]))
+  - alert: HighSpanErrorRatio
+    expr: service:span_errors:ratio_rate5m > 0.05
+    for: 5m
+    labels:
+      severity: page
+      argus_spike: "true"
+    annotations:
+      summary: "Span error ratio above 5% on {{ $labels.service }}"
+  - alert: SpanErrorRatioInstant
+    expr: service:span_errors:ratio_rate5m > 0.05
+    for: 0m
+    labels:
+      severity: none
+      argus_spike: "true"
+    annotations:
+      summary: "for:-divergence twin of HighSpanErrorRatio — fires instantly"
