@@ -88,7 +88,9 @@ func Price(p *Pricing, u Usage) Report {
 		l.ActiveSeriesMonthly += float64(s.ActiveSeries) / 1e6 * p.ActiveSeries.PerMillion
 	}
 
-	r := Report{Currency: p.Currency}
+	// Non-nil slices so the JSON encodes [] not null — a nil slice as null
+	// crashes strict consumers that call .length on the array (the plugin).
+	r := Report{Currency: p.Currency, Lines: []Line{}, Storage: []StorageLine{}}
 	for _, l := range agg {
 		l.TotalMonthly = l.IngestMonthly + l.ActiveSeriesMonthly
 		r.TotalMonthly += l.TotalMonthly

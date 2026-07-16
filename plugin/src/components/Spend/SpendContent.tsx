@@ -45,6 +45,10 @@ export function SpendContent() {
   }
 
   const cur = data.report.currency;
+  // The engine marshals empty Go slices as JSON null (e.g. storage with no S3
+  // configured), so every list is coerced to an array before use.
+  const lines = data.report.lines ?? [];
+  const storage = data.report.storage ?? [];
   return (
     <div data-testid={testIds.spend.container}>
       <div className={s.total}>
@@ -66,7 +70,7 @@ export function SpendContent() {
           </tr>
         </thead>
         <tbody>
-          {data.report.lines.map((l, i) => (
+          {lines.map((l, i) => (
             <tr key={i}>
               <td>{l.service}</td><td>{l.signal}</td><td>{l.team ?? '—'}</td>
               <td className={s.num}>{money(l.ingest_monthly)}</td>
@@ -77,7 +81,7 @@ export function SpendContent() {
         </tbody>
       </table>
 
-      {data.report.storage.length > 0 && (
+      {storage.length > 0 && (
         <>
           <h3 className={s.h}>Storage by class</h3>
           <table className={s.table}>
@@ -85,7 +89,7 @@ export function SpendContent() {
               <tr><th>Class</th><th className={s.num}>GB</th><th className={s.num}>/mo</th></tr>
             </thead>
             <tbody>
-              {data.report.storage.map((st, i) => (
+              {storage.map((st, i) => (
                 <tr key={i}><td>{st.class}</td><td className={s.num}>{st.gb.toFixed(1)}</td><td className={s.num}>{money(st.monthly)}</td></tr>
               ))}
             </tbody>

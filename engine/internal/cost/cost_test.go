@@ -1,6 +1,8 @@
 package cost_test
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,6 +110,25 @@ func TestPriceAggregatesAndSorts(t *testing.T) {
 	// b/logs summed: 2 GB × 0.40 = 0.80
 	if !approx(r.Lines[1].IngestMonthly, 0.80) {
 		t.Errorf("b/logs = %v, want 0.80 (summed)", r.Lines[1].IngestMonthly)
+	}
+}
+
+// Price returns non-nil Lines and Storage so the JSON encodes [] not null —
+// a nil slice as null crashed the plugin's Spend page (.length of null).
+func TestPriceSlicesAreNonNilForJSON(t *testing.T) {
+	r := cost.Price(testPricing(), cost.Usage{Window: time.Hour}) // no streams, no storage
+	if r.Lines == nil {
+		t.Error("Lines is nil — JSON would be null, not []")
+	}
+	if r.Storage == nil {
+		t.Error("Storage is nil — JSON would be null, not []")
+	}
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"storage":[]`) || !strings.Contains(string(b), `"lines":[]`) {
+		t.Errorf("JSON has null slices: %s", b)
 	}
 }
 

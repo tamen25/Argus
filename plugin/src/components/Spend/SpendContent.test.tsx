@@ -45,6 +45,28 @@ describe('SpendContent', () => {
     expect(screen.getByText(/modeled from your pricing/i)).toBeInTheDocument();
   });
 
+  it('renders when the engine sends null slices (empty Go slices → JSON null)', async () => {
+    // the real /api/cost shape with no S3 configured: storage is null, not []
+    mockGet.mockResolvedValue({
+      generated_at: '2026-07-16T12:00:00Z',
+      window: '1h0m0s',
+      report: {
+        currency: 'USD',
+        lines: [{ service: 'kafka', signal: 'logs', ingest_monthly: 0.53, active_series_monthly: 0, total_monthly: 0.53 }],
+        storage: null,
+        total_monthly: 0.53,
+      },
+      lifecycle: null,
+      trend: null,
+      notes: ['Costs are modeled from your pricing.yaml, not billed.'],
+    } as unknown as Showback);
+    render(<SpendContent />);
+    // must not crash on storage.length of null — the total and the line render
+    // (0.53 appears as the total and in the table, so findAll)
+    expect((await screen.findAllByText(/0\.53/)).length).toBeGreaterThan(0);
+    expect(screen.getByText('kafka')).toBeInTheDocument();
+  });
+
   it('explains graciously when cost is not configured', async () => {
     // engine returns 404 when --pricing isn't set; the proxy relays it
     mockGet.mockRejectedValue({ status: 404, data: { message: 'cost reporting is not configured' } });
