@@ -12,12 +12,12 @@ type LifecycleRule struct {
 // Recommendation is a priced lifecycle transition: what the current bytes cost
 // today vs. in the target class, and the monthly saving.
 type Recommendation struct {
-	FromClass        string
-	ToClass          string
-	GB               float64
-	CurrentMonthly   float64
-	ProjectedMonthly float64
-	SavingsMonthly   float64
+	FromClass        string  `json:"from_class"`
+	ToClass          string  `json:"to_class"`
+	GB               float64 `json:"gb"`
+	CurrentMonthly   float64 `json:"current_monthly"`
+	ProjectedMonthly float64 `json:"projected_monthly"`
+	SavingsMonthly   float64 `json:"savings_monthly"`
 }
 
 // DefaultLifecycleRules are the common cold-tiering transition candidates.
