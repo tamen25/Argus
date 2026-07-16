@@ -14,16 +14,22 @@ rules:
       sum by (service) (rate(traces_spanmetrics_calls_total{status_code="STATUS_CODE_ERROR"}[5m]))
       /
       sum by (service) (rate(traces_spanmetrics_calls_total[5m]))
+  # Threshold 0.01, not 0.05: the adFailure fault transiently peaked at ~5%
+  # span errors on the ad service (restart noise in the 5m rate window) and
+  # settled near 2% — thresholds AT the signal level produced flapping
+  # (fired 21:21:04Z, resolved 21:22:36Z on 2026-07-16) instead of the
+  # sustained firing the for:-divergence measurement needs. The flapping
+  # itself is a spike finding: a threshold at the noise floor pages people.
   - alert: HighSpanErrorRatio
-    expr: service:span_errors:ratio_rate5m > 0.05
+    expr: service:span_errors:ratio_rate5m > 0.01
     for: 5m
     labels:
       severity: page
       argus_spike: "true"
     annotations:
-      summary: "Span error ratio above 5% on {{ $labels.service }}"
+      summary: "Span error ratio above 1% on {{ $labels.service }}"
   - alert: SpanErrorRatioInstant
-    expr: service:span_errors:ratio_rate5m > 0.05
+    expr: service:span_errors:ratio_rate5m > 0.01
     for: 0m
     labels:
       severity: none
