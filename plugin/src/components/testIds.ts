@@ -15,4 +15,7 @@ export const testIds = {
   serviceGraph: {
     container: 'data-testid service-graph-container',
   },
+  spend: {
+    container: 'data-testid spend-container',
+  },
 };

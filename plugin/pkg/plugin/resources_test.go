@@ -38,6 +38,10 @@ func fakeEngine(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"nodes":[{"service":"frontend","spec_score":92.5,"findings":1}],"edges":[{"source":"frontend","target":"checkout","traces":42}]}`))
 	})
+	mux.HandleFunc("/api/cost", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"generated_at":"2026-07-16T12:00:00Z","window":"1h0m0s","report":{"currency":"USD","lines":[],"storage":[],"total_monthly":39.34}}`))
+	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -114,6 +118,26 @@ func TestServiceGraphResourceProxies(t *testing.T) {
 	}
 	if len(graph.Nodes) != 1 || len(graph.Edges) != 1 || graph.Edges[0].Traces != 42 {
 		t.Errorf("graph = %+v", graph)
+	}
+}
+
+// /cost proxies the engine showback for the Spend page.
+func TestCostResourceProxies(t *testing.T) {
+	app := testApp(t, fakeEngine(t).URL)
+	res := callResource(t, app, "/cost")
+	if res.Status != http.StatusOK {
+		t.Fatalf("status = %d body=%s", res.Status, res.Body)
+	}
+	var sb struct {
+		Report struct {
+			TotalMonthly float64 `json:"total_monthly"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal(res.Body, &sb); err != nil {
+		t.Fatal(err)
+	}
+	if sb.Report.TotalMonthly != 39.34 {
+		t.Errorf("total = %v, want 39.34", sb.Report.TotalMonthly)
 	}
 }
 

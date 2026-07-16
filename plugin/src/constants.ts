@@ -6,4 +6,5 @@ export enum ROUTES {
   Overview = 'overview',
   Scores = 'scores',
   ServiceGraph = 'service-graph',
+  Spend = 'spend',
 }

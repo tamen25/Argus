@@ -4,9 +4,9 @@ The Argus app plugin (`tamen25-argus-app`) puts scores and findings where
 your team already lives. The plugin **backend** (Go) proxies every browser
 request to the engine (`/resources/scores` → `/api/report`,
 `/resources/aggregates`, `/resources/remediation`,
-`/resources/servicegraph`) — the browser never needs engine access, and
-engine status codes pass through unchanged so a 404 for an absent finding
-stays a 404.
+`/resources/servicegraph`, `/resources/cost`) — the browser never needs
+engine access, and engine status codes pass through unchanged so a 404 for an
+absent finding (or unconfigured cost) stays a 404.
 
 Engine connection: plugin settings `jsonData.engineUrl` (default
 `http://argus-engine.argus.svc:8080`, matching the kind deployment). The
@@ -50,7 +50,16 @@ mirror. A missing edge can simply mean its traces were not sampled —
 absence is not evidence of absence, and edge trace counts are lower
 bounds.
 
-Spend, Backtest, and Bench pages arrive with their phases (§3.3).
+### Spend
+
+Answers: *what does this stack cost, and where are the easy savings?* Monthly
+total, attribution by service and signal, storage by class, **lifecycle
+savings** (move cold blocks to a cheaper class — priced), and week-over-week
+movement. The modeled-not-billed caveat rides on every view and is never
+hidden. Reads `/resources/cost` (→ engine `/api/cost`); when the engine has no
+cost pricing configured the page says so plainly instead of showing `$0`.
+
+Backtest and Bench pages arrive with their phases (§3.3).
 
 ## Development
 
