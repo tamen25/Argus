@@ -1,0 +1,6 @@
+groups:
+  - name: broken
+    rules:
+      - alert: BadExpr
+        expr: "sum by ((("
+        for: not-a-duration

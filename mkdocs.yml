@@ -21,6 +21,7 @@ nav:
   - Soak testing: soak.md
   - Making the thresholds yours: making-thresholds-yours.md
   - Cost & showback: cost.md
+  - Backtest fidelity (spike): backtest-fidelity.md
   - Grafana plugin: plugin.md
   - CLI:
       - score: cli/score.md

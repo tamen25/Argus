@@ -1,0 +1,11 @@
+groups:
+  - name: argus-spike-external
+    rules:
+      # References a recording rule NOT defined in any loaded file — replay
+      # cannot evaluate it unless the recording rule ran historically.
+      - alert: SLOBurnRateFast
+        expr: slo:sli_error:ratio_rate5m{sloth_service="checkout"} > (14.4 * 0.001)
+        for: 2m
+      - alert: PlainSeriesAlert
+        expr: up{job="mimir"} == 0
+        for: 1m
