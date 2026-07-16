@@ -2,6 +2,7 @@ package cost_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,15 +74,23 @@ func TestAssembleWithStoreComputesTrendAndPersists(t *testing.T) {
 	if !store.saved {
 		t.Error("current report not persisted")
 	}
-	// honesty note always present
-	found := false
+	// both honesty caveats always ride along: modeled-not-billed and
+	// illustrative-template-rates (rule 7 — never present a modeled number
+	// as a billed one)
+	var modeled, illustrative bool
 	for _, n := range sb.Notes {
-		if n != "" {
-			found = true
+		if strings.Contains(n, "not billed") {
+			modeled = true
+		}
+		if strings.Contains(n, "illustrative") {
+			illustrative = true
 		}
 	}
-	if !found {
+	if !modeled {
 		t.Error("no modeled-not-billed note")
+	}
+	if !illustrative {
+		t.Error("no illustrative-template-rates calibration note")
 	}
 }
 

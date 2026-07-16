@@ -4,10 +4,11 @@ Argus prices your self-hosted LGTM stack: what each service, team, and signal
 *costs*, and — the signature move — the monthly cost of every quality finding.
 *"Score 61, and here's the invoice for why."*
 
-> **Phase 2, in progress.** This page documents the pricing model and the
-> deterministic cost core (shipped). Pollers, per-finding pricing, the
-> `argus cost` CLI, and the plugin Spend page land across the remaining
-> Phase 2 slices.
+> **Shipped in v0.2** — pricing model, pollers, per-finding pricing, the
+> `argus cost` CLI, and the plugin Spend page. The dollar figures are only as
+> real as your `pricing.yaml`: the shipped templates are illustrative (S3
+> storage classes use AWS list prices; ingest and active-series rates are
+> estimates to calibrate), and every report says so.
 
 ## The pricing model is data
 
@@ -149,7 +150,11 @@ trends. With no `--cost-pricing`, `/api/cost` returns 404 and the page shows
 ## Honesty
 
 Costs are **modeled, not billed** — they are exactly as accurate as the rates
-you supply, and the report says so. Attribution from a sampled telemetry
+you supply, and every rendering (Markdown, JSON, Spend page) carries two
+standing caveats: *modeled from your pricing.yaml, not billed* and *shipped
+template rates are illustrative — calibrate them*. There is no self-hosted
+invoice to be right against, so Argus never lets a modeled number pose as a
+billed one. Attribution from a sampled telemetry
 mirror carries the same sampling caveats as scores; poller-derived volumes
 (which see everything) are preferred for cost wherever available. Lifecycle
 recommendations price a transition; they never assess whether your retention
