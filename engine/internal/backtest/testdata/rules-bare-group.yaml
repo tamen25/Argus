@@ -1,0 +1,9 @@
+# Mimir ruler-API single-group format (no groups: wrapper).
+name: argus-spike
+interval: 1m
+rules:
+  - record: service:span_errors:ratio_rate5m
+    expr: sum by (service) (rate(errors_total[5m])) / sum by (service) (rate(calls_total[5m]))
+  - alert: HighSpanErrorRatio
+    expr: service:span_errors:ratio_rate5m > 0.01
+    for: 5m

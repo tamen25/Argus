@@ -37,6 +37,23 @@ func TestLoadRuleFilesValid(t *testing.T) {
 	}
 }
 
+// Mimir's ruler config API stores each group as a BARE group document
+// (name/interval/rules at top level, no groups: wrapper) — the shape
+// `mimirtool rules print` emits and deploy/kind/mimir-rules uses. The loader
+// takes both.
+func TestLoadRuleFilesBareGroup(t *testing.T) {
+	rs, err := backtest.LoadRuleFiles("testdata/rules-bare-group.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs.Groups) != 1 || rs.Groups[0].Name != "argus-spike" {
+		t.Fatalf("groups = %+v, want one group argus-spike", rs.Groups)
+	}
+	if len(rs.Groups[0].Rules) != 2 {
+		t.Errorf("rules = %d, want 2", len(rs.Groups[0].Rules))
+	}
+}
+
 func TestLoadRuleFilesRejectsGarbage(t *testing.T) {
 	if _, err := backtest.LoadRuleFiles("testdata/rules-invalid.yaml"); err == nil {
 		t.Error("garbage rule file loaded without error")
