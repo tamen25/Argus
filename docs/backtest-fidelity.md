@@ -81,6 +81,30 @@ additional live behaviors any replay must reproduce or disclose:
    differ, and TTD must be measured against the latter with the former
    disclosed.
 
+**Setback (2026-07-17):** the dev cluster was deleted before the 20:00–22:00Z
+block was cut, so the experiment window's telemetry (21:10–21:35Z) — including
+the live `ALERTS` baseline — was lost with the WAL (a documented Phase 0
+acceptance: unflushed WAL ~2h is lost on recreation). Incident
+`2026-07-16-adfailure-spike-baseline` now sits in the registry with **no
+surviving telemetry**, making it the canonical *unverifiable* incident the
+coverage-before-verdicts design predicted. The live divergence comparison
+re-runs on the recreated cluster later in the spike week.
+
+**Replay validated against preserved history (2026-07-17, measured):** a
+minimal read-only stack (MinIO + `grafana/mimir` monolithic,
+`target=query-frontend,querier,store-gateway` so nothing writes into the
+preserved bucket) over the surviving blocks ran
+`argus backtest replay --synthesize` for 2026-07-16 14:40–20:00Z — a window
+where the spike rules **never ran live**:
+
+- coverage honestly reported: **1h14m of the 5h20m calendar window**, 2 segments;
+- the synthesized recording rule found real error episodes (Docker-recovery
+  and flagd-restart noise) predating the rules' existence;
+- `SpanErrorRatioInstant` (for: 0) fired **28 times**; `HighSpanErrorRatio`
+  (for: 5m) fired **once** (accounting, condition sustained 15m) — the `for:`
+  clause suppressed 27 of 28 would-be pages on identical data, which is the
+  pages/week story `backtest diff` exists to tell.
+
 ### (c) Retention bounds the usable window
 
 Mimir's `compactor_blocks_retention_period` (365d on the dev cluster) bounds
@@ -137,6 +161,8 @@ removed 2026-07-11, see `incidents.yaml`) to validate against.
 - [x] Usable-window probe — `window.go`
 - [x] Presence-segment mapping + live measurement on dev history — `segments.go`
 - [x] Live ruler baseline running for `for:`-divergence data — `deploy/kind/mimir-rules/`
-- [ ] Replay evaluator prototype (instant-query stepping + for-state tracking)
-- [ ] Quantified (a)/(b) divergence vs the live baseline (needs accumulated sessions + ≥1 induced fault)
+- [x] Replay evaluator prototype (instant-query stepping + for-state tracking) — `replay.go`
+- [x] Recording-rule synthesis prototype (inline substitution, unsound cases refused) — `synth.go`
+- [x] Mimir adapter + `argus backtest replay` CLI harness; validated end-to-end on preserved real history (28 vs 1 firings above)
+- [ ] Quantified (a)/(b) divergence vs a live baseline (first baseline lost with the WAL — re-run on the recreated cluster, then compare)
 - [ ] Decision: promql engine embedding vs query stepping for v0.3 (record in DECISIONS.md)

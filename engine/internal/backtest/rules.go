@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -43,9 +44,10 @@ type Rule struct {
 }
 
 // LoadRuleFiles strictly parses Prometheus/Mimir ruler rule files (Sloth and
-// Pyrra emit the same format). Any parse or validation error fails the load —
-// a backtest against a silently half-loaded rule set would report misses that
-// are really loader bugs.
+// Pyrra emit the same format; Mimir's ruler config API stores BARE group
+// documents without the groups: wrapper — accepted too). Any parse or
+// validation error fails the load — a backtest against a silently half-loaded
+// rule set would report misses that are really loader bugs.
 func LoadRuleFiles(paths ...string) (RuleSet, error) {
 	var rs RuleSet
 	for _, path := range paths {
@@ -56,9 +58,15 @@ func LoadRuleFiles(paths ...string) (RuleSet, error) {
 		// strict: unknown fields rejected, expressions validated by the real
 		// PromQL parser, UTF-8 metric names allowed (Prometheus 3.x default)
 		discard := slog.New(slog.NewTextHandler(io.Discard, nil))
-		groups, errs := rulefmt.Parse(b, false, model.UTF8Validation, parser.NewParser(parser.Options{}), discard)
+		promql := parser.NewParser(parser.Options{})
+		groups, errs := rulefmt.Parse(b, false, model.UTF8Validation, promql, discard)
 		if len(errs) > 0 {
-			return RuleSet{}, fmt.Errorf("parsing rules %s: %w", path, errs[0])
+			// retry as a bare ruler-API group (name/interval/rules top-level)
+			wrapped := append([]byte("groups:\n"), indent(b)...)
+			var errs2 []error
+			if groups, errs2 = rulefmt.Parse(wrapped, false, model.UTF8Validation, promql, discard); len(errs2) > 0 {
+				return RuleSet{}, fmt.Errorf("parsing rules %s: %w", path, errs[0])
+			}
 		}
 		for _, g := range groups.Groups {
 			grp := Group{Name: g.Name, Interval: time.Duration(g.Interval)}
@@ -79,4 +87,24 @@ func LoadRuleFiles(paths ...string) (RuleSet, error) {
 		}
 	}
 	return rs, nil
+}
+
+// indent re-indents a bare ruler-API group document as one list item under a
+// groups: key: first content line gets the "- " marker, the rest four spaces.
+func indent(b []byte) []byte {
+	lines := strings.Split(string(b), "\n")
+	marked := false
+	for i, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" {
+			continue
+		}
+		if !marked && !strings.HasPrefix(trimmed, "#") {
+			lines[i] = "  - " + l
+			marked = true
+			continue
+		}
+		lines[i] = "    " + l
+	}
+	return []byte(strings.Join(lines, "\n"))
 }

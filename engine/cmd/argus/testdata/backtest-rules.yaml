@@ -1,0 +1,7 @@
+groups:
+  - name: cli-smoke
+    interval: 1m
+    rules:
+      - alert: HighErr
+        expr: errors_ratio > 0.05
+        for: 2m
