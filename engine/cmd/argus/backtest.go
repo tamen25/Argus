@@ -28,7 +28,7 @@ func newBacktestCmd() *cobra.Command {
 		Use:   "backtest",
 		Short: "Replay alert rules against historical Mimir data (Phase 3)",
 	}
-	cmd.AddCommand(newBacktestReplayCmd(), newBacktestRunCmd())
+	cmd.AddCommand(newBacktestReplayCmd(), newBacktestRunCmd(), newBacktestDiffCmd())
 	return cmd
 }
 

@@ -34,6 +34,50 @@ parse is an error, never a silently empty rule set.
 | `--probe-expr` | presence probe for coverage mapping (default `count(target_info)`) |
 | `--synthesize` | inline recording rules defined in the loaded set — for history where they never ran |
 
+## `argus backtest run`
+
+Replays alert rules over history and **scores them against the incident
+registry** (`incidents.yaml`): detections with TTD, missed incidents,
+unverifiable incidents (no telemetry coverage — never counted as misses),
+false positives (fires outside every incident window ± `--grace`),
+pages/week extrapolated over *covered* time, and flappiness (firing
+intervals per detected incident). Renders Markdown or JSON (`--output`).
+
+```bash
+argus backtest run \
+  --rules rules/alerts.yaml \
+  --incidents incidents.yaml \
+  --slo slo/checkout.yaml \
+  --mimir-url http://mimir-gateway.lgtm.svc --mimir-tenant anonymous \
+  --from 2026-07-18T05:00:00Z --to 2026-07-18T06:00:00Z
+```
+
+`--slo` takes a burn-rate policy file: multi-window burn-rate alert rules
+(standard 5m/1h + 30m/6h fast/slow pairs, or custom windows) are generated
+from the policy and replayed alongside `--rules`, so an SLO change is
+backtested exactly like a rule change.
+
+## `argus backtest diff` — the CI gate
+
+Replays rule set A (current) and rule set B (proposed) over the same covered
+window and diffs the set-level verdicts — an incident counts as detected if
+*any* rule in the set fired for it:
+
+```bash
+argus backtest diff \
+  --rules-a rules/current/ --rules-b rules/proposed/ \
+  --incidents incidents.yaml \
+  --mimir-url … --from … --to … \
+  --max-ttd-regression 5m --max-pages-week 50
+```
+
+- **Losing a detection always fails.** Gained detections are reported.
+- `--max-ttd-regression` fails when any incident's best TTD worsens beyond it.
+- `--max-pages-week` fails when set B's total exceeds the budget.
+- Exit code is non-zero on regression — wire it straight into CI.
+- Reports over different coverage are **refused, not fudged**: both sets are
+  replayed in one invocation over identical segments.
+
 ## Replay is not re-execution
 
 Every report ends with the **fidelity caveats** that applied — coverage
