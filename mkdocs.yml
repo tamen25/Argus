@@ -28,6 +28,7 @@ nav:
       - remediate: cli/remediate.md
       - cost: cli/cost.md
       - backtest: cli/backtest.md
+      - devtools: cli/devtools.md
   - Rules:
       - Authoring: rules/authoring.md
       - RES-005: rules/res-005.md
