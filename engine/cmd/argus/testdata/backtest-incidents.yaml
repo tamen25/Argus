@@ -1,0 +1,12 @@
+version: 1
+incidents:
+  - id: inc-ad-errors
+    title: "ad error episode (CLI smoke)"
+    start: "2026-07-16T12:02:00Z"
+    end:   "2026-07-16T12:11:00Z"
+    services: [ad]
+  - id: inc-outside
+    title: "incident with no telemetry in the replayed window"
+    start: "2026-07-19T09:00:00Z"
+    end:   "2026-07-19T09:30:00Z"
+    services: [cart]
