@@ -78,6 +78,17 @@ argus backtest diff \
 - Reports over different coverage are **refused, not fudged**: both sets are
   replayed in one invocation over identical segments.
 
+## Live endpoint (plugin Backtest page)
+
+`argus serve --backtest-rules alerts.yaml --backtest-mimir-url … --backtest-incidents incidents.yaml`
+exposes **`/api/backtest`**, the report JSON the plugin's Backtest page reads
+(through its backend proxy). The endpoint replays a rolling
+`--backtest-window` (default 7 days) ending now, caches the result for
+`--backtest-cache-ttl` (default 15m) so polling never re-runs the replay, and
+reloads the rule and incident files each recompute so edits are reflected
+without a restart. With no `--backtest-rules` it returns 404 and the page
+shows "not configured" rather than an empty report.
+
 ## Replay is not re-execution
 
 Every report ends with the **fidelity caveats** that applied — coverage
