@@ -25,6 +25,23 @@
 
 version: 1
 incidents:
+  - id: 2026-07-18-adfailure-baseline-2
+    title: "adFailure ON — fidelity-spike baseline re-run (first baseline lost with WAL)"
+    start: "2026-07-18T05:16:23Z"
+    end:   "2026-07-18T05:29:31Z"
+    services: [ad]
+    expected_alerts: [SpanErrorRatioInstant, HighSpanErrorRatio]
+    induced: true
+    fault: scenarios/faults/toggle-flag.sh
+    notes: >-
+      Flag on 05:16:13Z, ad restarted immediately (stale-flagd-stream lesson
+      from the first run). Live: instant twin firing from 05:18Z samples,
+      for:5m firing 05:23-05:35Z. Replayed same window both modes: direct
+      -1 step vs live, synthesized matches live, for: exact everywhere, no
+      missed/extra firings. Post-fault flapping at the 1% threshold continued
+      past 05:45Z (ad-restart EventStream noise) — end time here is the
+      fault-off toggle; telemetry-visible impact ran longer, as measured and
+      expected (see docs/backtest-fidelity.md).
   - id: 2026-07-16-adfailure-spike-baseline
     title: "adFailure ON for the Phase 3 fidelity-spike alert baseline (first live for:-divergence measurement)"
     start: "2026-07-16T21:16:00Z"

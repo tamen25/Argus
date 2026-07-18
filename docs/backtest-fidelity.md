@@ -105,6 +105,33 @@ where the spike rules **never ran live**:
   clause suppressed 27 of 28 would-be pages on identical data, which is the
   pages/week story `backtest diff` exists to tell.
 
+**Quantified (2026-07-18, incident `2026-07-18-adfailure-baseline-2`):** the
+re-run baseline captured live twins AND was replayed over the same window
+(direct mode against the stored recording-rule series = pure (b); synthesize
+mode = (a) on identical data):
+
+| | instant (`for: 0`) fired | `for: 5m` fired | `for:` delta |
+|---|---|---|---|
+| live ALERTS (1m samples) | 05:18:00 | 05:23:00 | +5m |
+| direct replay | 05:17:00 | 05:22:00 | +5m |
+| synthesized replay | 05:18:00 | 05:23:00 | +5m |
+
+- **Replay-vs-live divergence: ±1 evaluation step** (ruler evaluates on its
+  own offset; replay steps on aligned minutes). No missed and no extra
+  firings across all services in the window, including the post-fault
+  flapping.
+- **Synthesis-vs-direct: +1 step systematic lag** (stored samples carry the
+  ruler's evaluation lookback; inline evaluation computes fresh at query
+  time), identical firing sets otherwise.
+- `for:` duration is preserved **exactly** in every mode.
+
+**Decision — query stepping, not promql-engine embedding (recorded in
+DECISIONS.md):** stepping reproduced live behavior to within one evaluation
+interval on a real baseline, and its error mode (step alignment) is simple to
+state as a caveat. Embedding the engine would chase sub-step staleness
+semantics at the cost of a far larger surface (storage adapters, lookback
+internals) for accuracy the caveat already bounds honestly.
+
 ### (c) Retention bounds the usable window
 
 Mimir's `compactor_blocks_retention_period` (365d on the dev cluster) bounds
@@ -164,5 +191,9 @@ removed 2026-07-11, see `incidents.yaml`) to validate against.
 - [x] Replay evaluator prototype (instant-query stepping + for-state tracking) — `replay.go`
 - [x] Recording-rule synthesis prototype (inline substitution, unsound cases refused) — `synth.go`
 - [x] Mimir adapter + `argus backtest replay` CLI harness; validated end-to-end on preserved real history (28 vs 1 firings above)
-- [ ] Quantified (a)/(b) divergence vs a live baseline (first baseline lost with the WAL — re-run on the recreated cluster, then compare)
-- [ ] Decision: promql engine embedding vs query stepping for v0.3 (record in DECISIONS.md)
+- [x] Quantified (a)/(b) divergence vs a live baseline: ±1 evaluation step, `for:` exact, no missed/extra firings (2026-07-18 re-run after the first baseline was lost with the WAL)
+- [x] Decision: **query stepping** for v0.3 — accuracy bounded by one step and honestly stated; engine embedding rejected as complexity without commensurate fidelity
+
+**Spike complete 2026-07-18, five days inside the timebox.** The engine work
+(incident scoring, burn-rate simulation, `backtest diff`, synth-history,
+plugin page) builds on these primitives with the caveat structure above.
