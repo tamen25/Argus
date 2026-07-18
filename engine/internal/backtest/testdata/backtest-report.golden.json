@@ -1,0 +1,51 @@
+{
+  "generated_at": "2026-07-18T09:00:00Z",
+  "from": "2026-07-18T05:10:00Z",
+  "to": "2026-07-18T05:45:00Z",
+  "step_seconds": 60000000000,
+  "coverage_seconds": 1920000000000,
+  "segments": 1,
+  "rules": [
+    {
+      "Rule": "HighSpanErrorRatio",
+      "Detections": [
+        {
+          "IncidentID": "2026-07-18-adfailure-baseline-2",
+          "TTD": 420000000000
+        }
+      ],
+      "Missed": [
+        "2026-07-12-adfailure-toggle-test"
+      ],
+      "Unverifiable": [
+        "2026-07-16-adfailure-spike-baseline"
+      ],
+      "FalsePositives": null,
+      "Coverage": 1920000000000,
+      "PagesPerWeek": 31.5,
+      "Flappiness": 1
+    },
+    {
+      "Rule": "SpanErrorRatioInstant",
+      "Detections": null,
+      "Missed": null,
+      "Unverifiable": null,
+      "FalsePositives": [
+        {
+          "Rule": "SpanErrorRatioInstant",
+          "Series": "{service=\"flagd\"}",
+          "ActiveAt": "0001-01-01T00:00:00Z",
+          "FiredAt": "2026-07-18T05:44:00Z",
+          "ResolvedAt": "0001-01-01T00:00:00Z"
+        }
+      ],
+      "Coverage": 1920000000000,
+      "PagesPerWeek": 148.4,
+      "Flappiness": 0
+    }
+  ],
+  "caveats": [
+    "replay steps instant queries through time — staleness and ruler-alignment semantics differ from live evaluation",
+    "telemetry covers 32m0s of the 35m0s window — verdicts apply to covered segments only"
+  ]
+}
