@@ -1,0 +1,7 @@
+version: 1
+incidents:
+  - id: x
+    title: t
+    start: "2026-07-18T05:00:00Z"
+    end:   "2026-07-18T05:10:00Z"
+    serivces: [typo]
