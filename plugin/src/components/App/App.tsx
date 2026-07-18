@@ -6,6 +6,7 @@ import { OverviewContent } from '../Overview/OverviewContent';
 import { ScoresContent } from '../Scores/ScoresContent';
 import { ServiceGraphContent } from '../ServiceGraph/ServiceGraphContent';
 import { SpendContent } from '../Spend/SpendContent';
+import { BacktestContent } from '../Backtest/BacktestContent';
 
 // Scenes app shell (master plan §8: Scenes for all data-bound pages);
 // page content stays plain @grafana/ui React rendered via SceneReactObject.
@@ -52,6 +53,13 @@ function getSceneApp() {
         url: `${PLUGIN_BASE_URL}/${ROUTES.Spend}`,
         routePath: `${ROUTES.Spend}/*`,
         getScene: reactScene(SpendContent),
+      }),
+      new SceneAppPage({
+        title: 'Backtest',
+        subTitle: 'Replay alert rules against history — would-have-fired, time-to-detection, pages/week, scored against the incident registry',
+        url: `${PLUGIN_BASE_URL}/${ROUTES.Backtest}`,
+        routePath: `${ROUTES.Backtest}/*`,
+        getScene: reactScene(BacktestContent),
       }),
     ],
   });

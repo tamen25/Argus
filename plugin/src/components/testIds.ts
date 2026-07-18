@@ -18,4 +18,7 @@ export const testIds = {
   spend: {
     container: 'data-testid spend-container',
   },
+  backtest: {
+    container: 'data-testid backtest-container',
+  },
 };
