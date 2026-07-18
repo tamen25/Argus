@@ -38,9 +38,9 @@ tool: it writes local files only.`,
 			if err := synthhist.Generate(cmd.Context(), spec, outDir); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "synthetic history written: %s/blocks + %s/incidents.yaml (%d services, %d incidents, %s → %s)\n",
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "synthetic history written: %s/blocks + %s/incidents.yaml (%d services, %d incidents, %s → %s)\n",
 				outDir, outDir, len(spec.Services), len(spec.Incidents), spec.From.Format("2006-01-02"), spec.To.Format("2006-01-02"))
-			return nil
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&specPath, "spec", "", "synth spec YAML (argus.synth/v1)")
