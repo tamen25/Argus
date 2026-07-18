@@ -14,6 +14,7 @@ import (
 
 type backtestRunOptions struct {
 	rules       []string
+	slo         string
 	incidents   string
 	mimirURL    string
 	mimirTenant string
@@ -66,6 +67,7 @@ Every report carries the fidelity caveats that applied (docs/backtest-fidelity.m
 	}
 	f := cmd.Flags()
 	f.StringSliceVar(&opts.rules, "rules", nil, "rule file(s), Prometheus/Mimir ruler format (repeatable)")
+	f.StringVar(&opts.slo, "slo", "", "SLO policy file — burn-rate rules are generated and replayed alongside --rules")
 	f.StringVar(&opts.incidents, "incidents", "incidents.yaml", "incident registry (ground truth)")
 	f.StringVar(&opts.mimirURL, "mimir-url", "", "Mimir base URL (instant-query API)")
 	f.StringVar(&opts.mimirTenant, "mimir-tenant", "", "Mimir X-Scope-OrgID")
@@ -100,6 +102,19 @@ func runBacktestRun(ctx context.Context, opts *backtestRunOptions) (backtest.Rep
 	rs, err := backtest.LoadRuleFiles(opts.rules...)
 	if err != nil {
 		return backtest.Report{}, err
+	}
+	if opts.slo != "" {
+		policies, err := backtest.LoadSLOPolicies(opts.slo)
+		if err != nil {
+			return backtest.Report{}, err
+		}
+		// burn-rate simulation IS the replay pipeline over generated rules —
+		// same for:-state semantics, same caveats, no second evaluator
+		for _, p := range policies {
+			rs.Groups = append(rs.Groups, backtest.Group{
+				Name: "slo:" + p.Name, Interval: opts.step, Rules: backtest.BurnRateRules(p),
+			})
+		}
 	}
 	reg, err := backtest.LoadIncidents(opts.incidents)
 	if err != nil {

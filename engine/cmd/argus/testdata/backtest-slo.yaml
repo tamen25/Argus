@@ -1,0 +1,8 @@
+schema: argus.slo/v1
+policies:
+  - name: ad-availability
+    objective: 0.999
+    sli:
+      errors: errors_total{service="ad"}
+      total: calls_total{service="ad"}
+      group_by: [service]

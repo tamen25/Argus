@@ -1,0 +1,11 @@
+schema: argus.slo/v1
+policies:
+  - name: checkout-availability
+    objective: 0.999
+    sli:
+      errors: traces_spanmetrics_calls_total{status_code="STATUS_CODE_ERROR",service="checkout"}
+      total: traces_spanmetrics_calls_total{service="checkout"}
+      group_by: [service]
+    windows:
+      - {short: 5m, long: 1h, factor: 14.4, for: 2m, severity: page}
+      - {short: 30m, long: 6h, factor: 6, for: 15m, severity: ticket}
