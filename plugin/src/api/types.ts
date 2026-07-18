@@ -132,3 +132,39 @@ export interface Showback {
   trend?: CostTrend;
   notes?: string[];
 }
+
+// Mirrors engine/internal/backtest Report.MarshalJSON (durations are seconds).
+export interface BacktestDetection {
+  incident_id: string;
+  ttd_seconds: number;
+}
+
+export interface BacktestFiring {
+  series: string;
+  fired_at: string;
+  resolved_at?: string;
+  unresolved_at_end: boolean;
+}
+
+export interface BacktestScorecard {
+  rule: string;
+  detections: BacktestDetection[];
+  missed: string[];
+  unverifiable: string[];
+  false_positives: BacktestFiring[];
+  coverage_seconds: number;
+  pages_per_week: number;
+  flappiness: number;
+}
+
+export interface BacktestReport {
+  generated_at: string;
+  from: string;
+  to: string;
+  step_seconds: number;
+  coverage_seconds: number;
+  window_seconds: number;
+  segments: number;
+  rules: BacktestScorecard[];
+  caveats: string[];
+}

@@ -2,46 +2,45 @@
   "generated_at": "2026-07-18T09:00:00Z",
   "from": "2026-07-18T05:10:00Z",
   "to": "2026-07-18T05:45:00Z",
-  "step_seconds": 60000000000,
-  "coverage_seconds": 1920000000000,
+  "step_seconds": 60,
+  "coverage_seconds": 1920,
+  "window_seconds": 2100,
   "segments": 1,
   "rules": [
     {
-      "Rule": "HighSpanErrorRatio",
-      "Detections": [
+      "rule": "HighSpanErrorRatio",
+      "detections": [
         {
-          "IncidentID": "2026-07-18-adfailure-baseline-2",
-          "TTD": 420000000000
+          "incident_id": "2026-07-18-adfailure-baseline-2",
+          "ttd_seconds": 420
         }
       ],
-      "Missed": [
+      "missed": [
         "2026-07-12-adfailure-toggle-test"
       ],
-      "Unverifiable": [
+      "unverifiable": [
         "2026-07-16-adfailure-spike-baseline"
       ],
-      "FalsePositives": null,
-      "Coverage": 1920000000000,
-      "PagesPerWeek": 31.5,
-      "Flappiness": 1
+      "false_positives": [],
+      "coverage_seconds": 1920,
+      "pages_per_week": 31.5,
+      "flappiness": 1
     },
     {
-      "Rule": "SpanErrorRatioInstant",
-      "Detections": null,
-      "Missed": null,
-      "Unverifiable": null,
-      "FalsePositives": [
+      "rule": "SpanErrorRatioInstant",
+      "detections": [],
+      "missed": [],
+      "unverifiable": [],
+      "false_positives": [
         {
-          "Rule": "SpanErrorRatioInstant",
-          "Series": "{service=\"flagd\"}",
-          "ActiveAt": "0001-01-01T00:00:00Z",
-          "FiredAt": "2026-07-18T05:44:00Z",
-          "ResolvedAt": "0001-01-01T00:00:00Z"
+          "series": "{service=\"flagd\"}",
+          "fired_at": "2026-07-18T05:44:00Z",
+          "unresolved_at_end": true
         }
       ],
-      "Coverage": 1920000000000,
-      "PagesPerWeek": 148.4,
-      "Flappiness": 0
+      "coverage_seconds": 1920,
+      "pages_per_week": 148.4,
+      "flappiness": 0
     }
   ],
   "caveats": [

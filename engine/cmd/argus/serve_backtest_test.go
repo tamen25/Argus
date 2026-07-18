@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/tamen25/Argus/engine/internal/backtest"
 )
 
 func writeBacktestFiles(t *testing.T) (rules, incidents string) {
@@ -71,18 +69,29 @@ func TestBacktestEndpointCaches(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// decode the wire shape (snake_case, seconds) the plugin consumes, not the
+	// domain type — Report has a custom MarshalJSON and no UnmarshalJSON
+	type wire struct {
+		Rules []struct {
+			Rule string `json:"rule"`
+		} `json:"rules"`
+		Caveats []string `json:"caveats"`
+	}
 	for range 3 {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/backtest", nil))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d", rec.Code)
 		}
-		var rep backtest.Report
+		var rep wire
 		if err := json.Unmarshal(rec.Body.Bytes(), &rep); err != nil {
 			t.Fatal(err)
 		}
 		if len(rep.Rules) != 1 || rep.Rules[0].Rule != "HighErr" {
 			t.Errorf("report rules = %+v", rep.Rules)
+		}
+		if rep.Caveats == nil {
+			t.Error("caveats is null — must be [] for strict consumers")
 		}
 	}
 	firstCalls := calls

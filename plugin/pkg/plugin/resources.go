@@ -14,6 +14,7 @@ var engineRoutes = map[string]string{
 	"/remediation":  "/api/remediation",
 	"/servicegraph": "/api/servicegraph",
 	"/cost":         "/api/cost",
+	"/backtest":     "/api/backtest",
 }
 
 func (a *App) registerRoutes(mux *http.ServeMux) {

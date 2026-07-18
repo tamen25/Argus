@@ -59,7 +59,22 @@ movement. The modeled-not-billed caveat rides on every view and is never
 hidden. Reads `/resources/cost` (→ engine `/api/cost`); when the engine has no
 cost pricing configured the page says so plainly instead of showing `$0`.
 
-Backtest and Bench pages arrive with their phases (§3.3).
+### Backtest
+
+Answers: *would these alert rules have fired on real history, how fast, and how
+noisily?* Per-rule scorecards — detected incidents with time-to-detection,
+missed incidents, **unverifiable** incidents (no telemetry coverage, never
+counted as misses), false positives, pages/week, and flappiness — scored
+against the incident registry. Reads `/resources/backtest` (→ engine
+`/api/backtest`), which replays a rolling window and caches the result; when
+the engine has no `--backtest-rules` configured the page says so plainly.
+
+Honesty caveat, stated on the page itself and never hidden: replay is not
+re-execution (stepped instant queries differ from live ruler evaluation in
+staleness, lookback, and alignment), and verdicts apply only to the covered
+telemetry segments — the coverage ratio is shown up front.
+
+The Bench page arrives with Phase 4 (§3.3).
 
 ## Development
 
