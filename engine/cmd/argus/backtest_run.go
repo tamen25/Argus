@@ -122,53 +122,11 @@ func runBacktestRun(ctx context.Context, opts *backtestRunOptions) (backtest.Rep
 	}
 
 	client := mimir.New(opts.mimirURL, opts.mimirTenant)
-	eval := mimir.EvalSource{Client: client}
-	probe := mimir.PresenceSource{Client: client, Expr: opts.probeExpr}
-
-	segs, err := backtest.Segments(ctx, probe, from, to, opts.step)
-	if err != nil {
-		return backtest.Report{}, fmt.Errorf("presence mapping: %w", err)
-	}
-
-	rep := backtest.Report{
-		GeneratedAt: time.Now().UTC(),
-		From:        from,
-		To:          to,
-		Step:        opts.step,
-		Segments:    len(segs),
-	}
-	for _, s := range segs {
-		rep.Coverage += s.End.Sub(s.Start)
-	}
-	if rep.Coverage < to.Sub(from) {
-		rep.Caveats = append(rep.Caveats, fmt.Sprintf("telemetry covers %s of the %s window — verdicts apply to covered segments only", rep.Coverage, to.Sub(from)))
-	}
-
-	for _, g := range rs.Groups {
-		for _, r := range g.Rules {
-			if !r.Alert {
-				continue
-			}
-			rule := r
-			if opts.synthesize {
-				synth, synthCaveats, err := backtest.Synthesize(rs, r.Expr)
-				if err != nil {
-					rep.Caveats = append(rep.Caveats, fmt.Sprintf("%s not replayed: %v", r.Name, err))
-					continue
-				}
-				rule.Expr = synth
-				rep.Caveats = append(rep.Caveats, synthCaveats...)
-			}
-			var firings []backtest.Firing
-			for _, seg := range segs {
-				fs, err := backtest.Replay(ctx, eval, rule, seg, opts.step)
-				if err != nil {
-					return backtest.Report{}, fmt.Errorf("replaying %s: %w", r.Name, err)
-				}
-				firings = append(firings, fs...)
-			}
-			rep.Rules = append(rep.Rules, backtest.Score(r.Name, firings, reg.Incidents, segs, backtest.ScoreOptions{Grace: opts.grace}))
-		}
-	}
-	return rep, nil
+	return backtest.Run(ctx, mimir.EvalSource{Client: client},
+		mimir.PresenceSource{Client: client, Expr: opts.probeExpr},
+		backtest.RunInput{
+			Rules: rs, Incidents: reg.Incidents,
+			From: from, To: to, Step: opts.step, Grace: opts.grace,
+			Synthesize: opts.synthesize,
+		})
 }

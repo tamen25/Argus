@@ -38,6 +38,7 @@ func newServeCmd() *cobra.Command {
 		maxPairs    int
 		window      time.Duration
 		cost        serveCostConfig
+		bt          serveBacktestConfig
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -47,11 +48,11 @@ func newServeCmd() *cobra.Command {
 				addr: addr, otlpAddr: otlpAddr, rulesDir: rulesDir,
 				specVersionFile: specVerFile,
 				interval:        interval, maxPairs: maxPairs, window: window,
-				cost: cost,
+				cost: cost, backtest: bt,
 			})
 		},
 	}
-	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (/healthz, /metrics, /api/report, /api/aggregates, /api/servicegraph, /api/cost)")
+	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (/healthz, /metrics, /api/report, /api/aggregates, /api/servicegraph, /api/cost, /api/backtest)")
 	cmd.Flags().StringVar(&specVerFile, "spec-version-file", ".instrumentation-score-version", "file with the pinned Instrumentation Score spec version, echoed in reports")
 	cmd.Flags().StringVar(&otlpAddr, "otlp-grpc", "", "OTLP gRPC listen address (e.g. :4317); empty disables ingest")
 	cmd.Flags().StringVar(&rulesDir, "rules", "", "extra rule YAML directory overriding/extending built-ins")
@@ -76,6 +77,21 @@ func newServeCmd() *cobra.Command {
 	f.StringVar(&cost.s3Region, "cost-s3-region", "", "AWS region (empty uses the default chain)")
 	f.StringVar(&cost.s3Endpoint, "cost-s3-endpoint", "", "custom S3 endpoint (e.g. MinIO)")
 	f.BoolVar(&cost.s3PathStyle, "cost-s3-path-style", false, "use path-style addressing (MinIO)")
+
+	// Backtest endpoint (Phase 3): serves /api/backtest when --backtest-rules
+	// and --backtest-mimir-url are set; otherwise /api/backtest 404s and the
+	// plugin shows "not configured". Replays a rolling window against history.
+	f.StringSliceVar(&bt.rulePaths, "backtest-rules", nil, "alert rule file(s) enabling the /api/backtest endpoint (repeatable)")
+	f.StringVar(&bt.sloPath, "backtest-slo", "", "SLO policy file — burn-rate rules replayed alongside --backtest-rules")
+	f.StringVar(&bt.incidentsPath, "backtest-incidents", "incidents.yaml", "incident registry (ground truth)")
+	f.StringVar(&bt.mimirURL, "backtest-mimir-url", "", "Mimir base URL for replay (instant-query API)")
+	f.StringVar(&bt.mimirTenant, "backtest-mimir-tenant", "", "Mimir X-Scope-OrgID")
+	f.DurationVar(&bt.window, "backtest-window", 7*24*time.Hour, "rolling lookback replayed by /api/backtest")
+	f.DurationVar(&bt.step, "backtest-step", time.Minute, "replay evaluation step")
+	f.DurationVar(&bt.grace, "backtest-grace", 5*time.Minute, "incident attribution margin")
+	f.StringVar(&bt.probeExpr, "backtest-probe-expr", "count(target_info)", "presence-probe expression for coverage mapping")
+	f.BoolVar(&bt.synthesize, "backtest-synthesize", false, "inline defined recording rules during replay")
+	f.DurationVar(&bt.cacheTTL, "backtest-cache-ttl", 15*time.Minute, "how long /api/backtest caches a report before recomputing")
 	return cmd
 }
 
@@ -95,6 +111,7 @@ type serveConfig struct {
 	maxPairs                 int
 	window                   time.Duration
 	cost                     serveCostConfig
+	backtest                 serveBacktestConfig
 }
 
 // serve runs the HTTP endpoints (and, when configured, the OTLP receiver and
@@ -119,6 +136,12 @@ func serve(ctx context.Context, cfg serveConfig) error {
 		return err
 	} else if closeStore != nil {
 		defer closeStore()
+	}
+
+	// Backtest endpoint (independent of OTLP ingest). Configured → cached
+	// rolling-window report; unconfigured → 404 the plugin renders gracefully.
+	if err := registerBacktestEndpoint(mux, cfg.backtest); err != nil {
+		return err
 	}
 
 	// Optional ingest + score export loop.
