@@ -1,0 +1,16 @@
+version: 1
+incidents:
+  - id: 2026-07-18-adfailure-baseline-2
+    title: "adFailure ON — baseline re-run"
+    start: "2026-07-18T05:16:23Z"
+    end:   "2026-07-18T05:29:31Z"
+    services: [ad]
+    expected_alerts: [SpanErrorRatioInstant, HighSpanErrorRatio]
+    induced: true
+    fault: scenarios/faults/toggle-flag.sh
+    notes: baseline
+  - id: 2026-07-11-flagd-ui-oomkill
+    title: "flagd-ui sidecar OOMKilled"
+    start: "2026-07-11T22:39:00Z"
+    end:   "2026-07-11T23:10:00Z"
+    services: [flagd]
