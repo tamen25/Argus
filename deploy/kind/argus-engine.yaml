@@ -35,6 +35,40 @@ data:
         STANDARD_IA: 0.0125
         GLACIER_IR: 0.004
 ---
+# Dev backtest config for the /api/backtest endpoint (Phase 3). The alert
+# rules read the recording-rule series the live ruler stores
+# (deploy/kind/mimir-rules/argus-spike.yaml), so direct replay works without
+# synthesis. Incidents are the induced-fault ground truth.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argus-backtest
+  namespace: argus
+data:
+  rules.yaml: |
+    groups:
+      - name: argus-spike
+        interval: 1m
+        rules:
+          - alert: HighSpanErrorRatio
+            expr: service:span_errors:ratio_rate5m > 0.01
+            for: 5m
+            labels: {severity: page}
+          - alert: SpanErrorRatioInstant
+            expr: service:span_errors:ratio_rate5m > 0.01
+            for: 0m
+            labels: {severity: none}
+  incidents.yaml: |
+    version: 1
+    incidents:
+      - id: 2026-07-18-adfailure-baseline-2
+        title: "adFailure ON — fidelity-spike baseline re-run"
+        start: "2026-07-18T05:16:23Z"
+        end:   "2026-07-18T05:29:31Z"
+        services: [ad]
+        expected_alerts: [SpanErrorRatioInstant, HighSpanErrorRatio]
+        induced: true
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -67,8 +101,18 @@ spec:
             - --cost-pricing=/etc/argus/pricing.yaml
             - --cost-mimir-url=http://mimir-gateway.lgtm.svc
             - --cost-loki-url=http://loki-gateway.lgtm.svc
+            # Backtest (Phase 3): replay the spike alert rules against a rolling
+            # window of real history, scored against the incident registry.
+            # 6h/2m keeps the dev query volume bounded (~180 instant queries).
+            - --backtest-rules=/etc/argus-backtest/rules.yaml
+            - --backtest-incidents=/etc/argus-backtest/incidents.yaml
+            - --backtest-mimir-url=http://mimir-gateway.lgtm.svc
+            - --backtest-mimir-tenant=anonymous
+            - --backtest-window=6h
+            - --backtest-step=2m
           volumeMounts:
             - {name: pricing, mountPath: /etc/argus, readOnly: true}
+            - {name: backtest, mountPath: /etc/argus-backtest, readOnly: true}
           ports:
             - {name: http, containerPort: 8080}
             - {name: otlp-grpc, containerPort: 4317}
@@ -84,6 +128,8 @@ spec:
       volumes:
         - name: pricing
           configMap: {name: argus-pricing}
+        - name: backtest
+          configMap: {name: argus-backtest}
 ---
 apiVersion: v1
 kind: Service
