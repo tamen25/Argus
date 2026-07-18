@@ -56,3 +56,36 @@ func TestBacktestRunCommand(t *testing.T) {
 		}
 	}
 }
+
+// --slo generates burn-rate rules and replays them alongside --rules: the
+// report must contain the generated rule's scorecard.
+func TestBacktestRunWithSLOPolicies(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("query")
+		if strings.HasPrefix(q, "count(") {
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1,"18"]}]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+	}))
+	defer srv.Close()
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"backtest", "run",
+		"--rules", "testdata/backtest-rules.yaml",
+		"--slo", "testdata/backtest-slo.yaml",
+		"--incidents", "testdata/backtest-incidents.yaml",
+		"--mimir-url", srv.URL,
+		"--from", "2026-07-16T12:00:00Z",
+		"--to", "2026-07-16T12:15:00Z",
+		"--step", "1m",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "## ad-availability-burnrate-page-5m0s") {
+		t.Errorf("report missing generated burn-rate rule:\n%s", out.String())
+	}
+}

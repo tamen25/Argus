@@ -1,0 +1,7 @@
+schema: argus.slo/v1
+policies:
+  - name: impossible
+    objective: 1.0
+    sli:
+      errors: err_total
+      total: all_total
