@@ -1,0 +1,22 @@
+# Bench scenario (Module C — Phase 4). Fault: a high-cardinality label is
+# injected on the checkout service's metrics, blowing up active series. Ground
+# truth is the checkout Deployment; an agent should name it from the telemetry
+# alone. Fault manifest lands with the orchestrator slice.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: cardinality-explosion-checkout
+spec:
+  environment:
+    app: otel-demo
+  inject:
+    - type: chaosmesh
+      manifest: faults/cardinality-explosion.yaml
+      duration: 10m
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: otel-demo, name: checkout}
+    category: cardinality-explosion
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
