@@ -33,7 +33,7 @@ func getRaw(ctx context.Context, hc *http.Client, u, tenant string) (json.RawMes
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20)) // 8 MiB cap
 	if err != nil {
 		return nil, err
