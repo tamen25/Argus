@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tamen25/Argus/engine/internal/bench/schema/diagnosis.json",
+  "title": "Argus bench diagnosis",
+  "description": "The structured answer every bench agent must return. Shell agents whose native output differs are normalized into this shape (normalization method reported). Free-form prose never reaches scoring; only root_cause_entities and category are scored.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scenario", "root_cause_entities", "category"],
+  "properties": {
+    "scenario": {
+      "type": "string",
+      "description": "The scenario name this diagnosis answers (metadata.name)."
+    },
+    "root_cause_entities": {
+      "type": "array",
+      "description": "The agent's identified root-cause Kubernetes entities, scored against the scenario ground truth.",
+      "items": { "$ref": "#/$defs/entity" }
+    },
+    "category": {
+      "type": "string",
+      "description": "The agent's fault classification, e.g. cardinality-explosion."
+    },
+    "summary": {
+      "type": "string",
+      "description": "Human-readable rationale. Recorded, never scored."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Agent self-reported confidence. Recorded, never scored."
+    }
+  },
+  "$defs": {
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "type": "string", "description": "Kubernetes kind, e.g. Deployment." },
+        "namespace": { "type": "string", "description": "Kubernetes namespace." },
+        "name": { "type": "string", "description": "Object name." }
+      }
+    }
+  }
+}

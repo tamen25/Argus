@@ -28,7 +28,7 @@ UI: Grafana App Plugin (React + Scenes + Go plugin backend) + `argus` CLI (cobra
 - [x] **Phase 1 (done 2026-07-15, tag v0.1.0)** — Score engine (18 rules shipped: 10 spec + 8 extension) + remediation templates + calibration + CLI + plugin Overview/Scores/Service graph + dogfood gate → v0.1 public
 - [x] **Phase 2 (done 2026-07-17, tag v0.2.0)** — Cost engine (A2: attribution, per-finding pricing, lifecycle savings, WoW trends) + LLM explanations at the edge (redaction-on) + plugin Spend → v0.2 public
 - [x] **Phase 3 (done 2026-07-18, tag v0.3.0)** — Backtest engine (fidelity spike → PromQL replay, incident scoring, burn-rate simulation, `backtest diff` CI gate, synth-history generator) + plugin Backtest → v0.3 public
-- [ ] **Phase 4 (NEXT — not started; wait for explicit kickoff)** — Submit plugin to catalog at phase START → bench orchestrator + scenarios (12 target / 8 floor) + flagship benchmark → v1.0 public
+- [ ] **Phase 4 (IN PROGRESS — started 2026-07-20)** — Submit plugin to catalog at phase START → bench orchestrator + scenarios (12 target / 8 floor) + 3 agent adapters + MCP server + ITBench importer + leaderboard + flagship benchmark → v1.0 public
 
 **Phase gates are hard.** Each phase ends with a tagged release, blog-ready artifact, and green CI. Feature counts are cut targets; gates are not. Record every cut in `DECISIONS.md`. If asked to jump ahead, refuse and point here.
 
