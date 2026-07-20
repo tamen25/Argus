@@ -61,13 +61,23 @@ that never needed it never mention it.
 | `--inject` | Behavior |
 |---|---|
 | `script` (default) | Runs the scenario's `type: script` steps locally |
+| `kubectl` | Applies the scenario's `kubectl`/`chaosmesh` manifests with `kubectl`, deleting them again on cleanup (`--inject-namespace`, `--kube-context`) |
 | `none` | Injects nothing — score against an environment you set up yourself |
 
-`chaosmesh` and `kubectl` steps are **rejected with a clear error** until the
-Kubernetes injector adapter lands; failing loudly beats pretending a fault was
-injected. Steady-state detection is likewise not yet wired: a script step is
-expected to return only once the fault is established, and a report produced
-this way does not claim steady state was verified.
+A Chaos Mesh experiment is itself a CRD manifest, so `kubectl` mode covers both
+manifest step types. It shells out to `kubectl` rather than embedding a
+Kubernetes API client: the fault surface is "apply this manifest, then delete
+it", and this is a bench-time tool, not part of the read-only product path.
+
+**Each injector rejects step types it cannot execute** rather than skipping
+them, so a scenario is never scored against an environment that was never
+faulted. Cleanup deletes every declared manifest — and keeps going past a
+failed delete, since stopping at the first error leaves more faults behind than
+it removes.
+
+Steady-state detection is not yet wired: an inject step is expected to settle
+before the agent is called, and a report produced this way does not claim steady
+state was verified.
 
 ## Output
 
