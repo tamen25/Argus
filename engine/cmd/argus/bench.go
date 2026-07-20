@@ -21,7 +21,7 @@ func newBenchCmd() *cobra.Command {
 		Use:   "bench",
 		Short: "Fault-injection benchmark: can an agent diagnose incidents from this telemetry?",
 	}
-	cmd.AddCommand(newBenchRunCmd())
+	cmd.AddCommand(newBenchRunCmd(), newBenchImportITBenchCmd())
 	return cmd
 }
 

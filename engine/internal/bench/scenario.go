@@ -40,9 +40,15 @@ type Scenario struct {
 	Spec       ScenarioSpec `yaml:"spec"`
 }
 
-// Metadata carries the scenario name (used as the run key and result label).
+// Metadata carries the scenario name (used as the run key and result label)
+// plus optional provenance, so an imported scenario can cite where it came from.
 type Metadata struct {
 	Name string `yaml:"name"`
+	// Description is a human summary, carried through from an import.
+	Description string `yaml:"description,omitempty"`
+	// Source records provenance for imported scenarios (e.g. "itbench:sre/102"),
+	// so a published comparison can be traced back to the upstream definition.
+	Source string `yaml:"source,omitempty"`
 }
 
 // ScenarioSpec is the body: target environment, fault steps, ground truth, and
