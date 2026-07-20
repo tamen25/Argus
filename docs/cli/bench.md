@@ -76,6 +76,35 @@ Every report carries the reproducibility record — scenario hash, agent, env
 digest, seed, budget — plus the standing caveats, which cannot be stripped from
 a rendering.
 
+## Importing ITBench scenarios
+
+```bash
+argus bench import-itbench --in path/to/ITBench/scenarios/sre/library/indexes/scenarios --out scenarios/itbench
+```
+
+Converts [ITBench](https://github.com/itbench-hub/ITBench) SRE scenario index
+files (Apache-2.0) so results are comparable with published ITBench baselines.
+
+Imported scenarios are **score-only**, and this is a real constraint rather than
+a limitation we glossed: ITBench executes its faults with its own tooling
+against a fixed fault catalogue, and Argus cannot reproduce those injections.
+Claiming otherwise would make the comparability claim false. So stage the
+environment with ITBench, then score the agent with `--inject=none`. The emitted
+inject step names a script Argus deliberately **cannot** execute, so running an
+imported scenario any other way fails loudly instead of quietly measuring an
+un-faulted environment.
+
+Ground truth is derived from each injection's `args.kubernetesObject` — the
+object the fault was applied to. Waiter objects (workloads that get restarted or
+rescaled to settle the environment) are **collateral, never root cause**. A
+scenario whose ground truth cannot be derived is **refused**, not emitted with an
+empty answer key that would score every agent answer wrong; pass
+`--skip-invalid` to continue past such scenarios instead of failing the import.
+
+Each imported file records its provenance (`metadata.source`, e.g.
+`itbench:sre/102`) so a published comparison traces back to the upstream
+definition.
+
 ## Scenarios
 
 See `scenarios/*.yaml` (schema: `argus/v1alpha1`, `kind: BenchScenario`). The
