@@ -28,6 +28,7 @@ nav:
       - remediate: cli/remediate.md
       - cost: cli/cost.md
       - backtest: cli/backtest.md
+      - bench: cli/bench.md
       - mcp: cli/mcp.md
       - devtools: cli/devtools.md
   - Rules:
