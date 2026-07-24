@@ -1,7 +1,12 @@
 # Bench scenario (Module C — Phase 4). Fault: a high-cardinality label is
 # injected on the checkout service's metrics, blowing up active series. Ground
 # truth is the checkout Deployment; an agent should name it from the telemetry
-# alone. Fault manifest lands with the orchestrator slice.
+# alone.
+#
+# The step is `kubectl`, not `chaosmesh`: the fault is a plain ConfigMap +
+# Deployment (a load driver), not a Chaos Mesh CR. Chaos Mesh has no cardinality
+# fault type. Both step types are applied identically by the kubectl injector,
+# so the label is purely a matter of describing the fault honestly.
 apiVersion: argus/v1alpha1
 kind: BenchScenario
 metadata:
@@ -10,7 +15,7 @@ spec:
   environment:
     app: otel-demo
   inject:
-    - type: chaosmesh
+    - type: kubectl
       manifest: faults/cardinality-explosion.yaml
       duration: 10m
   groundTruth:

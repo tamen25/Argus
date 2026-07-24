@@ -35,6 +35,7 @@ type benchFlags struct {
 	apiKeyEnv    string
 	shellCommand string
 	shellArgs    []string
+	stubProfile  string
 
 	mimirURL string
 	lokiURL  string
@@ -128,6 +129,8 @@ so a scenario is never scored against an environment that was never faulted.`,
 	fl.StringVar(&f.apiKeyEnv, "api-key-env", "", "environment variable holding the API key")
 	fl.StringVar(&f.shellCommand, "shell-command", "", "shell agent executable (e.g. holmesgpt)")
 	fl.StringArrayVar(&f.shellArgs, "shell-arg", nil, "argument for the shell agent (repeatable)")
+	fl.StringVar(&f.stubProfile, "stub-profile", "vague",
+		"calibration stub answer profile: vague | obvious | shotgun (with --agent=stub)")
 
 	fl.StringVar(&f.mimirURL, "mimir-url", "", "Mimir base URL (enables query_prometheus + list_alerts)")
 	fl.StringVar(&f.lokiURL, "loki-url", "", "Loki base URL (enables query_loki)")
@@ -178,14 +181,25 @@ func buildAgent(f benchFlags) (agent.Agent, error) {
 			return nil, fmt.Errorf("--agent=shell needs --shell-command")
 		}
 		return agent.NewShell(agent.ShellConfig{Command: f.shellCommand, Args: f.shellArgs}), nil
+	case "stub":
+		// Calibration instrument, not a bench subject: it answers without a model
+		// so a scenario's rubric can be probed for discrimination.
+		return agent.NewStub(agent.StubConfig{
+			Profile:   agent.StubProfile(f.stubProfile),
+			Namespace: f.injectNamespace,
+		})
 	default:
-		return nil, fmt.Errorf("unknown --agent %q (want openai, anthropic or shell)", f.agentKind)
+		return nil, fmt.Errorf("unknown --agent %q (want openai, anthropic, shell or stub)", f.agentKind)
 	}
 }
 
 // buildTools assembles the read-only MCP surface. A shell agent brings its own
-// tooling, so an empty surface is allowed there and only there.
+// tooling and the calibration stub reads nothing at all, so an empty surface is
+// allowed for those two and only those two.
 func buildTools(f benchFlags) (agent.Tools, error) {
+	if f.agentKind == "stub" {
+		return nil, nil
+	}
 	var b mcp.Backends
 	if f.mimirURL != "" {
 		m := backend.NewMimir(f.mimirURL, f.tenant)

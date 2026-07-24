@@ -1,0 +1,99 @@
+# Fault: metric cardinality explosion attributed to the checkout service.
+#
+# Scenario: ../cardinality-explosion-checkout.yaml
+# Ground truth: Deployment/otel-demo/checkout, category "cardinality-explosion".
+#
+# MECHANISM
+# The real checkout service is driven with an unbounded user-id space. otel-demo's
+# checkout records the caller's user id as a span/metric attribute, so a unique id
+# per request turns a bounded metric into one series per user. Nothing about
+# checkout's own configuration is altered: the culprit named in the ground truth is
+# genuinely the workload emitting the bad telemetry, which is what makes the
+# scenario honest to score.
+#
+# WHY ADDITIVE-ONLY
+# The kubectl injector (engine/internal/bench/inject/kube) applies this file on
+# inject and runs `kubectl delete -f` on reset and cleanup. That lifecycle can only
+# express faults that CREATE disposable objects. A manifest that patched the
+# checkout Deployment would inject correctly and then be "cleaned up" by deleting
+# the checkout Deployment outright — destroying the environment rather than
+# reverting the fault. Every manifest-based scenario must therefore be additive,
+# and anything requiring mutation of a pre-existing workload belongs in a `script`
+# step instead (see toggle-flag.sh, which patches a ConfigMap and restarts flagd).
+#
+# UNVALIDATED
+# The request shape below targets otel-demo chart 0.40.9 via frontend-proxy. It has
+# not yet been run against a live cluster — see docs/bench/scenario-01-validation.md
+# for the one-command validation pass and what to confirm.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argus-fault-cardinality
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/managed-by: argus-bench
+    argus.dev/fault: cardinality-explosion
+data:
+  drive.sh: |
+    #!/bin/sh
+    # Drive checkout with a unique user id per request. Each id becomes a distinct
+    # attribute value on checkout's metrics, so active series grow without bound
+    # for as long as this runs.
+    set -u
+    BASE="http://frontend-proxy:8080"
+    while true; do
+      USER_ID="argus-$(date +%s%N)-$$"
+      # Populate a cart for this synthetic user, then check it out. Both calls
+      # carry the same unbounded user id, so the explosion shows up on the
+      # checkout path rather than only at the edge.
+      curl -s -o /dev/null -m 10 -X POST "$BASE/api/cart" \
+        -H 'Content-Type: application/json' \
+        -d "{\"userId\":\"$USER_ID\",\"item\":{\"productId\":\"OLJCESPC7Z\",\"quantity\":1}}" || true
+      curl -s -o /dev/null -m 10 -X POST "$BASE/api/checkout?currencyCode=USD" \
+        -H 'Content-Type: application/json' \
+        -d "{\"userId\":\"$USER_ID\",\"email\":\"$USER_ID@argus.invalid\",\"address\":{\"streetAddress\":\"1 Test\",\"city\":\"Test\",\"state\":\"TS\",\"country\":\"US\",\"zipCode\":\"00000\"},\"userCurrency\":\"USD\",\"creditCard\":{\"creditCardNumber\":\"4432-8015-6152-0454\",\"creditCardCvv\":672,\"creditCardExpirationYear\":2030,\"creditCardExpirationMonth\":1}}" || true
+      sleep 0.2
+    done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argus-fault-cardinality
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/managed-by: argus-bench
+    argus.dev/fault: cardinality-explosion
+spec:
+  # Three drivers give enough series growth to be unmistakable within the
+  # scenario's 10m window without saturating a kind node.
+  replicas: 3
+  selector:
+    matchLabels:
+      argus.dev/fault: cardinality-explosion
+  template:
+    metadata:
+      labels:
+        argus.dev/fault: cardinality-explosion
+    spec:
+      # The driver is deliberately not instrumented: it must not appear in the
+      # telemetry as a service of its own, or an agent could name the driver
+      # instead of checkout and the ground truth would be ambiguous.
+      containers:
+        - name: driver
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "/fault/drive.sh"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          volumeMounts:
+            - name: fault
+              mountPath: /fault
+      volumes:
+        - name: fault
+          configMap:
+            name: argus-fault-cardinality
+            defaultMode: 0755
