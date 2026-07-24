@@ -10,6 +10,7 @@ import (
 
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bench/agent"
+	"github.com/tamen25/Argus/engine/internal/bench/inject/kube"
 	"github.com/tamen25/Argus/engine/internal/bench/judge"
 	"github.com/tamen25/Argus/engine/internal/bench/orchestrator"
 	"github.com/tamen25/Argus/engine/internal/mcp"
@@ -46,9 +47,11 @@ type benchFlags struct {
 	seed         int64
 	envDigest    string
 
-	inject        string
-	resetScript   string
-	cleanupScript string
+	inject          string
+	resetScript     string
+	cleanupScript   string
+	injectNamespace string
+	kubeContext     string
 
 	judgeEndpoint string
 	judgeModel    string
@@ -75,10 +78,14 @@ budget or errors is recorded as producing no diagnosis; it is NOT scored as
 zero, so a crashed run cannot quietly drag an average down.
 
 Injection modes:
-  --inject=script   run the scenario's script steps locally (chaosmesh/kubectl
-                    steps are rejected until the Kubernetes adapter lands)
+  --inject=script   run the scenario's script steps locally
+  --inject=kubectl  apply the scenario's kubectl/chaosmesh manifests with
+                    kubectl, and delete them again on cleanup
   --inject=none     inject nothing; score against an environment you already
-                    put into the desired state yourself`,
+                    put into the desired state yourself
+
+Each injector rejects step types it cannot execute rather than skipping them,
+so a scenario is never scored against an environment that was never faulted.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			sc, err := bench.LoadScenario(f.scenario)
 			if err != nil {
@@ -133,9 +140,11 @@ Injection modes:
 	fl.Int64Var(&f.seed, "seed", 0, "seed recorded in the report for reproducibility")
 	fl.StringVar(&f.envDigest, "env-digest", "", "identifier of the environment under test, recorded in the report")
 
-	fl.StringVar(&f.inject, "inject", "script", "injection mode: script | none")
-	fl.StringVar(&f.resetScript, "reset-script", "", "script run before injection")
-	fl.StringVar(&f.cleanupScript, "cleanup-script", "", "script run after each repeat")
+	fl.StringVar(&f.inject, "inject", "script", "injection mode: script | kubectl | none")
+	fl.StringVar(&f.resetScript, "reset-script", "", "script run before injection (script mode)")
+	fl.StringVar(&f.cleanupScript, "cleanup-script", "", "script run after each repeat (script mode)")
+	fl.StringVar(&f.injectNamespace, "inject-namespace", "", "namespace passed to kubectl (kubectl mode)")
+	fl.StringVar(&f.kubeContext, "kube-context", "", "kube context used for injection (kubectl mode)")
 
 	fl.StringVar(&f.judgeEndpoint, "judge-endpoint", "", "LLM-judge chat endpoint (fallback normalizer; disclosed in the report)")
 	fl.StringVar(&f.judgeModel, "judge-model", "", "LLM-judge model id")
@@ -210,8 +219,10 @@ func buildInjector(f benchFlags) (orchestrator.Injector, error) {
 			CleanupScript: f.cleanupScript,
 			Timeout:       5 * time.Minute,
 		}, nil
+	case "kubectl":
+		return kube.New(filepath.Dir(f.scenario), f.injectNamespace, f.kubeContext), nil
 	default:
-		return nil, fmt.Errorf("unknown --inject %q (want script or none)", f.inject)
+		return nil, fmt.Errorf("unknown --inject %q (want script, kubectl or none)", f.inject)
 	}
 }
 
