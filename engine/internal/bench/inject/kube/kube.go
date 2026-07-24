@@ -56,8 +56,7 @@ func (i *Injector) Reset(ctx context.Context, sc bench.Scenario) error {
 func (i *Injector) Inject(ctx context.Context, _ bench.Scenario, step bench.InjectStep) error {
 	switch step.Type {
 	case bench.InjectChaosMesh, bench.InjectKubectl:
-		_, err := i.run(ctx, "apply", "-f", i.path(step.Manifest))
-		return err
+		return i.run(ctx, "apply", "-f", i.path(step.Manifest))
 	case bench.InjectScript:
 		return fmt.Errorf("kube injector cannot run script steps; use the script injector for scenario steps of type %q", step.Type)
 	default:
@@ -79,7 +78,7 @@ func (i *Injector) deleteAll(ctx context.Context, sc bench.Scenario) error {
 		}
 		// Keep deleting the rest even if one fails: a partial cleanup that stops
 		// at the first error leaves more faults behind than it removes.
-		if _, err := i.run(ctx, "delete", "-f", i.path(step.Manifest), "--ignore-not-found"); err != nil && firstErr == nil {
+		if err := i.run(ctx, "delete", "-f", i.path(step.Manifest), "--ignore-not-found"); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -93,7 +92,7 @@ func (i *Injector) path(manifest string) string {
 	return filepath.Join(i.Dir, manifest)
 }
 
-func (i *Injector) run(ctx context.Context, args ...string) (string, error) {
+func (i *Injector) run(ctx context.Context, args ...string) error {
 	bin := i.Kubectl
 	if bin == "" {
 		bin = "kubectl"
@@ -116,13 +115,15 @@ func (i *Injector) run(ctx context.Context, args ...string) (string, error) {
 	full = append(full, args...)
 
 	cmd := exec.CommandContext(ctx, bin, full...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	// stdout is left nil (discarded to the null device); only stderr is captured,
+	// and only to enrich the error — kubectl's "deployment.apps/x configured"
+	// chatter is noise the orchestrator has no use for.
+	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return stdout.String(), fmt.Errorf("%s %v: %w (stderr: %s)", bin, full, err, truncate(stderr.String(), 512))
+		return fmt.Errorf("%s %v: %w (stderr: %s)", bin, full, err, truncate(stderr.String(), 512))
 	}
-	return stdout.String(), nil
+	return nil
 }
 
 func truncate(s string, n int) string {

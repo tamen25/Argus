@@ -30,7 +30,7 @@ func TestKubectlHelperProcess(t *testing.T) {
 	if log := os.Getenv("ARGUS_KUBECTL_LOG"); log != "" {
 		f, err := os.OpenFile(log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err == nil {
-			fmt.Fprintln(f, strings.Join(args, " "))
+			_, _ = fmt.Fprintln(f, strings.Join(args, " "))
 			_ = f.Close()
 		}
 	}
