@@ -1,0 +1,31 @@
+# Bench subject: qwen3.6 with a context large enough to hold the benchmark.
+#
+# Build:
+#   ollama create qwen3.6-bench -f deploy/ollama/Modelfile.qwen3.6-bench
+#
+# Verify (must print 32768, not the architectural 262144):
+#   curl -s http://127.0.0.1:11434/api/show -d '{"model":"qwen3.6-bench"}' \
+#     | grep num_ctx
+#
+# WHY THIS FILE EXISTS
+# `ollama pull qwen3.6:35b-a3b-q4_K_M` gives a model whose architecture supports
+# 262144 tokens but which carries NO num_ctx parameter. Ollama therefore serves
+# it at its own small default. The read-only MCP surface is five tools plus their
+# JSON schemas, and each diagnosis turn appends telemetry excerpts to a growing
+# transcript; that overruns the default quickly. The model then drops the
+# earliest tool output with no error and no warning, and the agent fails for
+# reasons that have nothing to do with its diagnostic ability.
+#
+# A benchmark result produced under silent truncation is worse than no result,
+# because it looks like a finding. `argus bench run` probes /api/show and aborts
+# below --min-context (default 32768) rather than trusting this file was built.
+FROM qwen3.6:35b-a3b-q4_K_M
+
+PARAMETER num_ctx 32768
+
+# Sampling is deliberately left at the model's own recommended values
+# (temperature 1, top_p 0.95, top_k 20, presence_penalty 1.5) rather than forced
+# to greedy decoding. Qwen thinking models degrade into repetition loops at
+# temperature 0, which would look like agent incompetence in the results. Run
+# variance is handled the honest way instead — `--repeats N`, with the standard
+# deviation reported next to every mean.

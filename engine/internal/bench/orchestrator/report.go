@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/tamen25/Argus/engine/internal/bench/local"
 )
 
 // standingBenchCaveats can never be stripped from a rendering. A bench number
@@ -39,7 +41,12 @@ func RenderReportMarkdown(r Report) string {
 		fmt.Fprintf(&b, "- Environment: `%s`\n", r.EnvDigest)
 	}
 	fmt.Fprintf(&b, "- Seed: %d\n", r.Seed)
-	fmt.Fprintf(&b, "- Budget: %s\n\n", budgetString(r))
+	fmt.Fprintf(&b, "- Budget: %s\n", budgetString(r))
+	if m := r.Model; m != nil {
+		fmt.Fprintf(&b, "- Model: `%s`%s served at `%s`\n", m.Model, quantSuffix(m), m.Endpoint)
+		fmt.Fprintf(&b, "- Served context: %d tokens%s\n", m.EffectiveNumCtx, archSuffix(m))
+	}
+	fmt.Fprintf(&b, "\n")
 
 	s := r.Summary
 	fmt.Fprintf(&b, "## Summary\n\n")
@@ -85,6 +92,32 @@ func RenderReportMarkdown(r Report) string {
 		fmt.Fprintf(&b, "- %s\n", c)
 	}
 	return b.String()
+}
+
+// quantSuffix renders the weight format, which changes what a tag means: the
+// same model at Q4 and at Q8 are different subjects on a leaderboard.
+func quantSuffix(m *local.ModelInfo) string {
+	parts := []string{}
+	if m.ParameterSize != "" {
+		parts = append(parts, m.ParameterSize)
+	}
+	if m.Quantization != "" {
+		parts = append(parts, m.Quantization)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, " ") + ")"
+}
+
+// archSuffix contrasts served context with the architectural maximum. A large
+// maximum beside a small served value is the silent-truncation trap, so the
+// report shows both rather than the flattering one.
+func archSuffix(m *local.ModelInfo) string {
+	if m.ArchContextLength == 0 || m.ArchContextLength == m.EffectiveNumCtx {
+		return ""
+	}
+	return fmt.Sprintf(" (architecture supports %d; served context is what applies)", m.ArchContextLength)
 }
 
 func budgetString(r Report) string {

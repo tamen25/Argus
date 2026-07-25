@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/tamen25/Argus/engine/internal/bench/agent"
 	"github.com/tamen25/Argus/engine/internal/bench/inject/kube"
 	"github.com/tamen25/Argus/engine/internal/bench/judge"
+	"github.com/tamen25/Argus/engine/internal/bench/local"
 	"github.com/tamen25/Argus/engine/internal/bench/orchestrator"
 	"github.com/tamen25/Argus/engine/internal/mcp"
 	"github.com/tamen25/Argus/engine/internal/mcp/backend"
@@ -58,6 +60,9 @@ type benchFlags struct {
 	judgeModel    string
 	judgeKeyEnv   string
 
+	localOnly  bool
+	minContext int
+
 	format string
 	out    string
 }
@@ -86,13 +91,31 @@ Injection modes:
                     put into the desired state yourself
 
 Each injector rejects step types it cannot execute rather than skipping them,
-so a scenario is never scored against an environment that was never faulted.`,
+so a scenario is never scored against an environment that was never faulted.
+
+Local inference is the default (--local-only). Endpoints must be loopback and
+API keys are refused, so a run cannot quietly bill a paid API; disabling it is a
+deliberate act, not a typo. The served context is probed before the run and the
+run aborts below --min-context: Ollama serves a model at its own small default
+unless num_ctx is set explicitly, and a result produced under silent truncation
+measures the context window, not the agent. The judge model must differ from the
+agent model regardless of where either is hosted — a model that misreads its own
+output the same way twice would launder that error into the score.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			sc, err := bench.LoadScenario(f.scenario)
 			if err != nil {
 				return err
 			}
+			// Policy first: nothing may reach an endpoint or a model until the
+			// local-only rules have passed.
+			if err := enforceLocalPolicy(f); err != nil {
+				return err
+			}
 			ag, err := buildAgent(f)
+			if err != nil {
+				return err
+			}
+			model, err := probeModel(cmd.Context(), f)
 			if err != nil {
 				return err
 			}
@@ -111,6 +134,7 @@ so a scenario is never scored against an environment that was never faulted.`,
 				Normalizers: buildNormalizers(f),
 				Seed:        f.seed,
 				EnvDigest:   f.envDigest,
+				Model:       model,
 			}
 
 			rep, err := orchestrator.Run(cmd.Context(), sc, ag, tools, inj, orchestrator.AlwaysReadyProbe{}, opts)
@@ -153,11 +177,73 @@ so a scenario is never scored against an environment that was never faulted.`,
 	fl.StringVar(&f.judgeModel, "judge-model", "", "LLM-judge model id")
 	fl.StringVar(&f.judgeKeyEnv, "judge-api-key-env", "", "environment variable holding the judge API key")
 
+	fl.BoolVar(&f.localOnly, "local-only", true,
+		"require loopback endpoints and refuse API keys; disable deliberately to use a remote API")
+	fl.IntVar(&f.minContext, "min-context", local.MinContextTokens,
+		"abort if the served context is below this many tokens (silent truncation guard)")
+
 	fl.StringVar(&f.format, "format", "md", "output format: md | json")
 	fl.StringVar(&f.out, "out", "", "write the report to this file instead of stdout")
 
 	_ = cmd.MarkFlagRequired("scenario")
 	return cmd
+}
+
+// enforceLocalPolicy applies the local-inference rules before anything dials
+// out. It is on by default and must be switched off deliberately: the failure it
+// prevents — a benchmark quietly billing a paid API — is silent and expensive,
+// so the safe state is the one you get by typing nothing.
+//
+// The judge check applies regardless of the local flag, because one model
+// grading its own output corrupts a score no matter who is hosting it.
+func enforceLocalPolicy(f benchFlags) error {
+	if err := local.EnforceDistinctJudge(f.model, f.judgeModel); err != nil {
+		return err
+	}
+	if !f.localOnly {
+		return nil
+	}
+	if err := local.RefuseAPIKey("--api-key-env", f.apiKeyEnv); err != nil {
+		return err
+	}
+	if err := local.RefuseAPIKey("--judge-api-key-env", f.judgeKeyEnv); err != nil {
+		return err
+	}
+	// The shell and stub adapters do not dial an endpoint of ours; shell agents
+	// bring their own tooling and are the operator's responsibility.
+	if f.agentKind == "openai" || f.agentKind == "anthropic" {
+		if err := local.EnforceLoopback("--endpoint", f.endpoint); err != nil {
+			return err
+		}
+	}
+	if f.judgeEndpoint != "" {
+		if err := local.EnforceLoopback("--judge-endpoint", f.judgeEndpoint); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// probeModel records what will actually serve the run and refuses to proceed
+// under a context too small to hold the tool surface plus telemetry. Only the
+// OpenAI-compatible adapter is probed: it is the local-inference path. Returns
+// nil provenance for adapters where the question does not apply.
+func probeModel(ctx context.Context, f benchFlags) (*local.ModelInfo, error) {
+	// --min-context=0 disables both the probe and the provenance record. It
+	// exists for fakes and for endpoints that do not expose Ollama's management
+	// API; a real run should never use it, and a report produced with it carries
+	// no model provenance, which is itself the tell.
+	if !f.localOnly || f.agentKind != "openai" || f.minContext <= 0 {
+		return nil, nil
+	}
+	info, err := local.Probe(ctx, f.endpoint, f.model, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := info.RequireContext(f.minContext); err != nil {
+		return nil, err
+	}
+	return &info, nil
 }
 
 func buildAgent(f benchFlags) (agent.Agent, error) {

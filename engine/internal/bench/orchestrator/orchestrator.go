@@ -20,6 +20,7 @@ import (
 
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bench/agent"
+	"github.com/tamen25/Argus/engine/internal/bench/local"
 	"github.com/tamen25/Argus/engine/internal/bench/scoring"
 )
 
@@ -59,6 +60,11 @@ type Options struct {
 	Seed int64
 	// EnvDigest identifies the environment under test, recorded in the report.
 	EnvDigest string
+	// Model is the provenance of the inference that served this run — tag,
+	// quantization, served context, endpoint. Without it a leaderboard row
+	// cannot be reproduced: the same tag at a different quantization or context
+	// is a different subject.
+	Model *local.ModelInfo
 	// Now is injectable for tests.
 	Now func() time.Time
 }
@@ -104,14 +110,15 @@ type Summary struct {
 // Report is the full record of one scenario × one agent, carrying everything
 // needed to reproduce it (architecture rule 6).
 type Report struct {
-	Scenario     string       `json:"scenario"`
-	ScenarioHash string       `json:"scenario_hash"`
-	Agent        string       `json:"agent"`
-	EnvDigest    string       `json:"env_digest,omitempty"`
-	Seed         int64        `json:"seed"`
-	Budget       agent.Budget `json:"budget"`
-	Runs         []RunRecord  `json:"runs"`
-	Summary      Summary      `json:"summary"`
+	Scenario     string           `json:"scenario"`
+	ScenarioHash string           `json:"scenario_hash"`
+	Agent        string           `json:"agent"`
+	EnvDigest    string           `json:"env_digest,omitempty"`
+	Seed         int64            `json:"seed"`
+	Budget       agent.Budget     `json:"budget"`
+	Model        *local.ModelInfo `json:"model,omitempty"`
+	Runs         []RunRecord      `json:"runs"`
+	Summary      Summary          `json:"summary"`
 }
 
 // Run executes the scenario against the agent Repeats times and returns the
@@ -139,6 +146,7 @@ func Run(
 		EnvDigest:    opts.EnvDigest,
 		Seed:         opts.Seed,
 		Budget:       opts.Budget,
+		Model:        opts.Model,
 	}
 
 	for i := 0; i < opts.Repeats; i++ {
