@@ -21,9 +21,9 @@ argus bench run \
 - **The agent is never told the answer.** The brief names only the environment;
   a test asserts it leaks neither the ground-truth entities nor the category.
 - **Scoring is deterministic.** Entity-set agreement (Jaccard, or exact match)
-  against the scenario's `groundTruth`, plus a category match. The agent's prose
-  and self-reported confidence are recorded but **never scored** — an agent
-  does not grade its own answer.
+  against the scenario's `groundTruth`, combined with the fault category and
+  reduced by any decoys named. The agent's prose and self-reported confidence
+  are recorded but **never scored** — an agent does not grade its own answer.
 - **A failed run is not a zero.** A run that errors or exhausts its budget is
   recorded with the reason and excluded from the means. A crashed run cannot
   quietly drag an agent's average down.
@@ -32,6 +32,62 @@ argus bench run \
   explicitly. A low score under a tight budget is a budget result, not only a
   capability result.
 
+## How a diagnosis is scored
+
+```
+score = (1−w)·entity agreement  +  w·category match  −  penalty·decoys named
+```
+
+clamped to `[0,1]`, and **zero** if the scenario sets `requireEvidence` and the
+agent cited none. `w` is `spec.scoring.categoryWeight` (default 0.5) and
+`penalty` is `spec.scoring.decoyPenalty` (default 0.25). The arithmetic is
+deliberately simple: a headline number you cannot recompute by hand from the
+report is not defensible.
+
+Three things make the difference between grading a diagnosis and grading a
+lucky guess:
+
+- **Category is folded in, not filed beside.** Naming the right workload for the
+  wrong reason is a partial answer.
+- **Evidence can be mandatory.** A diagnosis may cite telemetry
+  (`signal`/`query`/`observation`); with `requireEvidence: true` an uncited
+  answer scores zero. The scorer checks citations are present and well-formed,
+  **never that they are true** — verifying an observation would mean re-running
+  the agent's queries. A fabricated citation passes. Cited telemetry is a floor
+  on effort, not proof of correctness, and every report says so.
+- **Decoys are punished.** `groundTruth.decoys` lists plausible-but-wrong
+  entities a naive agent reaches for — the busiest service, or one showing
+  correlated symptoms it did not cause. Naming one costs more than the dilution
+  it already causes, because a confident wrong attribution is what sends a human
+  to the wrong dashboard at 3am. The loader rejects a decoy that is also ground
+  truth.
+
+Read `mean_score` together with the **answered rate**: the means average over
+runs that produced a diagnosis, so an agent that mostly declines to answer and
+guesses well once would otherwise look flawless.
+
+### Calibrating a rubric before you trust it
+
+`--agent=stub` answers without a model or network, so its score is a pure
+property of the rubric. Run it against a new scenario before pointing real
+agents at it:
+
+```bash
+argus bench run --scenario scenarios/my-scenario.yaml \
+  --agent stub --stub-profile obvious --inject none --repeats 3
+```
+
+| `--stub-profile` | Answers with | Should score |
+|---|---|---|
+| `vague` | prose, no entities | no diagnosis at all |
+| `obvious` | the most conspicuous workload, generic category, no evidence | ~0 |
+| `shotgun` | many plausible entities | ~0 (decoys + dilution) |
+| `cited` | right entity, right category, **fabricated** evidence | high — this is the honest ceiling |
+
+If `obvious` scores respectably, the rubric is too loose. If nothing can pass,
+it is too tight. `cited` scoring well is expected and documents the limit of
+what form-checking evidence can achieve.
+
 ## Agents
 
 | `--agent` | Needs | Notes |
@@ -39,6 +95,39 @@ argus bench run \
 | `openai` | `--endpoint`, `--model` | Any OpenAI-compatible chat-completions endpoint |
 | `anthropic` | `--model` | Anthropic Messages API (`--endpoint` optional) |
 | `shell` | `--shell-command` | Wraps an existing agent (HolmesGPT, K8sGPT) |
+| `stub` | `--stub-profile` | Calibration instrument, not a bench subject |
+
+## Local inference (default) and the context guard
+
+`--local-only` is **on by default**: endpoints must be loopback and API keys are
+refused, so a run cannot quietly bill a paid API. Hostnames other than the
+loopback literals are refused *without resolving them* — a name that resolves to
+`127.0.0.1` today can resolve elsewhere tomorrow. Turning it off is a deliberate
+act, not a typo.
+
+Before the run, `bench run` asks Ollama what it will actually serve and **aborts
+below `--min-context`** (default 32768):
+
+```bash
+ollama create qwen3.6-bench -f deploy/ollama/Modelfile.qwen3.6-bench
+```
+
+This matters more than it looks. `ollama pull qwen3.6:35b-a3b-q4_K_M` yields a
+model whose *architecture* supports 262144 tokens but which carries **no
+`num_ctx` parameter**, so Ollama serves it at its own small default. The MCP
+surface is five tools plus schemas, and each turn appends telemetry to a growing
+transcript; the model then drops the earliest tool output with no error. The
+agent fails for reasons unrelated to its diagnostic ability, and the result
+looks like a finding. Reports print served context beside the architectural
+maximum so the flattering number cannot stand alone.
+
+The **judge model must differ from the agent model**, enforced even with
+`--local-only=false`: a model that misreads its own output the same way twice
+launders that error into the score.
+
+Model tag, quantization, parameter size, served context and endpoint are
+recorded on every report — the same tag at a different quantization or context
+is a different subject, and a leaderboard row without that cannot be reproduced.
 
 API agents get the identical MCP tool set, so the benchmark compares **agents,
 not tool access**. Shell agents bring their own tooling and their token/tool
