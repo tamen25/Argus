@@ -125,6 +125,24 @@ The **judge model must differ from the agent model**, enforced even with
 `--local-only=false`: a model that misreads its own output the same way twice
 launders that error into the score.
 
+### Fitting a model that is bigger than your VRAM
+
+If the model does not fit the card, pin the GPU layer count rather than letting
+Ollama size it. Automatic sizing over-commits and dies with `CUDA error: shared
+object initialization failed`, which reads like a driver incompatibility and is
+not one — an explicit `PARAMETER num_gpu N` works on the same hardware.
+
+Tune N by measurement, **unloading between runs** (a resident runner from a
+previous test makes lower settings look much worse than they are). On a 16.3 GB
+card with the ~22 GiB qwen3.6 at Q4_K_M: CPU-only 2.4 tok/s, 26 layers 46 tok/s,
+28 layers 49 tok/s, 30 layers **6 tok/s**. That last one is the trap — passing
+the VRAM limit reports no error at all, it just collapses below CPU speed. Leave
+headroom for whatever else touches the GPU during a long run.
+
+Because model calls are slow under local inference, `--agent-timeout` defaults
+to 10 minutes. Too short a timeout kills a run mid-investigation and records it
+as an agent failure when it was a limit of the machine.
+
 Model tag, quantization, parameter size, served context and endpoint are
 recorded on every report — the same tag at a different quantization or context
 is a different subject, and a leaderboard row without that cannot be reproduced.
