@@ -137,7 +137,7 @@ output the same way twice would launder that error into the score.`,
 				Model:       model,
 			}
 
-			rep, err := orchestrator.Run(cmd.Context(), sc, ag, tools, inj, orchestrator.AlwaysReadyProbe{}, opts)
+			rep, err := orchestrator.Run(cmd.Context(), sc, ag, tools, inj, buildProbe(f, sc), opts)
 			if err != nil {
 				return err
 			}
@@ -306,6 +306,24 @@ func buildTools(f benchFlags) (agent.Tools, error) {
 		return nil, fmt.Errorf("%w (an API agent needs at least --mimir-url)", err)
 	}
 	return reg, nil
+}
+
+// buildProbe returns the steady-state gate. A scenario that declares a
+// steadyState block gets a real telemetry probe; one that does not keeps the
+// always-ready behavior, and its report must not claim steady state was
+// verified.
+func buildProbe(f benchFlags, sc bench.Scenario) orchestrator.SteadyStateProbe {
+	if sc.Spec.SteadyState == nil {
+		return orchestrator.AlwaysReadyProbe{}
+	}
+	var q orchestrator.InstantQuerier
+	if f.mimirURL != "" {
+		q = backend.NewMimir(f.mimirURL, f.tenant)
+	}
+	// A declared steadyState with no backend is an error the probe raises on the
+	// first poll, naming the missing flag, rather than a silent fall-through to
+	// always-ready.
+	return &orchestrator.PromQLProbe{Q: q}
 }
 
 func buildInjector(f benchFlags) (orchestrator.Injector, error) {

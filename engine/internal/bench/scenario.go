@@ -59,6 +59,52 @@ type ScenarioSpec struct {
 	Inject      []InjectStep `yaml:"inject"`
 	GroundTruth GroundTruth  `yaml:"groundTruth"`
 	Scoring     ScoringSpec  `yaml:"scoring"`
+	// SteadyState is the telemetry condition that must hold before the agent is
+	// asked anything. Without it the agent is handed the incident the instant
+	// injection returns — before a scrape interval has passed, so before the
+	// fault is visible in any backend — and scores near zero for reasons that
+	// have nothing to do with its ability.
+	SteadyState *SteadyState `yaml:"steadyState,omitempty"`
+}
+
+// SteadyState is a PromQL condition polled until it holds. It describes the
+// fault being *observable*, not merely applied: those are different moments, and
+// the gap between them is what a benchmark would otherwise measure by accident.
+type SteadyState struct {
+	// Query is an instant PromQL query whose first sample is compared.
+	Query string `yaml:"query"`
+	// Min, when set, requires the value to be at or above it. Max, when set,
+	// requires at or below. At least one is required.
+	Min *float64 `yaml:"min,omitempty"`
+	Max *float64 `yaml:"max,omitempty"`
+	// Settle is an additional wait after the condition first holds, so a metric
+	// that has only just crossed the line has time to be unambiguous rather than
+	// a scrape artifact. Optional.
+	Settle string `yaml:"settle,omitempty"`
+}
+
+// SettleDur parses the optional settle duration.
+func (s SteadyState) SettleDur() (time.Duration, error) {
+	if strings.TrimSpace(s.Settle) == "" {
+		return 0, nil
+	}
+	return time.ParseDuration(s.Settle)
+}
+
+func (s SteadyState) validate() error {
+	if strings.TrimSpace(s.Query) == "" {
+		return fmt.Errorf("query is empty")
+	}
+	if s.Min == nil && s.Max == nil {
+		return fmt.Errorf("at least one of min or max is required")
+	}
+	if s.Min != nil && s.Max != nil && *s.Min > *s.Max {
+		return fmt.Errorf("min %v is above max %v", *s.Min, *s.Max)
+	}
+	if _, err := s.SettleDur(); err != nil {
+		return fmt.Errorf("settle %q: %w", s.Settle, err)
+	}
+	return nil
 }
 
 // Environment names the target workload the scenario runs against.
@@ -226,6 +272,11 @@ func (s Scenario) validate() error {
 	}
 	if p := s.Spec.Scoring.DecoyPenalty; p != nil && (*p < 0 || *p > 1) {
 		return fmt.Errorf("spec.scoring.decoyPenalty %v out of [0,1]", *p)
+	}
+	if ss := s.Spec.SteadyState; ss != nil {
+		if err := ss.validate(); err != nil {
+			return fmt.Errorf("spec.steadyState: %w", err)
+		}
 	}
 	return nil
 }
