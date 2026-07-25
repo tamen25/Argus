@@ -1,30 +1,34 @@
-# Fault: metric cardinality explosion attributed to the checkout service.
+# Fault: metric cardinality explosion attributed to the frontend service.
 #
-# Scenario: ../cardinality-explosion-checkout.yaml
-# Ground truth: Deployment/otel-demo/checkout, category "cardinality-explosion".
+# Scenario: ../cardinality-explosion-frontend.yaml
+# Ground truth: Deployment/otel-demo/frontend, category "cardinality-explosion".
 #
-# MECHANISM
-# The real checkout service is driven with an unbounded user-id space. otel-demo's
-# checkout records the caller's user id as a span/metric attribute, so a unique id
-# per request turns a bounded metric into one series per user. Nothing about
-# checkout's own configuration is altered: the culprit named in the ground truth is
-# genuinely the workload emitting the bad telemetry, which is what makes the
-# scenario honest to score.
+# MECHANISM (verified on otel-demo chart 0.40.9, 2026-07-25)
+# otel-demo's frontend emits `app_frontend_requests_total` with a `target` label
+# holding the RAW URL PATH — e.g. target="/api/product-reviews/0PUK6V6EV0". The
+# product-reviews route takes a product id as a path segment, so every distinct
+# id becomes its own series. Driving that route with unbounded ids is the classic
+# instrumentation defect: a legitimate route, a legitimate label, and no
+# aggregation over the high-cardinality dimension.
+#
+# Measured: 60 unique paths produced exactly 60 new series (38 -> 101 total) and
+# they were attributed to job="frontend". This is not a synthetic 404 storm —
+# the requests are well-formed and the route answers normally, which is what
+# makes the fault realistic and the ground truth honest.
+#
+# WHY NOT CHECKOUT
+# The original scenario named checkout. On a live cluster checkout (Go) emits
+# only Go runtime metrics plus target_info — 10 series, no request metrics at
+# all — so no amount of traffic can explode its cardinality. That premise was
+# unachievable, not merely unverified. See DECISIONS.md.
 #
 # WHY ADDITIVE-ONLY
-# The kubectl injector (engine/internal/bench/inject/kube) applies this file on
-# inject and runs `kubectl delete -f` on reset and cleanup. That lifecycle can only
-# express faults that CREATE disposable objects. A manifest that patched the
-# checkout Deployment would inject correctly and then be "cleaned up" by deleting
-# the checkout Deployment outright — destroying the environment rather than
-# reverting the fault. Every manifest-based scenario must therefore be additive,
-# and anything requiring mutation of a pre-existing workload belongs in a `script`
-# step instead (see toggle-flag.sh, which patches a ConfigMap and restarts flagd).
-#
-# UNVALIDATED
-# The request shape below targets otel-demo chart 0.40.9 via frontend-proxy. It has
-# not yet been run against a live cluster — see docs/bench/scenario-01-validation.md
-# for the one-command validation pass and what to confirm.
+# The kubectl injector applies this file on inject and runs `kubectl delete -f`
+# on reset and cleanup. That lifecycle can only express faults that CREATE
+# disposable objects. A manifest patching the frontend Deployment would inject
+# correctly and then be "cleaned up" by deleting the real workload. Faults that
+# must mutate a pre-existing resource belong in a `script` step instead (see
+# toggle-flag.sh, which patches a ConfigMap and restarts flagd itself).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -36,23 +40,15 @@ metadata:
 data:
   drive.sh: |
     #!/bin/sh
-    # Drive checkout with a unique user id per request. Each id becomes a distinct
-    # attribute value on checkout's metrics, so active series grow without bound
-    # for as long as this runs.
+    # Request the product-reviews route with a unique product id per request.
+    # Each id lands in the `target` label of app_frontend_requests_total, so
+    # active series grow without bound for as long as this runs.
     set -u
     BASE="http://frontend-proxy:8080"
     while true; do
-      USER_ID="argus-$(date +%s%N)-$$"
-      # Populate a cart for this synthetic user, then check it out. Both calls
-      # carry the same unbounded user id, so the explosion shows up on the
-      # checkout path rather than only at the edge.
-      curl -s -o /dev/null -m 10 -X POST "$BASE/api/cart" \
-        -H 'Content-Type: application/json' \
-        -d "{\"userId\":\"$USER_ID\",\"item\":{\"productId\":\"OLJCESPC7Z\",\"quantity\":1}}" || true
-      curl -s -o /dev/null -m 10 -X POST "$BASE/api/checkout?currencyCode=USD" \
-        -H 'Content-Type: application/json' \
-        -d "{\"userId\":\"$USER_ID\",\"email\":\"$USER_ID@argus.invalid\",\"address\":{\"streetAddress\":\"1 Test\",\"city\":\"Test\",\"state\":\"TS\",\"country\":\"US\",\"zipCode\":\"00000\"},\"userCurrency\":\"USD\",\"creditCard\":{\"creditCardNumber\":\"4432-8015-6152-0454\",\"creditCardCvv\":672,\"creditCardExpirationYear\":2030,\"creditCardExpirationMonth\":1}}" || true
-      sleep 0.2
+      ID="argus-$(date +%s%N)-$$"
+      curl -s -o /dev/null -m 10 "$BASE/api/product-reviews/$ID" || true
+      sleep 0.25
     done
 ---
 apiVersion: apps/v1
@@ -64,8 +60,8 @@ metadata:
     app.kubernetes.io/managed-by: argus-bench
     argus.dev/fault: cardinality-explosion
 spec:
-  # Three drivers give enough series growth to be unmistakable within the
-  # scenario's 10m window without saturating a kind node.
+  # Three drivers at ~4 req/s each add roughly 700 series/minute — unmistakable
+  # inside the scenario's 10m window without saturating a kind node.
   replicas: 3
   selector:
     matchLabels:
@@ -75,9 +71,9 @@ spec:
       labels:
         argus.dev/fault: cardinality-explosion
     spec:
-      # The driver is deliberately not instrumented: it must not appear in the
+      # The driver is deliberately uninstrumented: it must not appear in the
       # telemetry as a service of its own, or an agent could name the driver
-      # instead of checkout and the ground truth would be ambiguous.
+      # instead of frontend and the ground truth would be ambiguous.
       containers:
         - name: driver
           image: curlimages/curl:8.10.1

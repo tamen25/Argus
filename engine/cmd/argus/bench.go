@@ -38,6 +38,7 @@ type benchFlags struct {
 	shellCommand string
 	shellArgs    []string
 	stubProfile  string
+	stubObvious  string
 
 	mimirURL string
 	lokiURL  string
@@ -154,7 +155,10 @@ output the same way twice would launder that error into the score.`,
 	fl.StringVar(&f.shellCommand, "shell-command", "", "shell agent executable (e.g. holmesgpt)")
 	fl.StringArrayVar(&f.shellArgs, "shell-arg", nil, "argument for the shell agent (repeatable)")
 	fl.StringVar(&f.stubProfile, "stub-profile", "vague",
-		"calibration stub answer profile: vague | obvious | shotgun (with --agent=stub)")
+		"calibration stub answer profile: vague | obvious | shotgun | cited (with --agent=stub)")
+	fl.StringVar(&f.stubObvious, "stub-obvious", "",
+		"workload the stub guesses; set it to the scenario's ground-truth entity so calibration "+
+			"measures the rubric rather than a wrong guess")
 
 	fl.StringVar(&f.mimirURL, "mimir-url", "", "Mimir base URL (enables query_prometheus + list_alerts)")
 	fl.StringVar(&f.lokiURL, "loki-url", "", "Loki base URL (enables query_loki)")
@@ -273,6 +277,7 @@ func buildAgent(f benchFlags) (agent.Agent, error) {
 		return agent.NewStub(agent.StubConfig{
 			Profile:   agent.StubProfile(f.stubProfile),
 			Namespace: f.injectNamespace,
+			Obvious:   f.stubObvious,
 		})
 	default:
 		return nil, fmt.Errorf("unknown --agent %q (want openai, anthropic, shell or stub)", f.agentKind)
@@ -313,7 +318,10 @@ func buildTools(f benchFlags) (agent.Tools, error) {
 // always-ready behavior, and its report must not claim steady state was
 // verified.
 func buildProbe(f benchFlags, sc bench.Scenario) orchestrator.SteadyStateProbe {
-	if sc.Spec.SteadyState == nil {
+	// The calibration stub reads no telemetry, so gating it on the environment
+	// measures nothing — and would make calibrating a rubric require a live
+	// cluster, which defeats the point of having a rubric instrument at all.
+	if sc.Spec.SteadyState == nil || f.agentKind == "stub" {
 		return orchestrator.AlwaysReadyProbe{}
 	}
 	var q orchestrator.InstantQuerier

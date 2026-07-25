@@ -23,6 +23,21 @@ FROM qwen3.6:35b-a3b-q4_K_M
 
 PARAMETER num_ctx 32768
 
+# CPU inference. This model is ~22 GiB at Q4_K_M and does not fit a 16 GB card;
+# on the RTX 5070 Ti (Blackwell, driver 610.74) Ollama 0.31.1 does not fall back
+# gracefully but dies with "CUDA error: shared object initialization failed",
+# taking llama-server with it. The same failure occurs on the base model, so it
+# is not caused by num_ctx above.
+#
+# Set here rather than per request because Ollama's OpenAI-compatible /v1
+# endpoint does not accept native options, and the bench agent speaks /v1.
+#
+# Measured ~2.4 tok/s. Workable for a few repeats, painful for a full matrix —
+# if you want the matrix on GPU, use a model that fits in VRAM (a ~7-9B at Q4
+# leaves room for a 32k KV cache) and record it as a different subject, since
+# tag, quantization and served context all change what the number means.
+PARAMETER num_gpu 0
+
 # Sampling is deliberately left at the model's own recommended values
 # (temperature 1, top_p 0.95, top_k 20, presence_penalty 1.5) rather than forced
 # to greedy decoding. Qwen thinking models degrade into repetition loops at
