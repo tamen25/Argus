@@ -22,6 +22,22 @@ spec:
     rootCauseEntities:
       - {kind: Deployment, namespace: otel-demo, name: checkout}
     category: cardinality-explosion
+    # Decoys are what a lazy agent reaches for. frontend is the busiest service
+    # in otel-demo and sits directly upstream of checkout, so it shows correlated
+    # latency without being the cause; cart and payment are checkout's immediate
+    # dependencies and light up for the same reason. Naming any of them is a
+    # confident wrong attribution — the kind that sends a human to the wrong
+    # dashboard — and is penalized beyond the dilution it already causes.
+    decoys:
+      - {kind: Deployment, namespace: otel-demo, name: frontend}
+      - {kind: Deployment, namespace: otel-demo, name: cart}
+      - {kind: Deployment, namespace: otel-demo, name: payment}
   scoring:
     entityMatch: jaccard
     partialCredit: true
+    # Ground truth is a single entity here, so entity agreement alone is one
+    # binary guess against a service list the agent can see without any
+    # telemetry. Category carries equal weight, and evidence is mandatory:
+    # together they are what separate a diagnosis from a lucky name-drop.
+    categoryWeight: 0.5
+    requireEvidence: true

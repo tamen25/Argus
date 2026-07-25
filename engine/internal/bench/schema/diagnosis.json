@@ -20,6 +20,11 @@
       "type": "string",
       "description": "The agent's fault classification, e.g. cardinality-explosion."
     },
+    "evidence": {
+      "type": "array",
+      "description": "Telemetry cited in support of the diagnosis. Optional at the schema level; a scenario may require it (spec.scoring.requireEvidence), in which case an uncited diagnosis scores zero. The scorer checks that citations are present and well-formed, not that their claims are true — verifying an observation would mean re-running the agent's queries.",
+      "items": { "$ref": "#/$defs/evidence" }
+    },
     "summary": {
       "type": "string",
       "description": "Human-readable rationale. Recorded, never scored."
@@ -32,6 +37,20 @@
     }
   },
   "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signal", "observation"],
+      "properties": {
+        "signal": {
+          "type": "string",
+          "enum": ["metrics", "logs", "traces", "alerts", "topology"],
+          "description": "Telemetry kind consulted, matching the read-only MCP tool surface."
+        },
+        "query": { "type": "string", "description": "The query or tool call that produced the observation." },
+        "observation": { "type": "string", "description": "What the agent saw." }
+      }
+    },
     "entity": {
       "type": "object",
       "additionalProperties": false,

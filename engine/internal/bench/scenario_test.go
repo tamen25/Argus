@@ -102,6 +102,47 @@ spec:
   inject: [{type: script, script: s.sh, duration: 1m}]
   groundTruth: {rootCauseEntities: [], category: c}
 `,
+		// A decoy that is also ground truth would penalize the correct answer.
+		"decoy is also ground truth": `apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata: {name: x}
+spec:
+  environment: {app: otel-demo}
+  inject: [{type: script, script: s.sh, duration: 1m}]
+  groundTruth:
+    rootCauseEntities: [{kind: Deployment, namespace: n, name: checkout}]
+    category: c
+    decoys: [{kind: Deployment, namespace: n, name: checkout}]
+`,
+		"decoy missing name": `apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata: {name: x}
+spec:
+  environment: {app: otel-demo}
+  inject: [{type: script, script: s.sh, duration: 1m}]
+  groundTruth:
+    rootCauseEntities: [{kind: Pod, name: p}]
+    category: c
+    decoys: [{kind: Deployment}]
+`,
+		"categoryWeight out of range": `apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata: {name: x}
+spec:
+  environment: {app: otel-demo}
+  inject: [{type: script, script: s.sh, duration: 1m}]
+  groundTruth: {rootCauseEntities: [{kind: Pod, name: p}], category: c}
+  scoring: {categoryWeight: 1.5}
+`,
+		"decoyPenalty out of range": `apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata: {name: x}
+spec:
+  environment: {app: otel-demo}
+  inject: [{type: script, script: s.sh, duration: 1m}]
+  groundTruth: {rootCauseEntities: [{kind: Pod, name: p}], category: c}
+  scoring: {decoyPenalty: -0.1}
+`,
 		"bad entityMatch": `apiVersion: argus/v1alpha1
 kind: BenchScenario
 metadata: {name: x}

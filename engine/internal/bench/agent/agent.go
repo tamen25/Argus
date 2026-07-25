@@ -78,15 +78,22 @@ const submitToolName = "submit_diagnosis"
 // submitToolSchema is the JSON-Schema for submit_diagnosis arguments. It mirrors
 // the scored fields of bench.Diagnosis (scenario is injected by us, not the
 // agent, so it is intentionally absent here).
-const submitToolSchema = `{"type":"object","required":["root_cause_entities","category"],` +
+const submitToolSchema = `{"type":"object","required":["root_cause_entities","category","evidence"],` +
 	`"properties":{` +
 	`"root_cause_entities":{"type":"array","items":{"type":"object","required":["kind","name"],` +
 	`"properties":{"kind":{"type":"string"},"namespace":{"type":"string"},"name":{"type":"string"}}}},` +
 	`"category":{"type":"string"},` +
+	`"evidence":{"type":"array","description":"Telemetry supporting the conclusion. Cite what you actually queried.",` +
+	`"items":{"type":"object","required":["signal","observation"],` +
+	`"properties":{"signal":{"type":"string","enum":["metrics","logs","traces","alerts","topology"]},` +
+	`"query":{"type":"string"},"observation":{"type":"string"}}}},` +
 	`"summary":{"type":"string"},` +
 	`"confidence":{"type":"number"}}}`
 
 const systemPrompt = "You are an SRE incident-diagnosis agent. Investigate the incident using the " +
 	"read-only observability tools (metrics, logs, traces, alerts, topology). Do not guess — use the " +
 	"tools to gather evidence. Identify the root-cause Kubernetes entities and the fault category. " +
-	"When you are confident, call " + submitToolName + " with the root-cause entities and category."
+	"Naming the busiest or most obvious service without evidence is scored as a wrong answer, and so " +
+	"is listing many services hoping one is right. " +
+	"When you are confident, call " + submitToolName + " with the root-cause entities, the fault " +
+	"category, and the specific telemetry you observed as evidence."

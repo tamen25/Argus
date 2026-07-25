@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -85,6 +86,12 @@ func (s InjectStep) Dur() (time.Duration, error) {
 type GroundTruth struct {
 	RootCauseEntities []Entity `yaml:"rootCauseEntities" json:"root_cause_entities"`
 	Category          string   `yaml:"category" json:"category"`
+	// Decoys are plausible-but-wrong entities a naive agent is likely to name:
+	// the busiest service, or one showing correlated symptoms it did not cause.
+	// Naming a decoy is penalized beyond the dilution it already causes, because
+	// a confident wrong attribution is worse than an over-broad answer — it is
+	// what sends a human to the wrong dashboard at 3am.
+	Decoys []Entity `yaml:"decoys,omitempty" json:"decoys,omitempty"`
 }
 
 // Entity is a Kubernetes object referenced as a root cause. It is the shared
@@ -99,6 +106,44 @@ type Entity struct {
 type ScoringSpec struct {
 	EntityMatch   string `yaml:"entityMatch"`
 	PartialCredit bool   `yaml:"partialCredit"`
+	// CategoryWeight is how much of the overall score the fault classification
+	// carries, in [0,1]; the remainder is entity agreement. Nil defaults to
+	// DefaultCategoryWeight. Naming the right workload for the wrong reason is a
+	// partial answer and must not score as a complete one.
+	CategoryWeight *float64 `yaml:"categoryWeight,omitempty"`
+	// RequireEvidence makes a diagnosis with no cited telemetry score zero. It is
+	// the difference between a diagnosis and a guess that happened to land.
+	RequireEvidence bool `yaml:"requireEvidence,omitempty"`
+	// DecoyPenalty is subtracted from the overall score per decoy named. Nil
+	// defaults to DefaultDecoyPenalty.
+	DecoyPenalty *float64 `yaml:"decoyPenalty,omitempty"`
+}
+
+// Scoring defaults. They are deliberately strict: a benchmark whose rubric
+// cannot separate a real diagnosis from a lucky guess produces numbers that
+// cannot be defended.
+const (
+	// DefaultCategoryWeight splits the score evenly between "where" (entities)
+	// and "what" (category).
+	DefaultCategoryWeight = 0.5
+	// DefaultDecoyPenalty is the deduction per decoy entity named.
+	DefaultDecoyPenalty = 0.25
+)
+
+// EffectiveCategoryWeight resolves the configured weight or the default.
+func (s ScoringSpec) EffectiveCategoryWeight() float64 {
+	if s.CategoryWeight == nil {
+		return DefaultCategoryWeight
+	}
+	return *s.CategoryWeight
+}
+
+// EffectiveDecoyPenalty resolves the configured penalty or the default.
+func (s ScoringSpec) EffectiveDecoyPenalty() float64 {
+	if s.DecoyPenalty == nil {
+		return DefaultDecoyPenalty
+	}
+	return *s.DecoyPenalty
 }
 
 // LoadScenario strictly parses a scenario file. Unknown keys, a wrong envelope,
@@ -154,13 +199,42 @@ func (s Scenario) validate() error {
 	if s.Spec.GroundTruth.Category == "" {
 		return fmt.Errorf("spec.groundTruth.category is empty")
 	}
+	for i, e := range s.Spec.GroundTruth.Decoys {
+		if e.Kind == "" || e.Name == "" {
+			return fmt.Errorf("spec.groundTruth.decoys[%d]: kind and name are required", i)
+		}
+	}
+	// A decoy that is also ground truth would penalize the correct answer.
+	truth := map[string]bool{}
+	for _, e := range s.Spec.GroundTruth.RootCauseEntities {
+		truth[entityKey(e)] = true
+	}
+	for i, e := range s.Spec.GroundTruth.Decoys {
+		if truth[entityKey(e)] {
+			return fmt.Errorf("spec.groundTruth.decoys[%d]: %s/%s/%s is also a root-cause entity",
+				i, e.Kind, e.Namespace, e.Name)
+		}
+	}
 	switch s.Spec.Scoring.EntityMatch {
 	case "", MatchJaccard, MatchExact: // "" defaults to jaccard downstream
 	default:
 		return fmt.Errorf("spec.scoring.entityMatch %q, want %q or %q",
 			s.Spec.Scoring.EntityMatch, MatchJaccard, MatchExact)
 	}
+	if w := s.Spec.Scoring.CategoryWeight; w != nil && (*w < 0 || *w > 1) {
+		return fmt.Errorf("spec.scoring.categoryWeight %v out of [0,1]", *w)
+	}
+	if p := s.Spec.Scoring.DecoyPenalty; p != nil && (*p < 0 || *p > 1) {
+		return fmt.Errorf("spec.scoring.decoyPenalty %v out of [0,1]", *p)
+	}
 	return nil
+}
+
+// entityKey normalizes an entity for comparison, matching the scorer's keying so
+// load-time validation and scoring agree on what "the same entity" means.
+func entityKey(e Entity) string {
+	norm := func(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+	return norm(e.Kind) + "/" + norm(e.Namespace) + "/" + norm(e.Name)
 }
 
 func (s InjectStep) validate() error {

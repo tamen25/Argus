@@ -80,15 +80,25 @@ type RunRecord struct {
 
 // Summary aggregates the repeats.
 type Summary struct {
-	Attempts          int     `json:"attempts"`
-	Diagnoses         int     `json:"diagnoses"`
-	Failures          int     `json:"failures"`
-	BudgetExhausted   int     `json:"budget_exhausted"`
+	Attempts        int `json:"attempts"`
+	Diagnoses       int `json:"diagnoses"`
+	Failures        int `json:"failures"`
+	BudgetExhausted int `json:"budget_exhausted"`
+	// AnswerRate is diagnoses/attempts. It must be read together with the means:
+	// those average over answered runs only, so an agent that mostly declines to
+	// answer and guesses well once would otherwise look flawless.
+	AnswerRate float64 `json:"answer_rate"`
+	// MeanScore is the overall grade — the number a leaderboard ranks on.
+	MeanScore         float64 `json:"mean_score"`
+	StdDevScore       float64 `json:"stddev_score"`
 	MeanEntityScore   float64 `json:"mean_entity_score"`
 	StdDevEntityScore float64 `json:"stddev_entity_score"`
 	CategoryMatchRate float64 `json:"category_match_rate"`
-	MeanToolCalls     float64 `json:"mean_tool_calls"`
-	MeanTokens        float64 `json:"mean_tokens"`
+	// EvidenceMissingRate is the share of answered runs that cited no telemetry
+	// in a scenario that required it.
+	EvidenceMissingRate float64 `json:"evidence_missing_rate"`
+	MeanToolCalls       float64 `json:"mean_tool_calls"`
+	MeanTokens          float64 `json:"mean_tokens"`
 }
 
 // Report is the full record of one scenario × one agent, carrying everything
@@ -301,8 +311,8 @@ func withDefaults(o Options) Options {
 
 func summarize(runs []RunRecord) Summary {
 	s := Summary{Attempts: len(runs)}
-	var scores []float64
-	var catMatches, toolCalls, tokens float64
+	var scores, entityScores []float64
+	var catMatches, noEvidence, toolCalls, tokens float64
 	for _, r := range runs {
 		toolCalls += float64(r.Usage.ToolCalls)
 		tokens += float64(r.Usage.Tokens)
@@ -314,19 +324,27 @@ func summarize(runs []RunRecord) Summary {
 			continue
 		}
 		s.Diagnoses++
-		scores = append(scores, r.Score.EntityScore)
+		scores = append(scores, r.Score.Score)
+		entityScores = append(entityScores, r.Score.EntityScore)
 		if r.Score.CategoryMatch {
 			catMatches++
 		}
+		if r.Score.EvidenceMissing {
+			noEvidence++
+		}
 	}
 	if len(runs) > 0 {
+		s.AnswerRate = float64(s.Diagnoses) / float64(len(runs))
 		s.MeanToolCalls = toolCalls / float64(len(runs))
 		s.MeanTokens = tokens / float64(len(runs))
 	}
 	if len(scores) > 0 {
-		s.MeanEntityScore = mean(scores)
-		s.StdDevEntityScore = stddev(scores, s.MeanEntityScore)
+		s.MeanScore = mean(scores)
+		s.StdDevScore = stddev(scores, s.MeanScore)
+		s.MeanEntityScore = mean(entityScores)
+		s.StdDevEntityScore = stddev(entityScores, s.MeanEntityScore)
 		s.CategoryMatchRate = catMatches / float64(len(scores))
+		s.EvidenceMissingRate = noEvidence / float64(len(scores))
 	}
 	return s
 }
@@ -350,5 +368,12 @@ func stddev(xs []float64, m float64) float64 {
 		d := x - m
 		sum += d * d
 	}
-	return math.Sqrt(sum / float64(len(xs)))
+	sd := math.Sqrt(sum / float64(len(xs)))
+	// Identical repeats must report exactly zero. Floating-point cancellation
+	// otherwise yields values like 2.8e-17, which render as absurd precision on a
+	// leaderboard and invite doubt about numbers that are in fact correct.
+	if sd < 1e-12 {
+		return 0
+	}
+	return sd
 }

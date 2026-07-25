@@ -22,6 +22,7 @@ type StubAgent struct {
 	entities []stubEntity
 	category string
 	summary  string
+	evidence []stubEvidence
 }
 
 // StubProfile selects which failure mode of a weak agent to imitate.
@@ -40,17 +41,30 @@ const (
 	// StubShotgun names many plausible entities hoping one lands. Probes whether
 	// the rubric penalizes over-broad answers.
 	StubShotgun StubProfile = "shotgun"
+	// StubCited is the strongest cheat the rubric admits: the right entity, the
+	// right category, and fabricated evidence, all without reading any
+	// telemetry. It exists to measure the ceiling on what tightening can achieve
+	// — evidence is checked for form, not truth, so this profile SHOULD score
+	// well. If it ever scores poorly, the check has become something other than
+	// what it claims to be.
+	StubCited StubProfile = "cited"
 )
 
 // StubProfiles lists every profile, for CLI validation and tests.
 func StubProfiles() []string {
-	return []string{string(StubVague), string(StubObvious), string(StubShotgun)}
+	return []string{string(StubVague), string(StubObvious), string(StubShotgun), string(StubCited)}
 }
 
 type stubEntity struct {
 	Kind      string `json:"kind"`
 	Namespace string `json:"namespace,omitempty"`
 	Name      string `json:"name"`
+}
+
+type stubEvidence struct {
+	Signal      string `json:"signal"`
+	Query       string `json:"query,omitempty"`
+	Observation string `json:"observation"`
 }
 
 // StubConfig configures the calibration stub.
@@ -93,6 +107,17 @@ func NewStub(cfg StubConfig) (*StubAgent, error) {
 		}
 		s.category = "performance-degradation"
 		s.summary = "Several services in the checkout path show elevated latency."
+	case StubCited:
+		s.entities = []stubEntity{{Kind: "Deployment", Namespace: ns, Name: obvious}}
+		// Deliberately the correct category, to isolate what evidence alone adds.
+		s.category = "cardinality-explosion"
+		s.summary = "Active series for checkout metrics are growing without bound."
+		// Plausible-looking and entirely invented — the stub queried nothing.
+		s.evidence = []stubEvidence{{
+			Signal:      "metrics",
+			Query:       `count({__name__=~".+", service_name="checkout"})`,
+			Observation: "active series for checkout climbing steadily over the window",
+		}}
 	default:
 		return nil, fmt.Errorf("unknown stub profile %q (want %s)",
 			cfg.Profile, strings.Join(StubProfiles(), ", "))
@@ -108,12 +133,14 @@ func (s *StubAgent) Name() string { return "stub:" + string(s.profile) }
 // reports zero usage: the stub consumes no budget because it does no work.
 func (s *StubAgent) Diagnose(_ context.Context, _ Task) (Result, error) {
 	payload := struct {
-		RootCauseEntities []stubEntity `json:"root_cause_entities"`
-		Category          string       `json:"category"`
-		Summary           string       `json:"summary,omitempty"`
+		RootCauseEntities []stubEntity   `json:"root_cause_entities"`
+		Category          string         `json:"category"`
+		Evidence          []stubEvidence `json:"evidence,omitempty"`
+		Summary           string         `json:"summary,omitempty"`
 	}{
 		RootCauseEntities: s.entities,
 		Category:          s.category,
+		Evidence:          s.evidence,
 		Summary:           s.summary,
 	}
 	// The vague profile must emit an explicitly empty array rather than null, so
