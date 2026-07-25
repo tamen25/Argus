@@ -128,9 +128,16 @@ func TestOpenAI_ToolCallBudget(t *testing.T) {
 		toolCallResp("c3", "query_prometheus", `{"query":"up"}`, 10),
 	)
 	defer srv.Close()
-	_, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 1}})
+	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 1}})
 	if err != ErrBudgetExhausted {
 		t.Fatalf("err = %v, want ErrBudgetExhausted", err)
+	}
+	// The reported count must be what was actually executed, never the attempt
+	// that tripped the cap. A live run capped at 12 reported 13 before this was
+	// fixed, which would overstate every exhausted row on a leaderboard.
+	if res.Usage.ToolCalls != 1 {
+		t.Fatalf("tool calls = %d, want 1 (the cap) — a call that never ran must not be counted",
+			res.Usage.ToolCalls)
 	}
 }
 

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,6 +21,11 @@ type OpenAIConfig struct {
 	Model    string
 	APIKey   string
 	HTTP     *http.Client
+	// Timeout caps a single chat completion when HTTP is nil. Local inference
+	// needs far longer than a hosted API: a thinking model on CPU can spend
+	// minutes on one turn, and too short a timeout kills the run mid-investigation
+	// and records it as an agent failure rather than an environment limit.
+	Timeout time.Duration
 }
 
 // OpenAIAgent runs an agentic tool-use loop against an OpenAI-compatible
@@ -35,7 +41,7 @@ type OpenAIAgent struct {
 func NewOpenAI(cfg OpenAIConfig) *OpenAIAgent {
 	h := cfg.HTTP
 	if h == nil {
-		h = &http.Client{Timeout: 60 * time.Second}
+		h = &http.Client{Timeout: cmp.Or(cfg.Timeout, DefaultAgentTimeout)}
 	}
 	if cfg.Name == "" {
 		cfg.Name = cfg.Model
@@ -94,10 +100,12 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 			if tc.Function.Name == submitToolName {
 				return Result{Raw: json.RawMessage(tc.Function.Arguments), Usage: usage}, nil
 			}
-			usage.ToolCalls++
-			if task.Budget.MaxToolCalls > 0 && usage.ToolCalls > task.Budget.MaxToolCalls {
+			// Check before counting: incrementing first reports a call that was
+			// never executed, so a run capped at 12 would truthfully say 13.
+			if task.Budget.MaxToolCalls > 0 && usage.ToolCalls >= task.Budget.MaxToolCalls {
 				return Result{Usage: usage}, ErrBudgetExhausted
 			}
+			usage.ToolCalls++
 			content := a.runTool(ctx, task.Tools, tc)
 			msgs = append(msgs, oaMessage{
 				Role:       "tool",

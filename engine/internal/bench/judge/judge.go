@@ -13,6 +13,7 @@ package judge
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,7 +32,15 @@ type Config struct {
 	APIKey    string
 	MaxTokens int
 	HTTP      *http.Client
+	// Timeout caps one judging call when HTTP is nil. Judges also run locally
+	// under the default policy, so the hosted-API default of a minute is far too
+	// short — a timeout here discards an agent answer that was already produced.
+	Timeout time.Duration
 }
+
+// DefaultJudgeTimeout is generous for the same reason as the agent's: local
+// inference. Judging is one short call, but "short" on CPU is still minutes.
+const DefaultJudgeTimeout = 5 * time.Minute
 
 // LLMJudge implements bench.Normalizer by asking a model to extract the scored
 // fields from an agent's prose.
@@ -44,7 +53,7 @@ type LLMJudge struct {
 func New(cfg Config) *LLMJudge {
 	h := cfg.HTTP
 	if h == nil {
-		h = &http.Client{Timeout: 60 * time.Second}
+		h = &http.Client{Timeout: cmp.Or(cfg.Timeout, DefaultJudgeTimeout)}
 	}
 	if cfg.MaxTokens <= 0 {
 		cfg.MaxTokens = 512

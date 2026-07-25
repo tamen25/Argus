@@ -9,9 +9,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/tamen25/Argus/engine/internal/mcp"
 )
+
+// DefaultAgentTimeout caps a single model call when an adapter is built without
+// its own HTTP client. It is generous because the benchmark's default subject is
+// local inference: a thinking model on CPU routinely spends minutes on one turn,
+// and a timeout that fires mid-investigation is recorded as an agent failure
+// when it is really a limit of the machine. Tune with --agent-timeout.
+const DefaultAgentTimeout = 10 * time.Minute
 
 // ErrBudgetExhausted is returned when a run hits its tool-call or token cap
 // before producing a diagnosis. The orchestrator records it as a no-diagnosis

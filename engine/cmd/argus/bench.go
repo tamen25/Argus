@@ -61,8 +61,9 @@ type benchFlags struct {
 	judgeModel    string
 	judgeKeyEnv   string
 
-	localOnly  bool
-	minContext int
+	localOnly    bool
+	minContext   int
+	agentTimeout time.Duration
 
 	format string
 	out    string
@@ -183,6 +184,8 @@ output the same way twice would launder that error into the score.`,
 
 	fl.BoolVar(&f.localOnly, "local-only", true,
 		"require loopback endpoints and refuse API keys; disable deliberately to use a remote API")
+	fl.DurationVar(&f.agentTimeout, "agent-timeout", agent.DefaultAgentTimeout,
+		"cap on a single model call; local inference on CPU needs minutes, not seconds")
 	fl.IntVar(&f.minContext, "min-context", local.MinContextTokens,
 		"abort if the served context is below this many tokens (silent truncation guard)")
 
@@ -260,12 +263,16 @@ func buildAgent(f benchFlags) (agent.Agent, error) {
 		if f.endpoint == "" || f.model == "" {
 			return nil, fmt.Errorf("--agent=openai needs --endpoint and --model")
 		}
-		return agent.NewOpenAI(agent.OpenAIConfig{Endpoint: f.endpoint, Model: f.model, APIKey: key}), nil
+		return agent.NewOpenAI(agent.OpenAIConfig{
+			Endpoint: f.endpoint, Model: f.model, APIKey: key, Timeout: f.agentTimeout,
+		}), nil
 	case "anthropic":
 		if f.model == "" {
 			return nil, fmt.Errorf("--agent=anthropic needs --model")
 		}
-		return agent.NewAnthropic(agent.AnthropicConfig{Endpoint: f.endpoint, Model: f.model, APIKey: key}), nil
+		return agent.NewAnthropic(agent.AnthropicConfig{
+			Endpoint: f.endpoint, Model: f.model, APIKey: key, Timeout: f.agentTimeout,
+		}), nil
 	case "shell":
 		if f.shellCommand == "" {
 			return nil, fmt.Errorf("--agent=shell needs --shell-command")
@@ -362,7 +369,9 @@ func buildNormalizers(f benchFlags) []bench.Normalizer {
 		if f.judgeKeyEnv != "" {
 			key = os.Getenv(f.judgeKeyEnv)
 		}
-		ns = append(ns, judge.New(judge.Config{Endpoint: f.judgeEndpoint, Model: f.judgeModel, APIKey: key}))
+		ns = append(ns, judge.New(judge.Config{
+			Endpoint: f.judgeEndpoint, Model: f.judgeModel, APIKey: key, Timeout: f.agentTimeout,
+		}))
 	}
 	return ns
 }
