@@ -1,0 +1,151 @@
+{
+  "scenario": "cardinality-explosion-frontend",
+  "scenario_hash": "8fb638d665e5",
+  "agent": "qwen3.6-bench",
+  "env_digest": "kind-argus-golden",
+  "seed": 7,
+  "budget": {
+    "MaxToolCalls": 35,
+    "MaxTokens": 400000
+  },
+  "model": {
+    "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+    "model": "qwen3.6-bench",
+    "quantization": "Q4_K_M",
+    "parameter_size": "36.0B",
+    "effective_num_ctx": 32768,
+    "arch_context_length": 262144
+  },
+  "runs": [
+    {
+      "repeat": 0,
+      "started": "0001-01-01T00:00:00Z",
+      "finished": "0001-01-01T00:00:00Z",
+      "usage": {
+        "tool_calls": 9,
+        "tokens": 14000,
+        "steps": 0
+      },
+      "normalization": "json",
+      "score": {
+        "scenario": "cardinality-explosion-frontend",
+        "score": 1,
+        "entity_score": 1,
+        "category_match": true,
+        "evidence_count": 2,
+        "cited_signals": [
+          "logs",
+          "metrics"
+        ],
+        "matched": [
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "frontend"
+          }
+        ],
+        "missed": null,
+        "extra": null
+      }
+    },
+    {
+      "repeat": 1,
+      "started": "0001-01-01T00:00:00Z",
+      "finished": "0001-01-01T00:00:00Z",
+      "usage": {
+        "tool_calls": 12,
+        "tokens": 18000,
+        "steps": 0
+      },
+      "normalization": "llm-judge",
+      "score": {
+        "scenario": "cardinality-explosion-frontend",
+        "score": 0,
+        "entity_score": 0.5,
+        "category_match": false,
+        "decoys_named": [
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "product-reviews"
+          }
+        ],
+        "evidence_count": 1,
+        "cited_signals": [
+          "metrics"
+        ],
+        "malformed_evidence": 1,
+        "matched": [
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "frontend"
+          }
+        ],
+        "missed": null,
+        "extra": [
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "product-reviews"
+          }
+        ]
+      }
+    },
+    {
+      "repeat": 2,
+      "started": "0001-01-01T00:00:00Z",
+      "finished": "0001-01-01T00:00:00Z",
+      "usage": {
+        "tool_calls": 4,
+        "tokens": 6000,
+        "steps": 0
+      },
+      "normalization": "json",
+      "score": {
+        "scenario": "cardinality-explosion-frontend",
+        "score": 0,
+        "entity_score": 1,
+        "category_match": true,
+        "evidence_count": 0,
+        "evidence_missing": true,
+        "matched": [
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "frontend"
+          }
+        ],
+        "missed": null,
+        "extra": null
+      }
+    },
+    {
+      "repeat": 3,
+      "started": "0001-01-01T00:00:00Z",
+      "finished": "0001-01-01T00:00:00Z",
+      "usage": {
+        "tool_calls": 35,
+        "tokens": 52000,
+        "steps": 0
+      },
+      "error": "agent: budget exhausted before diagnosis",
+      "budget_exhausted": true
+    }
+  ],
+  "summary": {
+    "attempts": 4,
+    "diagnoses": 3,
+    "failures": 1,
+    "budget_exhausted": 1,
+    "answer_rate": 0.75,
+    "mean_score": 0.3333333333333333,
+    "stddev_score": 0.4714045207910317,
+    "mean_entity_score": 0.8333333333333334,
+    "stddev_entity_score": 0.23570226039551584,
+    "category_match_rate": 0.6666666666666666,
+    "evidence_missing_rate": 0.3333333333333333,
+    "mean_tool_calls": 15,
+    "mean_tokens": 22500
+  }
+}

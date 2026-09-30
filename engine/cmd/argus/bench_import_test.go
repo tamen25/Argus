@@ -133,6 +133,9 @@ func TestImportedScenario_FailsUnderScriptInjection(t *testing.T) {
 		"--endpoint", "http://127.0.0.1:1", "--model", "m",
 		"--mimir-url", "http://127.0.0.1:1",
 		"--inject", "script",
+		// This test is about the injection refusal, which must be reached; the
+		// dead endpoint would otherwise fail the context probe first.
+		"--min-context", "0",
 	})
 	if err := run.Execute(); err != nil {
 		t.Fatalf("bench run returned a hard error: %v", err)

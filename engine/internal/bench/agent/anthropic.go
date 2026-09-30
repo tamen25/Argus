@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,8 @@ type AnthropicConfig struct {
 	Version   string // anthropic-version header; default 2023-06-01
 	MaxTokens int    // required by the API; default 1024
 	HTTP      *http.Client
+	// Timeout caps a single model call when HTTP is nil; see DefaultAgentTimeout.
+	Timeout time.Duration
 }
 
 // AnthropicAgent runs an agentic tool-use loop against the Anthropic Messages
@@ -42,7 +45,7 @@ const (
 func NewAnthropic(cfg AnthropicConfig) *AnthropicAgent {
 	h := cfg.HTTP
 	if h == nil {
-		h = &http.Client{Timeout: 60 * time.Second}
+		h = &http.Client{Timeout: cmp.Or(cfg.Timeout, DefaultAgentTimeout)}
 	}
 	if cfg.Endpoint == "" {
 		cfg.Endpoint = defaultAnthropicEndpoint
@@ -108,10 +111,12 @@ func (a *AnthropicAgent) Diagnose(ctx context.Context, task Task) (Result, error
 			if b.Name == submitToolName {
 				return Result{Raw: b.Input, Usage: usage}, nil
 			}
-			usage.ToolCalls++
-			if task.Budget.MaxToolCalls > 0 && usage.ToolCalls > task.Budget.MaxToolCalls {
+			// Check before counting: incrementing first reports a call that was
+			// never executed, so a run capped at 12 would truthfully say 13.
+			if task.Budget.MaxToolCalls > 0 && usage.ToolCalls >= task.Budget.MaxToolCalls {
 				return Result{Usage: usage}, ErrBudgetExhausted
 			}
+			usage.ToolCalls++
 			toolResults = append(toolResults, antBlock{
 				Type:      "tool_result",
 				ToolUseID: b.ID,

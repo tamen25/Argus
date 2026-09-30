@@ -1,0 +1,96 @@
+# Fault: metric cardinality explosion attributed to the frontend service.
+#
+# Scenario: ../cardinality-explosion-frontend.yaml
+# Ground truth: Deployment/otel-demo/frontend, category "cardinality-explosion".
+#
+# MECHANISM (verified on otel-demo chart 0.40.9, 2026-07-25)
+# otel-demo's frontend emits `app_frontend_requests_total` with a `target` label
+# holding the RAW URL PATH — e.g. target="/api/product-reviews/0PUK6V6EV0". The
+# product-reviews route takes a product id as a path segment, so every distinct
+# id becomes its own series. Driving that route with unbounded ids is the classic
+# instrumentation defect: a legitimate route, a legitimate label, and no
+# aggregation over the high-cardinality dimension.
+#
+# Measured: 60 unique paths produced exactly 60 new series (38 -> 101 total) and
+# they were attributed to job="frontend". This is not a synthetic 404 storm —
+# the requests are well-formed and the route answers normally, which is what
+# makes the fault realistic and the ground truth honest.
+#
+# WHY NOT CHECKOUT
+# The original scenario named checkout. checkout's request metrics (rpc_*) are
+# bounded: the only per-request dimension, rpc_method, has a single value
+# (PlaceOrder), so no amount of traffic can explode its cardinality. That premise
+# was unachievable, not merely unverified. (First recorded as "checkout emits no
+# request metrics", which was a cold-cluster artifact — see DECISIONS.md.)
+#
+# WHY ADDITIVE-ONLY
+# The kubectl injector applies this file on inject and runs `kubectl delete -f`
+# on reset and cleanup. That lifecycle can only express faults that CREATE
+# disposable objects. A manifest patching the frontend Deployment would inject
+# correctly and then be "cleaned up" by deleting the real workload. Faults that
+# must mutate a pre-existing resource belong in a `script` step instead (see
+# toggle-flag.sh, which patches a ConfigMap and restarts flagd itself).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argus-fault-cardinality
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/managed-by: argus-bench
+    argus.dev/fault: cardinality-explosion
+data:
+  drive.sh: |
+    #!/bin/sh
+    # Request the product-reviews route with a unique product id per request.
+    # Each id lands in the `target` label of app_frontend_requests_total, so
+    # active series grow without bound for as long as this runs.
+    set -u
+    BASE="http://frontend-proxy:8080"
+    while true; do
+      ID="argus-$(date +%s%N)-$$"
+      curl -s -o /dev/null -m 10 "$BASE/api/product-reviews/$ID" || true
+      sleep 0.25
+    done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argus-fault-cardinality
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/managed-by: argus-bench
+    argus.dev/fault: cardinality-explosion
+spec:
+  # Three drivers at ~4 req/s each add roughly 700 series/minute — unmistakable
+  # inside the scenario's 10m window without saturating a kind node.
+  replicas: 3
+  selector:
+    matchLabels:
+      argus.dev/fault: cardinality-explosion
+  template:
+    metadata:
+      labels:
+        argus.dev/fault: cardinality-explosion
+    spec:
+      # The driver is deliberately uninstrumented: it must not appear in the
+      # telemetry as a service of its own, or an agent could name the driver
+      # instead of frontend and the ground truth would be ambiguous.
+      containers:
+        - name: driver
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "/fault/drive.sh"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          volumeMounts:
+            - name: fault
+              mountPath: /fault
+      volumes:
+        - name: fault
+          configMap:
+            name: argus-fault-cardinality
+            defaultMode: 0755

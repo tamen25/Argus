@@ -13,30 +13,6 @@ PR #61, and the live kind cluster.
 
 ---
 
-## P0 — PR #61 must not merge until these are fixed
-
-Found by code review of #61 (2026-09-30). Each silently corrupts a bench score.
-
-- [ ] **B-01** — The LLM judge never extracts `evidence` (`judge.go` `judgeShape`),
-  so under `requireEvidence: true` every prose/shell agent scores 0 whatever it
-  answered. That silently zeroes HolmesGPT, one of the three adapters.
-- [ ] **B-02** — One `PromQLProbe` is shared across repeats and `firstHeld`
-  survives between them, so repeat 2 onward skips the settle window. It is also
-  not reset on an empty result or backend error.
-- [ ] **B-03** — Scenario 1's gate cannot tell repeat N from N-1. The frontend
-  OTel SDK keeps cumulative attribute sets in memory after the driver is deleted,
-  so `count(...) >= 300` passes before the new fault acts. Repeats are not
-  independent. Needs a reset that restarts frontend (see B-10).
-- [ ] **B-04** — One malformed evidence item fails `Diagnosis.Validate`, so the run
-  drops out of the mean instead of scoring 0. Citing garbage *raises* an agent's
-  average.
-- [ ] **B-05** — The judge≠agent guard compares tag strings. `qwen3.6-bench` and
-  `qwen3.6:35b-a3b-q4_K_M` share weights and pass it. Compare the weights digest
-  from `/api/show`.
-- [ ] **B-06** — `--local-only` defaults on, which blocks the master plan's
-  remote-API use case for every other user. Make it opt-in; the maintainer's
-  no-paid-API guarantee is set explicitly in their own runs. Decided 2026-09-30.
-
 ## P1 — Scenarios 2–5 (live-validated 2026-07-25; 3 of 4 broken as committed)
 
 Branch `feat/bench-scenarios-2-5`, never PR'd. Selectors all match (1 pod each);
@@ -55,14 +31,6 @@ the gates and mechanisms are what failed.
 - [ ] **B-13** — `oomkill-checkout`: StressChaos injects, but the OOM killer takes the
   stressor (largest process in checkout's 20 Mi cgroup), not checkout. No restart,
   and the gate never fires. Needs a different mechanism.
-- [ ] **B-14** — Correct "checkout emits only 10 series". That was read on a
-  10-minute-old cluster; after traffic, checkout emits `rpc_*`. Retargeting to
-  frontend was still right, but because checkout's rpc labels are bounded
-  (`rpc_method=PlaceOrder`). Fix DECISIONS, docs, the manifest and scenario
-  headers, and the #61 body.
-- [ ] **B-15** — `calibration_test.go` still models the deleted checkout scenario;
-  load the real YAML. The stub defaults `Obvious` to checkout, and the `cited`
-  profile's fabricated query names checkout.
 
 ## P1 — Infrastructure
 
@@ -95,17 +63,9 @@ the gates and mechanisms are what failed.
 - [ ] **B-22** — Bump `@grafana/*` from 13.0.2 to the current 13.x patch.
 - [ ] **B-23** — `App.test.tsx` logs React Router v7 future-flag warnings, and its
   assertion `expect(container).toBeInTheDocument()` cannot fail.
-- [ ] **B-24** — `@stylistic/eslint-plugin-ts` is deprecated; migrate to
-  `@stylistic/eslint-plugin`.
 
 ## P3 — Cleanup
 
-- [ ] **B-25** — The judge's timeout is wired to `agentTimeout` (10 m), so
-  `DefaultJudgeTimeout` (5 m) is dead on the CLI path, and there's no
-  `--judge-timeout`.
-- [ ] **B-26** — `bench.entityKey` duplicates `scoring.key()`, synced only by a
-  comment; export one. Dead code: `agent.SortedProfiles`, and
-  `Summary.EvidenceMissingRate`, which is computed but never rendered.
 - [ ] **B-27** — The `shotgun` stub profile names generic services, so via the CLI
   it never hits a scenario's decoys.
 - [ ] **B-28** — ~19 stale remote branches from July. They were squash-merged, so
@@ -146,6 +106,19 @@ Not defects. Tracked here so nothing is lost between sessions.
 
 ## Done
 
+- [x] **B-01..B-06** (#61) — the six scoring-integrity bugs from review: the judge
+  extracts (never supplies) evidence; repeats inject only into a verified-clean
+  baseline, with settle timing out of the shared probe (mutation-tested);
+  malformed citations are scored 0, not dropped from the mean; judge/agent
+  compared by weights digest (live-verified); `--local-only` opt-in with the
+  num_ctx guard keyed to loopback endpoints.
+- [x] **B-14** (#61) — "checkout emits only 10 series" corrected (cold-cluster
+  reading); the retarget stands because checkout's rpc labels are bounded.
+- [x] **B-15, B-26** (#61) — calibration tests load the shipped scenario; the stub
+  requires `--stub-obvious`/`--stub-category`; `--stub-shotgun` names decoys.
+- [x] **B-24, B-25** (#61) — `--judge-timeout`; one `EntityKey`; dead code removed;
+  uncited rate and malformed citations rendered; the bench report gained its
+  first golden-file test.
 - [x] **B-07** (#63) — 34 reachable vulnerabilities → 0: engine 18 (stdlib ×14 via
   toolchain go1.26.8, grpc ×3 → v1.83.2, x/text ×1) and the plugin's Go backend
   16 (grafana-plugin-sdk-go v0.285 → v0.296.5). Lowest fixing versions, so the

@@ -5,14 +5,18 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/tamen25/Argus/engine/internal/bench/local"
 )
 
 // standingBenchCaveats can never be stripped from a rendering. A bench number
 // without its budget and normalization method is not a reportable result
 // (architecture rule 7).
 var standingBenchCaveats = []string{
-	"Scores are deterministic entity-set comparisons against labeled ground truth; an agent's prose is recorded but never scored.",
-	"Runs that produced no diagnosis (agent error or exhausted budget) are counted separately and excluded from the means — they are not scored as zero.",
+	"Score = (1−w)·entity agreement + w·category match, less a penalty per decoy named, clamped to [0,1]; it is zero if the scenario required cited evidence and none was given. Deterministic and recomputable by hand from this table.",
+	"Evidence is checked for presence and well-formedness, NOT for truth: verifying an observation would mean re-running the agent's queries. A fabricated citation passes this check — cited telemetry is a floor on effort, not proof of correctness.",
+	"An agent's prose is recorded but never scored.",
+	"Runs that produced no diagnosis (agent error or exhausted budget) are counted separately and excluded from the means — they are not scored as zero. Read the means together with the answered rate.",
 	"Budgets bound what an agent may spend; a low score under a tight budget is a budget result, not only a capability result.",
 }
 
@@ -37,31 +41,46 @@ func RenderReportMarkdown(r Report) string {
 		fmt.Fprintf(&b, "- Environment: `%s`\n", r.EnvDigest)
 	}
 	fmt.Fprintf(&b, "- Seed: %d\n", r.Seed)
-	fmt.Fprintf(&b, "- Budget: %s\n\n", budgetString(r))
+	fmt.Fprintf(&b, "- Budget: %s\n", budgetString(r))
+	if m := r.Model; m != nil {
+		fmt.Fprintf(&b, "- Model: `%s`%s served at `%s`\n", m.Model, quantSuffix(m), m.Endpoint)
+		fmt.Fprintf(&b, "- Served context: %d tokens%s\n", m.EffectiveNumCtx, archSuffix(m))
+	}
+	fmt.Fprintf(&b, "\n")
 
 	s := r.Summary
 	fmt.Fprintf(&b, "## Summary\n\n")
-	fmt.Fprintf(&b, "| Attempts | Diagnoses | Failures | Budget exhausted | Entity score (mean ± sd) | Category match | Mean tool calls | Mean tokens |\n")
+	fmt.Fprintf(&b, "| Score (mean ± sd) | Answered | Entity score | Category match | Uncited | Budget exhausted | Mean tool calls | Mean tokens |\n")
 	fmt.Fprintf(&b, "|---:|---:|---:|---:|---:|---:|---:|---:|\n")
-	fmt.Fprintf(&b, "| %d | %d | %d | %d | %.2f ± %.2f | %.0f%% | %.1f | %.0f |\n\n",
-		s.Attempts, s.Diagnoses, s.Failures, s.BudgetExhausted,
+	fmt.Fprintf(&b, "| **%.2f ± %.2f** | %d/%d (%.0f%%) | %.2f ± %.2f | %.0f%% | %.0f%% | %d | %.1f | %.0f |\n\n",
+		s.MeanScore, s.StdDevScore,
+		s.Diagnoses, s.Attempts, s.AnswerRate*100,
 		s.MeanEntityScore, s.StdDevEntityScore, s.CategoryMatchRate*100,
-		s.MeanToolCalls, s.MeanTokens)
+		s.EvidenceMissingRate*100,
+		s.BudgetExhausted, s.MeanToolCalls, s.MeanTokens)
 
 	fmt.Fprintf(&b, "## Runs\n\n")
-	fmt.Fprintf(&b, "| # | Entity score | Category | Normalization | Tool calls | Tokens | Outcome |\n")
-	fmt.Fprintf(&b, "|---:|---:|---|---|---:|---:|---|\n")
+	fmt.Fprintf(&b, "| # | Score | Entity | Category | Decoys | Evidence | Normalization | Tool calls | Tokens | Outcome |\n")
+	fmt.Fprintf(&b, "|---:|---:|---:|---|---:|---|---|---:|---:|---|\n")
 	for _, run := range r.Runs {
-		score, cat := "—", "—"
+		score, ent, cat, decoys, ev := "—", "—", "—", "—", "—"
 		if run.Score != nil {
-			score = fmt.Sprintf("%.2f", run.Score.EntityScore)
+			score = fmt.Sprintf("%.2f", run.Score.Score)
+			ent = fmt.Sprintf("%.2f", run.Score.EntityScore)
 			cat = boolMark(run.Score.CategoryMatch)
+			decoys = fmt.Sprintf("%d", len(run.Score.DecoysNamed))
+			ev = evidenceCell(run.Score.EvidenceCount, run.Score.CitedSignals, run.Score.EvidenceMissing,
+				run.Score.MalformedEvidence)
 		}
-		fmt.Fprintf(&b, "| %d | %s | %s | %s | %d | %d | %s |\n",
-			run.Repeat, score, cat, dash(run.Normalization),
+		fmt.Fprintf(&b, "| %d | %s | %s | %s | %s | %s | %s | %d | %d | %s |\n",
+			run.Repeat, score, ent, cat, decoys, ev, dash(run.Normalization),
 			run.Usage.ToolCalls, run.Usage.Tokens, outcome(run))
 	}
 	fmt.Fprintf(&b, "\n")
+
+	if d := decoyTally(r); len(d) > 0 {
+		fmt.Fprintf(&b, "Decoys named (plausible-but-wrong entities asserted): %s\n\n", strings.Join(d, ", "))
+	}
 
 	if miss := missedEntities(r); len(miss) > 0 {
 		fmt.Fprintf(&b, "Most-missed ground-truth entities: %s\n\n", strings.Join(miss, ", "))
@@ -75,6 +94,32 @@ func RenderReportMarkdown(r Report) string {
 		fmt.Fprintf(&b, "- %s\n", c)
 	}
 	return b.String()
+}
+
+// quantSuffix renders the weight format, which changes what a tag means: the
+// same model at Q4 and at Q8 are different subjects on a leaderboard.
+func quantSuffix(m *local.ModelInfo) string {
+	parts := []string{}
+	if m.ParameterSize != "" {
+		parts = append(parts, m.ParameterSize)
+	}
+	if m.Quantization != "" {
+		parts = append(parts, m.Quantization)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, " ") + ")"
+}
+
+// archSuffix contrasts served context with the architectural maximum. A large
+// maximum beside a small served value is the silent-truncation trap, so the
+// report shows both rather than the flattering one.
+func archSuffix(m *local.ModelInfo) string {
+	if m.ArchContextLength == 0 || m.ArchContextLength == m.EffectiveNumCtx {
+		return ""
+	}
+	return fmt.Sprintf(" (architecture supports %d; served context is what applies)", m.ArchContextLength)
 }
 
 func budgetString(r Report) string {
@@ -135,6 +180,53 @@ func missedEntities(r Report) []string {
 			continue
 		}
 		for _, e := range run.Score.Missed {
+			count[entityLabel(e.Kind, e.Namespace, e.Name)]++
+		}
+	}
+	out := make([]string, 0, len(count))
+	for k := range count {
+		out = append(out, k)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if count[out[i]] != count[out[j]] {
+			return count[out[i]] > count[out[j]]
+		}
+		return out[i] < out[j]
+	})
+	for i, k := range out {
+		out[i] = fmt.Sprintf("%s (%d/%d)", k, count[k], len(r.Runs))
+	}
+	return out
+}
+
+// evidenceCell renders what the agent cited: the count plus which signals, or an
+// explicit marker when the scenario required evidence and got none.
+// evidenceCell renders what the agent validly cited, flagging citations that
+// did not count so an agent that tried and got the format wrong is visible
+// rather than indistinguishable from one that never tried.
+func evidenceCell(count int, signals []string, missing bool, malformed int) string {
+	cell := fmt.Sprintf("%d", count)
+	switch {
+	case missing:
+		cell = "**none**"
+	case len(signals) > 0:
+		cell = fmt.Sprintf("%d (%s)", count, strings.Join(signals, ", "))
+	}
+	if malformed > 0 {
+		cell += fmt.Sprintf(" +%d malformed", malformed)
+	}
+	return cell
+}
+
+// decoyTally lists decoys the agent asserted, most frequent first, so a report
+// shows which wrong attribution an agent keeps reaching for.
+func decoyTally(r Report) []string {
+	count := map[string]int{}
+	for _, run := range r.Runs {
+		if run.Score == nil {
+			continue
+		}
+		for _, e := range run.Score.DecoysNamed {
 			count[entityLabel(e.Kind, e.Namespace, e.Name)]++
 		}
 	}

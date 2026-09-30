@@ -1,0 +1,68 @@
+# Bench scenario (Module C — Phase 4). Fault: an unbounded path parameter turns
+# a legitimate frontend route metric into one series per request, blowing up
+# active series. Ground truth is the frontend Deployment; an agent should name it
+# from the telemetry alone.
+#
+# Retargeted from checkout to frontend after live validation. checkout's request
+# metrics (rpc_*) are bounded — the only per-request dimension, rpc_method, has
+# one value — so no traffic can explode its cardinality. frontend emits
+# app_frontend_requests_total with a `target` label carrying the raw URL path,
+# which is where the explosion is both real and observable. (An earlier note
+# here said checkout emits no request metrics at all; that was read off a
+# cluster too new for checkout to have served traffic. See DECISIONS.md.)
+#
+# The step is `kubectl`, not `chaosmesh`: the fault is a plain ConfigMap +
+# Deployment (a load driver), not a Chaos Mesh CR — Chaos Mesh has no cardinality
+# fault type. Both types are applied identically by the kubectl injector, so the
+# label is purely a matter of describing the fault honestly.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: cardinality-explosion-frontend
+  description: >-
+    An unbounded product id in the /api/product-reviews/{id} path lands in the
+    `target` label of app_frontend_requests_total, growing active series without
+    bound.
+spec:
+  environment:
+    app: otel-demo
+  inject:
+    - type: kubectl
+      manifest: faults/cardinality-explosion.yaml
+      duration: 10m
+  # The agent must not be asked until the fault is visible in Mimir. Applying the
+  # manifest and querying immediately would show a healthy system: metrics reach
+  # the backend a scrape interval or more after the workload changes.
+  # Ambient frontend series sit around 40; three drivers add roughly 700/minute,
+  # so 300 is unambiguous and reached in well under a minute. The settle window
+  # requires the level to hold, so a single scrape spike cannot pass for an
+  # established state.
+  steadyState:
+    query: count(app_frontend_requests_total{job="frontend"})
+    min: 300
+    settle: 30s
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: otel-demo, name: frontend}
+    category: cardinality-explosion
+    # Decoys are what a lazy agent reaches for. product-reviews is the strongest:
+    # the exploding label value literally reads "/api/product-reviews/<id>", so an
+    # agent skimming label values blames the downstream service whose route
+    # appears in the path — a confident wrong attribution. frontend-proxy carries
+    # every one of these requests, and load-generator is the single busiest
+    # workload in the cluster by series count.
+    decoys:
+      - {kind: Deployment, namespace: otel-demo, name: product-reviews}
+      - {kind: Deployment, namespace: otel-demo, name: frontend-proxy}
+      - {kind: Deployment, namespace: otel-demo, name: load-generator}
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
+    # Ground truth is a single entity, so entity agreement alone is one binary
+    # guess against a service list the agent can see without any telemetry.
+    # Category carries equal weight and evidence is mandatory: together they are
+    # what separate a diagnosis from a lucky name-drop. Verified with
+    # `--agent=stub --stub-profile=obvious --stub-obvious=frontend`, which must
+    # score 0.00.
+    categoryWeight: 0.5
+    requireEvidence: true
