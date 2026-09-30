@@ -13,6 +13,33 @@ PR #61, and the live kind cluster.
 
 ---
 
+## Plan
+
+Sequenced by what unblocks what. One PR per step; each merges green before the
+next starts, so nothing sits unmerged.
+
+1. **Per-scenario reset/cleanup (B-10).** Unblocks `--repeats >1` on scenario 1
+   (frontend must restart to drop the fault's cumulative series) and every
+   mutation scenario. Includes the reset for scenario 1 and the coverage gap it
+   touches (B-19).
+2. **Scenarios 2–5 fixed and live-validated (B-09, B-11, B-12, B-13).** Rebuild
+   the stale `feat/bench-scenarios-2-5` branch on current main; gate latency
+   faults on latency, add the egress-blackhole scenario, replace the OOMKill
+   mechanism. Each one checked on kind: selector matches, fault bites, gate
+   fires, baseline clears, calibration gives 0.00 / 1.00.
+3. **Floor of 8 (B-30).** Three mutation scenarios on top of step 1: broken
+   trace propagation, missing `service.name`, deploy regression.
+4. **Release plumbing (B-20, B-37).** goreleaser + plugin zip, with the action
+   major-version bumps. Required for the v1.0 exit gate.
+5. **Plugin hygiene (B-21–B-24).** One small PR.
+6. **v1.0 artifacts (B-31–B-33).** A real scored run, the second (judge) model,
+   the flagship `--compare` report and leaderboard. The run-matrix cost
+   projection is confirmed with the user before the first full run (master plan
+   §12.4).
+
+Anytime: B-17 (deploy argus from `dev-up`), B-28 (stale branches — check each
+PR's state first). Needs the user: B-35 (catalog submission status).
+
 ## P1 — Scenarios 2–5 (live-validated 2026-07-25; 3 of 4 broken as committed)
 
 Branch `feat/bench-scenarios-2-5`, never PR'd. Selectors all match (1 pod each);
@@ -57,17 +84,14 @@ the gates and mechanisms are what failed.
 - [ ] **B-22** — Bump `@grafana/*` from 13.0.2 to the current 13.x patch.
 - [ ] **B-23** — `App.test.tsx` logs React Router v7 future-flag warnings, and its
   assertion `expect(container).toBeInTheDocument()` cannot fail.
+- [ ] **B-24** — `@stylistic/eslint-plugin-ts` is deprecated; migrate to
+  `@stylistic/eslint-plugin`.
 
 ## P3 — Cleanup
 
-- [ ] **B-27** — The `shotgun` stub profile names generic services, so via the CLI
-  it never hits a scenario's decoys.
 - [ ] **B-28** — ~19 stale remote branches from July. They were squash-merged, so
   `git branch --merged` reports them all unmerged; check each PR's state before
   deleting.
-- [ ] **B-29** — After a compactor crashloop (B-16), Mimir's bucket index goes
-  stale (>1 h), and label/metadata APIs error until the compactor catches up.
-  Instant queries still work. Add to the dev runbook.
 - [ ] **B-37** — GitHub Actions pinned to old majors (`checkout@v4`,
   `setup-go@v5`, `setup-node@v4`, `golangci-lint-action@v7`; current are v5+,
   v7, v5+, v9). They run on the deprecated Node 20 runtime, which is why every
@@ -100,6 +124,13 @@ Not defects. Tracked here so nothing is lost between sessions.
 
 ## Done
 
+> **ID correction (2026-09-30).** #61's commit message says "Closes … B-24 B-25
+> B-26"; it closed **B-25, B-26 and B-27** (judge timeout, EntityKey, shotgun
+> decoys). B-24 (eslint deprecation) was not touched and is still open. The
+> merged message cannot be edited, so the correction lives here.
+
+- [x] **B-29** (#64) — stale bucket index after a compactor crashloop is
+  documented in `docs/history-durability.md`.
 - [x] **B-16** (#64) — history-mount guard: a sentinel file inside the history,
   mounted by MinIO as hostPath `type: File`, so kubelet refuses to start MinIO on
   a detached (empty) mount; `make dev-heal` re-attaches. Verified against a
@@ -112,9 +143,9 @@ Not defects. Tracked here so nothing is lost between sessions.
   num_ctx guard keyed to loopback endpoints.
 - [x] **B-14** (#61) — "checkout emits only 10 series" corrected (cold-cluster
   reading); the retarget stands because checkout's rpc labels are bounded.
-- [x] **B-15, B-26** (#61) — calibration tests load the shipped scenario; the stub
+- [x] **B-15, B-27** (#61) — calibration tests load the shipped scenario; the stub
   requires `--stub-obvious`/`--stub-category`; `--stub-shotgun` names decoys.
-- [x] **B-24, B-25** (#61) — `--judge-timeout`; one `EntityKey`; dead code removed;
+- [x] **B-25, B-26** (#61) — `--judge-timeout`; one `EntityKey`; dead code removed;
   uncited rate and malformed citations rendered; the bench report gained its
   first golden-file test.
 - [x] **B-07** (#63) — 34 reachable vulnerabilities → 0: engine 18 (stdlib ×14 via
