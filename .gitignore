@@ -1,6 +1,8 @@
 # Binaries / build output
 /dist/
 engine/bin/
+# `go build ./cmd/argus` run inside engine/ writes here.
+/engine/argus
 plugin/dist/
 plugin/coverage/
 *.exe
