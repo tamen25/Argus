@@ -31,11 +31,27 @@ spec:
     partialCredit: true
 `
 
+// benchCategoriesYAML is the category list that sits beside a test scenario,
+// as scenarios/categories.yaml sits beside the shipped ones.
+const benchCategoriesYAML = `apiVersion: argus/v1alpha1
+kind: BenchCategories
+categories:
+  - {name: cardinality-explosion, description: Series grow without limit.}
+  - {name: dependency-latency, description: A dependency is slow.}
+  - {name: deploy-regression, description: A rollout misbehaves.}
+  - {name: insufficient-kubernetes-resource-quota, description: A namespace quota blocks new pods.}
+  - {name: network-partition, description: Traffic is blocked.}
+  - {name: oomkill, description: A container is killed for exceeding its memory limit.}
+`
+
 func writeScenario(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "scenario.yaml")
 	if err := os.WriteFile(p, []byte(benchScenarioYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "categories.yaml"), []byte(benchCategoriesYAML), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return p

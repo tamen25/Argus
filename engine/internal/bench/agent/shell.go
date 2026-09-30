@@ -63,15 +63,23 @@ func (s *ShellAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 	cmd := exec.CommandContext(ctx, s.cfg.Command, s.cfg.Args...)
 	cmd.Dir = s.cfg.Dir
 	cmd.Env = append(os.Environ(), s.cfg.Env...)
+	// An external agent sees no tool schema, so the fault categories it must
+	// choose from travel in the brief and, for wrappers, as a name list.
+	brief := task.Brief + categoryBrief(task.Categories)
+	names := make([]string, len(task.Categories))
+	for i, c := range task.Categories {
+		names[i] = c.Name
+	}
 	cmd.Env = append(cmd.Env,
 		"ARGUS_SCENARIO="+task.Scenario,
-		"ARGUS_BRIEF="+task.Brief,
+		"ARGUS_BRIEF="+brief,
+		"ARGUS_CATEGORIES="+strings.Join(names, ","),
 		// Argus cannot see or cap what an external agent spends. The budget is
 		// passed along so a wrapper can enforce it; zero means uncapped.
 		"ARGUS_MAX_TOOL_CALLS="+strconv.Itoa(task.Budget.MaxToolCalls),
 		"ARGUS_MAX_TOKENS="+strconv.Itoa(task.Budget.MaxTokens),
 	)
-	cmd.Stdin = strings.NewReader(task.Brief)
+	cmd.Stdin = strings.NewReader(brief)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

@@ -181,6 +181,26 @@ evidence trail and scores every agent zero. Scope faults so the telemetry
 pipeline survives — the egress blackhole targets three named backends rather than
 everything.
 
+## 9. The category comes from `categories.yaml`
+
+`groundTruth.category` must be a name in `scenarios/categories.yaml`. That file
+is the closed list every agent is offered, and both a test and `bench run`
+refuse a scenario whose category is not on it: the agent could never give the
+right answer.
+
+If a new scenario needs a new category, add it there with a one-line
+description of the *kind* of fault. The description must not mention a service,
+a metric or anything else from a scenario (a test checks it against every
+scenario's entities), because every agent reads it on every run.
+
+Keep more categories on the list than scenarios use. The unused ones are
+distractors; without them an agent could rule categories out by counting. And
+treat a rename or removal as a breaking change: runs record the list they were
+offered, and results from before and after are not comparable.
+
+The first real-model run answered `PerformanceDegradation` to a scenario whose
+ground truth was `deploy-regression`. It had never been shown the list.
+
 ## Environment gotchas
 
 - **kind's default CNI (kindnet) does not enforce NetworkPolicy.** The object is

@@ -11,8 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/mcp"
 )
 
@@ -54,6 +56,10 @@ type Task struct {
 	Tools Tools
 	// Budget caps tool calls and tokens for this run.
 	Budget Budget
+	// Categories is the closed list of fault categories the agent chooses from,
+	// in the order it is shown. Empty means no list was offered and the category
+	// is free text.
+	Categories []bench.Category
 }
 
 // Usage records what a run consumed, for the honest run record (rules 6/7).
@@ -118,6 +124,56 @@ const submitToolSchema = `{"type":"object","required":["root_cause_entities","ca
 	`"query":{"type":"string"},"observation":{"type":"string"}}}},` +
 	`"summary":{"type":"string"},` +
 	`"confidence":{"type":"number"}}}`
+
+// submitSchema returns the submit_diagnosis schema for a run. With a category
+// list, `category` becomes an enum of exactly those names and its description
+// spells each one out, so the vocabulary the scorer matches against is part of
+// the tool the agent answers with. Without one it stays free text.
+func submitSchema(categories []bench.Category) json.RawMessage {
+	if len(categories) == 0 {
+		return json.RawMessage(submitToolSchema)
+	}
+	names := make([]string, len(categories))
+	var desc strings.Builder
+	desc.WriteString("The kind of fault. Choose exactly one:")
+	for i, c := range categories {
+		names[i] = c.Name
+		fmt.Fprintf(&desc, " %s — %s", c.Name, c.Description)
+	}
+
+	// Decode into generic maps, change one property, encode again. The constant
+	// is valid JSON by construction and encoding/json writes map keys in sorted
+	// order, so the result is deterministic.
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(submitToolSchema), &schema); err != nil {
+		panic("agent: submitToolSchema is not valid JSON: " + err.Error())
+	}
+	schema["properties"].(map[string]any)["category"] = map[string]any{
+		"type":        "string",
+		"enum":        names,
+		"description": desc.String(),
+	}
+	out, err := json.Marshal(schema)
+	if err != nil {
+		panic("agent: encoding submit schema: " + err.Error())
+	}
+	return out
+}
+
+// categoryBrief lists the fault categories in the brief itself, so an agent
+// that never sees the tool schema (the shell adapter) is offered the same
+// vocabulary as one that does. Empty when no list was given.
+func categoryBrief(categories []bench.Category) string {
+	if len(categories) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nFault categories — give exactly one of these names as the category:")
+	for _, c := range categories {
+		fmt.Fprintf(&b, "\n- %s: %s", c.Name, c.Description)
+	}
+	return b.String()
+}
 
 const systemPrompt = "You are an SRE incident-diagnosis agent. Investigate the incident using the " +
 	"read-only observability tools (metrics, logs, traces, alerts, topology). Do not guess — use the " +

@@ -43,6 +43,12 @@ func RenderReportMarkdown(r Report) string {
 	if r.Condition != "" {
 		fmt.Fprintf(&b, "- Telemetry condition: `%s`\n", r.Condition)
 	}
+	if n := len(r.CategoriesOffered); n > 0 {
+		fmt.Fprintf(&b, "- Fault categories offered: %d (`%s`)\n", n, strings.Join(r.CategoriesOffered, "`, `"))
+	} else {
+		fmt.Fprintf(&b, "- Fault categories offered: **none** — the agent was not shown the category list"+
+			" and could match the ground-truth category only by guessing its exact name\n")
+	}
 	fmt.Fprintf(&b, "- Seed: %d\n", r.Seed)
 	fmt.Fprintf(&b, "- Budget: %s\n", budgetString(r))
 	if m := r.Model; m != nil {

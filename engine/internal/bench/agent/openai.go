@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/tamen25/Argus/engine/internal/bench"
 )
 
 // OpenAIConfig configures an OpenAI-compatible chat-completions agent. Any
@@ -57,10 +59,10 @@ func (a *OpenAIAgent) Name() string { return a.cfg.Name }
 // last permitted tool call has been used the agent is told so and gets one more
 // turn, in which only submit_diagnosis is accepted.
 func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
-	tools := a.toolDefs(task.Tools)
+	tools := a.toolDefs(task.Tools, task.Categories)
 	msgs := []oaMessage{
 		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: task.Brief + "\n\nWhen you have identified the root cause, call " +
+		{Role: "user", Content: task.Brief + categoryBrief(task.Categories) + "\n\nWhen you have identified the root cause, call " +
 			submitToolName + "." + budgetBrief(task.Budget)},
 	}
 
@@ -132,7 +134,7 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 
 // toolDefs converts the read-only MCP tools into OpenAI function definitions and
 // appends the terminal submit_diagnosis tool.
-func (a *OpenAIAgent) toolDefs(tools Tools) []oaTool {
+func (a *OpenAIAgent) toolDefs(tools Tools, categories []bench.Category) []oaTool {
 	var defs []oaTool
 	if tools != nil {
 		for _, t := range tools.List() {
@@ -151,7 +153,7 @@ func (a *OpenAIAgent) toolDefs(tools Tools) []oaTool {
 		Function: oaFunctionDef{
 			Name:        submitToolName,
 			Description: "Submit the final diagnosis: the root-cause entities and fault category.",
-			Parameters:  json.RawMessage(submitToolSchema),
+			Parameters:  submitSchema(categories),
 		},
 	})
 	return defs

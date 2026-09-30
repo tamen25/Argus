@@ -133,6 +133,9 @@ func TestImportedScenario_FailsUnderScriptInjection(t *testing.T) {
 		"--endpoint", "http://127.0.0.1:1", "--model", "m",
 		"--mimir-url", "http://127.0.0.1:1",
 		"--inject", "script",
+		// One imported scenario yields a one-category list, which a run refuses;
+		// a full list is supplied, as it would be for a partial import.
+		"--categories", writeTestCategories(t),
 		// This test is about the injection refusal, which must be reached; the
 		// dead endpoint would otherwise fail the context probe first.
 		"--min-context", "0",
@@ -146,5 +149,50 @@ func TestImportedScenario_FailsUnderScriptInjection(t *testing.T) {
 	}
 	if strings.Contains(runOut.String(), "| 0 | 1.00") {
 		t.Error("an un-injected run must not produce a score")
+	}
+}
+
+func writeTestCategories(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "categories.yaml")
+	if err := os.WriteFile(p, []byte(benchCategoriesYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// The importer writes the category list for what it imported, and says when
+// that list is too short to run against.
+func TestBenchImportITBench_WritesTheCategoryList(t *testing.T) {
+	in := writeITBench(t, map[string]string{"102.json": itbenchRaw})
+	out := filepath.Join(t.TempDir(), "imported")
+
+	var stderr bytes.Buffer
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&stderr)
+	root.SetArgs([]string{"bench", "import-itbench", "--in", in, "--out", out})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(out, "categories.yaml"))
+	if err != nil {
+		t.Fatalf("expected a category list beside the imported scenarios: %v", err)
+	}
+	if !strings.Contains(string(raw), "name: insufficient-kubernetes-resource-quota") ||
+		!strings.Contains(string(raw), "kind: BenchCategories") {
+		t.Errorf("category list = %s", raw)
+	}
+	if !strings.Contains(stderr.String(), "lists 1 fault categories") {
+		t.Errorf("a list too short to run against was not flagged: %q", stderr.String())
+	}
+
+	// Running against it is refused, with the reason, rather than handing the
+	// agent a list of one.
+	_, err = execute(t, "bench", "run", "--scenario", filepath.Join(out, "itbench-sre-102.yaml"),
+		"--agent", "stub", "--inject", "none")
+	if err == nil || !strings.Contains(err.Error(), "gives the answer away") {
+		t.Errorf("err = %v, want the one-category list refused", err)
 	}
 }

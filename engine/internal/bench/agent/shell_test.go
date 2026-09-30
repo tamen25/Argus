@@ -26,8 +26,8 @@ func TestShellHelperProcess(t *testing.T) {
 	case "empty":
 		// print nothing
 	case "echo-env":
-		fmt.Printf("scenario=%s brief=%s calls=%s tokens=%s", os.Getenv("ARGUS_SCENARIO"), os.Getenv("ARGUS_BRIEF"),
-			os.Getenv("ARGUS_MAX_TOOL_CALLS"), os.Getenv("ARGUS_MAX_TOKENS"))
+		fmt.Printf("scenario=%s brief=%s calls=%s tokens=%s categories=%s", os.Getenv("ARGUS_SCENARIO"), os.Getenv("ARGUS_BRIEF"),
+			os.Getenv("ARGUS_MAX_TOOL_CALLS"), os.Getenv("ARGUS_MAX_TOKENS"), os.Getenv("ARGUS_CATEGORIES"))
 	case "hang":
 		time.Sleep(30 * time.Second)
 	default: // echo stdin back
@@ -68,7 +68,8 @@ func TestShell_CapturesStdoutFromStdin(t *testing.T) {
 func TestShell_PassesScenarioAndBriefEnv(t *testing.T) {
 	res, err := helperShell("echo-env", 30*time.Second).Diagnose(context.Background(), Task{
 		Scenario: "cardinality-explosion-checkout", Brief: "series spike",
-		Budget: Budget{MaxToolCalls: 20, MaxTokens: 100000},
+		Budget:     Budget{MaxToolCalls: 20, MaxTokens: 100000},
+		Categories: testCategories,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -76,6 +77,11 @@ func TestShell_PassesScenarioAndBriefEnv(t *testing.T) {
 	got := string(res.Raw)
 	if !strings.Contains(got, "scenario=cardinality-explosion-checkout") || !strings.Contains(got, "brief=series spike") {
 		t.Errorf("raw = %q", got)
+	}
+	// An external agent sees no tool schema: the categories reach it in the brief
+	// and as a name list.
+	if !strings.Contains(got, "categories=deploy-regression,oomkill") || !strings.Contains(got, "- oomkill: A container is killed") {
+		t.Errorf("raw = %q, want the category list passed to the shell agent", got)
 	}
 	// Argus cannot cap an external agent, so the budget is handed to the wrapper.
 	if !strings.Contains(got, "calls=20") || !strings.Contains(got, "tokens=100000") {

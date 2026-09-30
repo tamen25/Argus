@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bench/itbench"
 )
 
@@ -49,6 +50,7 @@ cannot be derived is refused, not emitted with an empty answer key.`,
 			}
 
 			var written, skipped int
+			var categories []bench.Category
 			for _, f := range files {
 				sc, err := itbench.ConvertFile(f)
 				if err != nil {
@@ -71,6 +73,24 @@ cannot be derived is refused, not emitted with an empty answer key.`,
 					return err
 				}
 				written++
+				categories = append(categories, bench.Category{
+					Name:        sc.Spec.GroundTruth.Category,
+					Description: "ITBench fault " + strings.ReplaceAll(sc.Spec.GroundTruth.Category, "+", " combined with "),
+				})
+			}
+
+			// Every agent is shown the fault categories it is scored against. For
+			// imported scenarios that list is the set of ITBench faults imported so
+			// far; importing more scenarios into the same directory extends it.
+			listed, err := bench.AddCategories(filepath.Join(out, "categories.yaml"), categories)
+			if err != nil {
+				return err
+			}
+			if listed < bench.MinCategories {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+					"note: %s lists %d fault categories; `bench run` needs at least %d, so that the list does not give "+
+						"the answer away. Import more ITBench scenarios into this directory, or pass --categories.\n",
+					filepath.Join(out, "categories.yaml"), listed, bench.MinCategories)
 			}
 
 			_, err = fmt.Fprintf(cmd.OutOrStdout(),

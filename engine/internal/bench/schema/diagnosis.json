@@ -18,7 +18,7 @@
     },
     "category": {
       "type": "string",
-      "description": "The agent's fault classification, e.g. cardinality-explosion."
+      "description": "The agent's fault classification: one name from the category list it was offered (categories.yaml beside the scenario), e.g. cardinality-explosion. Matched exactly, ignoring case."
     },
     "evidence": {
       "type": "array",

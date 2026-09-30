@@ -1,7 +1,7 @@
 # The first real-model run (deploy-regression-cart)
 
-A record of the first bench runs against a real model, on 2026-09-30, and what
-they showed about the harness. Every run before this used the calibration stub,
+A record of the first three bench runs against a real model, on 2026-09-30, and
+what they showed about the harness. Every run before this used the calibration stub,
 which answers without calling a tool. The stub validates a scenario's mechanics
 and its rubric; it cannot show what an agent experiences.
 
@@ -70,13 +70,32 @@ calibration stub reaches 1.00 only because it is handed the slug.
 server, and `bench run` does not wire a topology backend. The agent is asked to
 name Kubernetes entities and has no tool that lists them.
 
+## Run 3: with the category list
+
+| Wall clock | Tool calls | Tool errors | Tokens | Score | Entity | Category |
+|---:|---:|---:|---:|---:|---:|---|
+| 223 s | 20 | 9 | 48865 | **0.00** | 0.00 | no (`broken-trace-propagation`) |
+
+Finding 4 is fixed: every agent is now offered the closed category list, as an
+enum on `submit_diagnosis` and in the brief. The model answered with a category
+from the list. It was the wrong one, which is a result about the agent and no
+longer one about the harness.
+
+The rest of the run confirms findings 3 and 5. The model filtered on
+`environment="otel-demo"` this time, another label that does not exist, and all
+eight PromQL queries that parsed returned nothing. Seven of eight trace
+searches were rejected as invalid TraceQL. And it named the root cause as
+`{kind: "service", namespace: "", name: "flagd"}`: with no tool that lists the
+cluster's workloads, it had no way to know the entities are `Deployment`s in
+`otel-demo`, so even the right service name would have scored zero.
+
 ## What this means for results
 
-Findings 1 and 2 are fixed. Findings 3 to 5 are open (BACKLOG B-41, B-42), and
-until they are decided, a bench score measures the harness as much as the agent:
-the category half of the rubric is unreachable, and the entity half depends on
-the agent guessing this environment's label scheme. No leaderboard or
-degraded-vs-remediated comparison should be published from the current surface.
+Findings 1, 2 and 4 are fixed. Findings 3 and 5 are open (BACKLOG B-42), and
+until they are, a bench score measures the harness as much as the agent: the
+entity half of the rubric depends on the agent guessing this environment's label
+scheme and its workload kinds. No leaderboard or degraded-vs-remediated
+comparison should be published from the current surface.
 
-Both runs left the cluster clean: cart's `VALKEY_ADDR` restored, no annotations,
-no fault objects.
+All three runs left the cluster clean: cart's `VALKEY_ADDR` restored, no
+annotations, no fault objects.

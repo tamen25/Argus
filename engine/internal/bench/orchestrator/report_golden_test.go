@@ -46,8 +46,11 @@ func goldenReport() Report {
 		ScenarioHash: "8fb638d665e5",
 		Agent:        "qwen3.6-bench",
 		EnvDigest:    "kind-argus-golden",
-		Seed:         7,
-		Budget:       agent.Budget{MaxToolCalls: 35, MaxTokens: 400000},
+		CategoriesOffered: []string{
+			"cardinality-explosion", "dependency-latency", "deploy-regression", "network-partition", "oomkill",
+		},
+		Seed:   7,
+		Budget: agent.Budget{MaxToolCalls: 35, MaxTokens: 400000},
 		Model: &local.ModelInfo{
 			Endpoint: "http://127.0.0.1:11434/v1/chat/completions", Model: "qwen3.6-bench",
 			Quantization: "Q4_K_M", ParameterSize: "36.0B",

@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/tamen25/Argus/engine/internal/bench"
 )
 
 // AnthropicConfig configures an Anthropic Messages API agent. It is a second
@@ -70,10 +72,10 @@ func (a *AnthropicAgent) Name() string { return a.cfg.Name }
 // call is used the agent is told and gets one turn to submit. An overrun
 // returns ErrBudgetExhausted with partial usage.
 func (a *AnthropicAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
-	tools := a.toolDefs(task.Tools)
+	tools := a.toolDefs(task.Tools, task.Categories)
 	msgs := []antMessage{{
 		Role: "user",
-		Content: []antBlock{{Type: "text", Text: task.Brief + "\n\nWhen you have identified the root cause, call " +
+		Content: []antBlock{{Type: "text", Text: task.Brief + categoryBrief(task.Categories) + "\n\nWhen you have identified the root cause, call " +
 			submitToolName + "." + budgetBrief(task.Budget)}},
 	}}
 
@@ -141,7 +143,7 @@ func (a *AnthropicAgent) Diagnose(ctx context.Context, task Task) (Result, error
 	return s.result(nil), fmt.Errorf("agent %s: exceeded %d steps without submitting", a.cfg.Name, hardStep)
 }
 
-func (a *AnthropicAgent) toolDefs(tools Tools) []antTool {
+func (a *AnthropicAgent) toolDefs(tools Tools, categories []bench.Category) []antTool {
 	var defs []antTool
 	if tools != nil {
 		for _, t := range tools.List() {
@@ -151,7 +153,7 @@ func (a *AnthropicAgent) toolDefs(tools Tools) []antTool {
 	defs = append(defs, antTool{
 		Name:        submitToolName,
 		Description: "Submit the final diagnosis: the root-cause entities and fault category.",
-		InputSchema: json.RawMessage(submitToolSchema),
+		InputSchema: submitSchema(categories),
 	})
 	return defs
 }

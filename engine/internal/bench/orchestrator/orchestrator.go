@@ -87,6 +87,11 @@ type Options struct {
 	// puts the environment in that condition, and `bench report --compare`
 	// groups reports by it.
 	Condition string
+	// Categories is the closed list of fault categories every agent is offered.
+	// The category is scored by exact match, so an agent that is not shown the
+	// list cannot match it. Empty means none was offered, which the report
+	// states.
+	Categories bench.Categories
 	// Model is the provenance of the inference that served this run — tag,
 	// quantization, served context, endpoint. Without it a leaderboard row
 	// cannot be reproduced: the same tag at a different quantization or context
@@ -141,16 +146,18 @@ type Summary struct {
 // Report is the full record of one scenario × one agent, carrying everything
 // needed to reproduce it (architecture rule 6).
 type Report struct {
-	Scenario     string           `json:"scenario"`
-	ScenarioHash string           `json:"scenario_hash"`
-	Agent        string           `json:"agent"`
-	EnvDigest    string           `json:"env_digest,omitempty"`
-	Condition    string           `json:"condition,omitempty"`
-	Seed         int64            `json:"seed"`
-	Budget       agent.Budget     `json:"budget"`
-	Model        *local.ModelInfo `json:"model,omitempty"`
-	Runs         []RunRecord      `json:"runs"`
-	Summary      Summary          `json:"summary"`
+	Scenario     string `json:"scenario"`
+	ScenarioHash string `json:"scenario_hash"`
+	Agent        string `json:"agent"`
+	EnvDigest    string `json:"env_digest,omitempty"`
+	Condition    string `json:"condition,omitempty"`
+	// CategoriesOffered is the category list the agent chose from, as shown.
+	CategoriesOffered []string         `json:"categories_offered,omitempty"`
+	Seed              int64            `json:"seed"`
+	Budget            agent.Budget     `json:"budget"`
+	Model             *local.ModelInfo `json:"model,omitempty"`
+	Runs              []RunRecord      `json:"runs"`
+	Summary           Summary          `json:"summary"`
 }
 
 // Run executes the scenario against the agent Repeats times and returns the
@@ -172,14 +179,15 @@ func Run(
 	}
 
 	rep := Report{
-		Scenario:     sc.Metadata.Name,
-		ScenarioHash: hash,
-		Agent:        ag.Name(),
-		EnvDigest:    opts.EnvDigest,
-		Condition:    opts.Condition,
-		Seed:         opts.Seed,
-		Budget:       opts.Budget,
-		Model:        opts.Model,
+		Scenario:          sc.Metadata.Name,
+		ScenarioHash:      hash,
+		Agent:             ag.Name(),
+		EnvDigest:         opts.EnvDigest,
+		Condition:         opts.Condition,
+		CategoriesOffered: opts.Categories.Names(),
+		Seed:              opts.Seed,
+		Budget:            opts.Budget,
+		Model:             opts.Model,
 	}
 
 	for i := 0; i < opts.Repeats; i++ {
@@ -233,10 +241,11 @@ func runOnce(
 	}
 
 	res, err := ag.Diagnose(ctx, agent.Task{
-		Scenario: sc.Metadata.Name,
-		Brief:    opts.Brief(sc),
-		Tools:    tools,
-		Budget:   opts.Budget,
+		Scenario:   sc.Metadata.Name,
+		Brief:      opts.Brief(sc),
+		Tools:      tools,
+		Budget:     opts.Budget,
+		Categories: opts.Categories.Sorted(),
 	})
 	rec.Usage = res.Usage
 	rec.ToolLog = res.Calls

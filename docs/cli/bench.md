@@ -20,6 +20,14 @@ argus bench run \
 
 - **The agent is never told the answer.** The brief names only the environment;
   a test asserts it leaks neither the ground-truth entities nor the category.
+- **The agent is told the vocabulary.** The fault category is matched exactly, so
+  every agent is offered the same closed list of categories, sorted by name:
+  as an enum on `submit_diagnosis` and, for agents that never see a tool schema,
+  in the brief. The list is `categories.yaml` beside the scenario
+  (`--categories` overrides it) and holds more categories than there are
+  scenarios, so it narrows nothing down. The report records the list that was
+  offered. A run without one is refused: it would score an agent on guessing
+  the library's slugs.
 - **Scoring is deterministic.** Entity-set agreement (Jaccard, or exact match)
   against the scenario's `groundTruth`, combined with the fault category and
   reduced by any decoys named. The agent's prose and self-reported confidence
@@ -54,7 +62,9 @@ Three things make the difference between grading a diagnosis and grading a
 lucky guess:
 
 - **Category is folded in, not filed beside.** Naming the right workload for the
-  wrong reason is a partial answer.
+  wrong reason is a partial answer. The agent picks the category from the closed
+  list it was offered; an answer outside the list simply does not match, and the
+  report shows what it said.
 - **Evidence can be mandatory.** A diagnosis may cite telemetry
   (`signal`/`query`/`observation`); with `requireEvidence: true` an uncited
   answer scores zero. The scorer checks citations are present and well-formed,
@@ -184,7 +194,9 @@ not tool access**. Shell agents bring their own tooling and their token/tool
 budgets are **not enforceable** — only a wall-clock timeout applies, and the
 report shows their unknown usage dimensions as zero rather than guessing. The
 caps are passed to the wrapper as `ARGUS_MAX_TOOL_CALLS` and `ARGUS_MAX_TOKENS`
-(`0` = uncapped) so it can enforce them itself.
+(`0` = uncapped) so it can enforce them itself. The fault categories reach a
+shell agent in the brief, and as a comma-separated name list in
+`ARGUS_CATEGORIES`.
 
 ## Normalization (and when a model is involved)
 
@@ -349,6 +361,13 @@ empty answer key that would score every agent answer wrong; pass
 Each imported file records its provenance (`metadata.source`, e.g.
 `itbench:sre/102`) so a published comparison traces back to the upstream
 definition.
+
+The importer also writes `categories.yaml` into the output directory: the fault
+categories of everything imported there so far, which is the list agents are
+offered for those scenarios. `bench run` needs at least five categories on it,
+so that the list does not give the answer away; importing a handful of scenarios
+is not enough, and the importer says so. Import the full scenario set, or pass
+`--categories` with a fuller list.
 
 ## Scenarios
 
