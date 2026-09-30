@@ -67,8 +67,9 @@ func goldenReport() Report {
 				}},
 			{Repeat: 1, Score: &decoy, Normalization: "llm-judge", Usage: agent.Usage{ToolCalls: 12, Tokens: 18000}},
 			{Repeat: 2, Score: &uncited, Normalization: "json", Usage: agent.Usage{ToolCalls: 4, Tokens: 6000}},
-			{Repeat: 3, Error: "agent: budget exhausted before diagnosis", BudgetExhausted: true,
-				Usage: agent.Usage{ToolCalls: 35, Tokens: 52000}},
+			{Repeat: 3, Error: "agent: budget exhausted before diagnosis: tool calls cap (35 of 35)", BudgetExhausted: true,
+				BudgetCap: "tool calls",
+				Usage:     agent.Usage{ToolCalls: 35, Tokens: 52000}},
 		},
 	}
 	r.Summary = summarize(r.Runs)

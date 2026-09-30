@@ -232,7 +232,7 @@ func TestOpenAI_ExhaustedRunKeepsItsToolLog(t *testing.T) {
 	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{
 		Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 1},
 	})
-	if err != ErrBudgetExhausted {
+	if !errors.Is(err, ErrBudgetExhausted) {
 		t.Fatalf("err = %v, want ErrBudgetExhausted", err)
 	}
 	if len(res.Calls) != 1 {
@@ -356,5 +356,93 @@ func TestCategoryBrief(t *testing.T) {
 	}
 	if categoryBrief(nil) != "" {
 		t.Error("no list must add nothing to the brief")
+	}
+}
+
+// The fourth real run was cut off on its token cap with no warning: each turn
+// re-sends the whole conversation, so the count grows faster than an agent can
+// track. When the tokens left would not cover another turn, the agent is told
+// and gets a final turn.
+func TestOpenAI_WarnsWhenTokensRunLowAndAcceptsTheFinalSubmit(t *testing.T) {
+	var bodies []string
+	srv := recording(t, &bodies,
+		toolCallResp("c1", "query_prometheus", `{"query":"up"}`, 3000), // 3000 used, 7000 left: plenty
+		toolCallResp("c2", "query_prometheus", `{"query":"up"}`, 4000), // 7000 used, 3000 left < 4000+2000
+		toolCallResp("c3", submitToolName, diagArgs, 5000),             // the final turn crosses the cap
+	)
+	defer srv.Close()
+
+	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{
+		Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 20, MaxTokens: 10000},
+	})
+	if err != nil {
+		t.Fatalf("a diagnosis submitted on the final turn must be accepted, got %v", err)
+	}
+	if res.Usage.Tokens != 12000 {
+		t.Errorf("tokens = %d, want the true total of 12000 (reported, not hidden)", res.Usage.Tokens)
+	}
+	if strings.Contains(bodies[1], "token budget is nearly spent") {
+		t.Error("warned while most of the budget was left")
+	}
+	if !strings.Contains(bodies[2], "token budget is nearly spent (7000 of 10000 used)") {
+		t.Errorf("the model was not warned before its final turn:\n%s", bodies[2])
+	}
+}
+
+func TestOpenAI_AToolCallAfterTheTokenNoticeEndsTheRun(t *testing.T) {
+	srv := scripted(t,
+		toolCallResp("c1", "query_prometheus", `{"query":"up"}`, 7000),
+		toolCallResp("c2", "query_prometheus", `{"query":"up"}`, 1000),
+	)
+	defer srv.Close()
+	tools := &fakeTools{}
+	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{
+		Scenario: "s", Tools: tools, Budget: Budget{MaxToolCalls: 20, MaxTokens: 10000},
+	})
+	var be *BudgetError
+	if !errors.As(err, &be) || be.Cap != CapTokens {
+		t.Fatalf("err = %v, want a BudgetError on the token cap", err)
+	}
+	if tools.calls != 1 || res.Usage.ToolCalls != 1 {
+		t.Errorf("executed %d / reported %d calls, want 1: the call after the notice must not run",
+			tools.calls, res.Usage.ToolCalls)
+	}
+}
+
+func TestBudgetError_NamesTheCap(t *testing.T) {
+	srv := scripted(t,
+		toolCallResp("c1", "query_prometheus", `{"query":"up"}`, 10),
+		toolCallResp("c2", "query_prometheus", `{"query":"up"}`, 10),
+	)
+	defer srv.Close()
+	_, err := newAgent(t, srv).Diagnose(context.Background(), Task{
+		Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 1},
+	})
+	var be *BudgetError
+	if !errors.As(err, &be) || be.Cap != CapToolCalls || be.Used != 1 || be.Limit != 1 {
+		t.Fatalf("err = %#v, want the tool-call cap (1 of 1)", err)
+	}
+	if !errors.Is(err, ErrBudgetExhausted) {
+		t.Error("a BudgetError must still match ErrBudgetExhausted")
+	}
+	if !strings.Contains(err.Error(), "tool calls cap (1 of 1)") {
+		t.Errorf("message = %q", err.Error())
+	}
+}
+
+func TestAnthropic_WarnsWhenTokensRunLow(t *testing.T) {
+	var bodies []string
+	srv := recording(t, &bodies,
+		antToolUseResp("t1", "query_prometheus", `{"query":"up"}`, 6000, 1000),
+		antToolUseResp("t2", submitToolName, diagArgs, 4000, 500),
+	)
+	defer srv.Close()
+	if _, err := newAnt(t, srv).Diagnose(context.Background(), Task{
+		Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxTokens: 10000},
+	}); err != nil {
+		t.Fatalf("final submit refused: %v", err)
+	}
+	if !strings.Contains(bodies[1], "token budget is nearly spent (7000 of 10000 used)") {
+		t.Errorf("no token notice before the final turn:\n%s", bodies[1])
 	}
 }

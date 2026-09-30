@@ -161,8 +161,9 @@
         "tokens": 52000,
         "steps": 0
       },
-      "error": "agent: budget exhausted before diagnosis",
-      "budget_exhausted": true
+      "error": "agent: budget exhausted before diagnosis: tool calls cap (35 of 35)",
+      "budget_exhausted": true,
+      "budget_cap": "tool calls"
     }
   ],
   "summary": {

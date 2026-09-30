@@ -97,46 +97,44 @@ func (a *AnthropicAgent) Diagnose(ctx context.Context, task Task) (Result, error
 		if err != nil {
 			return s.result(nil), err
 		}
-		s.usage.Tokens += resp.Usage.InputTokens + resp.Usage.OutputTokens
-		if task.Budget.MaxTokens > 0 && s.usage.Tokens > task.Budget.MaxTokens {
-			return s.result(nil), ErrBudgetExhausted
+		s.addTokens(resp.Usage.InputTokens + resp.Usage.OutputTokens)
+
+		var uses []antBlock
+		for _, b := range resp.Content {
+			if b.Type == "tool_use" {
+				uses = append(uses, b)
+			}
+		}
+		if len(uses) == 0 {
+			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s", a.cfg.Name, submitToolName)
+		}
+		// Same rules as the OpenAI adapter: a diagnosis anywhere in the turn
+		// ends the run, even past the token cap; otherwise a cap, or a tool
+		// call after the budget notice, ends it with nothing more executed.
+		for _, b := range uses {
+			if b.Name == submitToolName {
+				return s.result(b.Input), nil
+			}
+		}
+		if s.overTokens() || s.warned {
+			return s.result(nil), s.exhausted()
 		}
 
 		// The assistant turn (its content blocks) must be echoed back verbatim.
 		msgs = append(msgs, antMessage{Role: "assistant", Content: resp.Content})
-
 		var toolResults []antBlock
-		sawToolUse := false
-		for _, b := range resp.Content {
-			if b.Type != "tool_use" {
-				continue
-			}
-			sawToolUse = true
-			if b.Name == submitToolName {
-				return s.result(b.Input), nil
-			}
+		for _, b := range uses {
 			content := budgetRefusal
-			if s.spent() {
-				// Told the budget was spent and asked for a tool anyway: the
-				// run ends, and the unexecuted call is not counted.
-				if s.warned {
-					return s.result(nil), ErrBudgetExhausted
-				}
-			} else {
+			if !s.spent() {
 				content = s.call(ctx, task.Tools, b.Name, b.Input)
 			}
 			// Every tool_use id needs a tool_result, so a call made past the
 			// cap in the same turn gets the refusal.
 			toolResults = append(toolResults, antBlock{Type: "tool_result", ToolUseID: b.ID, Content: content})
 		}
-
-		if !sawToolUse {
-			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s", a.cfg.Name, submitToolName)
-		}
-		if s.spent() && !s.warned {
+		if n := s.notice(); n != "" {
 			// Text after the tool_result blocks, in the same user turn.
-			toolResults = append(toolResults, antBlock{Type: "text", Text: budgetSpentNotice})
-			s.warned = true
+			toolResults = append(toolResults, antBlock{Type: "text", Text: n})
 		}
 		msgs = append(msgs, antMessage{Role: "user", Content: toolResults})
 	}

@@ -216,6 +216,8 @@ func budgetString(r Report) string {
 
 func outcome(r RunRecord) string {
 	switch {
+	case r.BudgetExhausted && r.BudgetCap != "":
+		return "budget exhausted (" + r.BudgetCap + ")"
 	case r.BudgetExhausted:
 		return "budget exhausted"
 	case r.Error != "":

@@ -23,7 +23,7 @@
 | 0 | 1.00 | 1.00 | yes | 0 | 2 (logs, metrics) | json | 3 | 1 | 14000 | diagnosed |
 | 1 | 0.00 | 0.50 | no (`high-latency`) | 1 | 1 (metrics) +1 malformed | llm-judge | 12 | 0 | 18000 | diagnosed |
 | 2 | 0.00 | 1.00 | yes | 0 | **none** | json | 4 | 0 | 6000 | diagnosed |
-| 3 | — | — | — | — | — | — | 35 | 0 | 52000 | budget exhausted |
+| 3 | — | — | — | — | — | — | 35 | 0 | 52000 | budget exhausted (tool calls) |
 
 Decoys named (plausible-but-wrong entities asserted): Deployment/otel-demo/product-reviews (1/4)
 

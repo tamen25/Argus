@@ -115,9 +115,11 @@ which cap was hit.
 
 ## What this means for results
 
-Findings 1 to 5 are fixed. Finding 6 is open (BACKLOG B-43). Until it is, a run
-can still end on a budget the agent could not see coming, so no leaderboard or
-degraded-vs-remediated comparison should be published yet.
+Findings 1 to 6 are fixed. Finding 6's fix (a notice and a final turn when the
+tokens run low, BACKLOG B-43) is covered by unit and mutation tests but not yet
+by a real run: Ollama stopped being able to initialize CUDA on the maintainer's
+machine (B-44). No leaderboard or degraded-vs-remediated comparison should be
+published until a real run has confirmed it.
 
 All runs left the cluster clean: cart's `VALKEY_ADDR` restored, no
 annotations, no fault objects.

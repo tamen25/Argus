@@ -40,11 +40,18 @@ argus bench run \
   explicitly. A low score under a tight budget is a budget result, not only a
   capability result.
 - **The agent knows its budget.** The brief states the caps and what running out
-  means. When the last permitted tool call has been used the agent is told so
-  and gets one more turn, in which only `submit_diagnosis` is accepted; a tool
-  call made past the cap is refused, not executed and not counted. A limit the
-  subject cannot see measures whether it happens to stop early, not whether it
-  can diagnose within a budget.
+  means. When the last permitted tool call has been used — or when the tokens
+  left would not cover another turn like the last one — the agent is told so and
+  gets one more turn, in which only `submit_diagnosis` is accepted. A tool call
+  made past the cap is refused, not executed and not counted. A diagnosis
+  submitted on that final turn is accepted even if the turn itself crosses the
+  token cap, and the report shows the true token count. A limit the subject
+  cannot see measures whether it happens to stop early, not whether it can
+  diagnose within a budget. Every turn re-sends the whole conversation, so the
+  token count grows faster than an agent can track on its own.
+- **The report names the cap.** A run the budget ended is shown as
+  `budget exhausted (tool calls)` or `budget exhausted (tokens)`, and the JSON
+  carries `budget_cap`.
 
 ## How a diagnosis is scored
 
