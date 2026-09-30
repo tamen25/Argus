@@ -1,0 +1,205 @@
+{
+  "boards": [
+    {
+      "condition": "degraded",
+      "scenarios": [
+        "s1-cardinality",
+        "s2-latency",
+        "s3-oomkill",
+        "s4-partition"
+      ],
+      "rows": [
+        {
+          "agent": "model-b",
+          "cells": [
+            {
+              "scenario": "s1-cardinality",
+              "attempts": 2,
+              "diagnoses": 2,
+              "budget_exhausted": 0,
+              "answer_rate": 1,
+              "mean_score": 0.5,
+              "stddev_score": 0
+            },
+            {
+              "scenario": "s2-latency",
+              "attempts": 0,
+              "diagnoses": 0,
+              "budget_exhausted": 0,
+              "answer_rate": 0,
+              "mean_score": 0,
+              "stddev_score": 0
+            },
+            {
+              "scenario": "s3-oomkill",
+              "attempts": 0,
+              "diagnoses": 0,
+              "budget_exhausted": 0,
+              "answer_rate": 0,
+              "mean_score": 0,
+              "stddev_score": 0
+            },
+            {
+              "scenario": "s4-partition",
+              "attempts": 2,
+              "diagnoses": 1,
+              "budget_exhausted": 1,
+              "answer_rate": 0.5,
+              "mean_score": 1,
+              "stddev_score": 0
+            }
+          ],
+          "scenarios_run": 2,
+          "scenarios_answered": 2,
+          "mean_score": 0.75,
+          "attempts": 4,
+          "diagnoses": 3,
+          "answer_rate": 0.75
+        },
+        {
+          "agent": "model-a",
+          "cells": [
+            {
+              "scenario": "s1-cardinality",
+              "attempts": 2,
+              "diagnoses": 2,
+              "budget_exhausted": 0,
+              "answer_rate": 1,
+              "mean_score": 0.25,
+              "stddev_score": 0.25
+            },
+            {
+              "scenario": "s2-latency",
+              "attempts": 2,
+              "diagnoses": 0,
+              "budget_exhausted": 2,
+              "answer_rate": 0,
+              "mean_score": 0,
+              "stddev_score": 0
+            },
+            {
+              "scenario": "s3-oomkill",
+              "attempts": 1,
+              "diagnoses": 1,
+              "budget_exhausted": 0,
+              "answer_rate": 1,
+              "mean_score": 0.5,
+              "stddev_score": 0
+            },
+            {
+              "scenario": "s4-partition",
+              "attempts": 2,
+              "diagnoses": 2,
+              "budget_exhausted": 0,
+              "answer_rate": 1,
+              "mean_score": 0.5,
+              "stddev_score": 0
+            }
+          ],
+          "scenarios_run": 4,
+          "scenarios_answered": 3,
+          "mean_score": 0.4166666666666667,
+          "attempts": 7,
+          "diagnoses": 5,
+          "answer_rate": 0.7142857142857143
+        }
+      ]
+    },
+    {
+      "condition": "remediated",
+      "scenarios": [
+        "s1-cardinality",
+        "s2-latency",
+        "s4-partition"
+      ],
+      "rows": [
+        {
+          "agent": "model-a",
+          "cells": [
+            {
+              "scenario": "s1-cardinality",
+              "attempts": 2,
+              "diagnoses": 2,
+              "budget_exhausted": 0,
+              "answer_rate": 1,
+              "mean_score": 1,
+              "stddev_score": 0
+            },
+            {
+              "scenario": "s2-latency",
+              "attempts": 2,
+              "diagnoses": 2,
+              "budget_exhausted": 0,
+              "answer_rate": 1,
+              "mean_score": 0.5,
+              "stddev_score": 0
+            },
+            {
+              "scenario": "s4-partition",
+              "attempts": 2,
+              "diagnoses": 2,
+              "budget_exhausted": 0,
+              "answer_rate": 1,
+              "mean_score": 0.75,
+              "stddev_score": 0.25
+            }
+          ],
+          "scenarios_run": 3,
+          "scenarios_answered": 3,
+          "mean_score": 0.75,
+          "attempts": 6,
+          "diagnoses": 6,
+          "answer_rate": 1
+        },
+        {
+          "agent": "model-b",
+          "cells": [
+            {
+              "scenario": "s1-cardinality",
+              "attempts": 2,
+              "diagnoses": 2,
+              "budget_exhausted": 0,
+              "answer_rate": 1,
+              "mean_score": 0.5,
+              "stddev_score": 0
+            },
+            {
+              "scenario": "s2-latency",
+              "attempts": 0,
+              "diagnoses": 0,
+              "budget_exhausted": 0,
+              "answer_rate": 0,
+              "mean_score": 0,
+              "stddev_score": 0
+            },
+            {
+              "scenario": "s4-partition",
+              "attempts": 2,
+              "diagnoses": 2,
+              "budget_exhausted": 0,
+              "answer_rate": 1,
+              "mean_score": 1,
+              "stddev_score": 0
+            }
+          ],
+          "scenarios_run": 2,
+          "scenarios_answered": 2,
+          "mean_score": 0.75,
+          "attempts": 4,
+          "diagnoses": 4,
+          "answer_rate": 1
+        }
+      ]
+    }
+  ],
+  "caveats": [
+    "A cell pools every run of that agent on that scenario under that condition; its mean and ± spread are over answered runs only. Runs that produced no diagnosis are counted in the answered figures and are not scored as zero.",
+    "An agent's mean is the mean of its per-scenario means over the scenarios it answered, so each scenario weighs the same whatever its number of repeats. Read it together with how many scenarios that covers.",
+    "The telemetry condition is a label the operator attached to each run. Argus records it; it does not verify what state the environment was in.",
+    "Score = (1−w)·entity agreement + w·category match, less a penalty per decoy named, clamped to [0,1]; it is zero if the scenario required cited evidence and none was given. Deterministic and recomputable by hand from the runs table of a run report.",
+    "Evidence is checked for presence and well-formedness, NOT for truth: verifying an observation would mean re-running the agent's queries. A fabricated citation passes this check — cited telemetry is a floor on effort, not proof of correctness.",
+    "An agent's prose is recorded but never scored.",
+    "Runs that produced no diagnosis (agent error or exhausted budget) are counted separately and excluded from the means — they are not scored as zero. Read the means together with the answered rate.",
+    "Budgets bound what an agent may spend; a low score under a tight budget is a budget result, not only a capability result."
+  ]
+}

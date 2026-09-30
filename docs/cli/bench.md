@@ -270,6 +270,57 @@ in its caveats. The category an agent gave is recorded verbatim too, so a
 mismatch shows what it actually said. Shell agents have no tool log: Argus cannot
 see their tool use.
 
+## Leaderboards and comparing telemetry conditions
+
+`bench run` reports one agent on one scenario. `bench report` reads a set of
+those JSON reports and builds the tables a run matrix is for.
+
+```bash
+# every run writes a JSON report, labeled with the condition the environment was in
+argus bench run --scenario scenarios/oomkill-checkout.yaml --condition degraded \
+  --format json --out runs/oomkill.degraded.json ...
+argus bench run --scenario scenarios/oomkill-checkout.yaml --condition remediated \
+  --format json --out runs/oomkill.remediated.json ...
+
+argus bench report runs/                                  # leaderboard
+argus bench report --compare degraded,remediated runs/    # the comparison
+```
+
+**`--condition` is a label, nothing more.** It records what state *you* put the
+environment's telemetry in (for the flagship experiment: `degraded` before
+applying Argus's remediations, `remediated` after). Argus does not change the
+environment and does not verify the label; every report says so.
+
+**Leaderboard** (no `--compare`): one table per condition, agents × scenarios.
+A cell is `mean ± spread (answered/attempts)`. Agents are ranked by the mean of
+their per-scenario means, shown next to how many scenarios that covers, because
+an agent that answered one scenario perfectly is not comparable with one that
+answered eight.
+
+**Comparison** (`--compare baseline,treatment`): per agent, the mean score under
+each condition and Δ = treatment − baseline.
+
+- Δ covers only scenarios the agent **answered under both conditions**. A
+  scenario missing or unanswered on either side is listed under "Excluded", with
+  the reason. It is never counted as zero.
+- Answer rates cover **every** run under each condition. A condition under which
+  an agent stops answering is the most important thing a comparison can show, and
+  the paired means alone would hide it.
+- Runs are **pooled** across reports and the means recomputed from the runs.
+  Averaging report means would weigh a one-repeat report like a five-repeat one.
+- **No significance test** is applied. The report shows the spread and the run
+  counts; compare Δ with them before reading it as an effect.
+
+The report also discloses anything that makes two cells less than like-for-like:
+a scenario whose definition (hash) changed between runs, an agent run under
+different budgets or served by different model builds, runs normalized by an LLM
+judge, and reports ignored because they carry another condition. The same
+report given twice is an error — it would double its runs and shrink the spread
+without adding evidence.
+
+Everything is computed from the run reports by plain arithmetic. No model is
+involved, and the run reports' own caveats are carried into every rendering.
+
 ## Importing ITBench scenarios
 
 ```bash

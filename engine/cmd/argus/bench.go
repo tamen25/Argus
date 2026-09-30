@@ -24,7 +24,7 @@ func newBenchCmd() *cobra.Command {
 		Use:   "bench",
 		Short: "Fault-injection benchmark: can an agent diagnose incidents from this telemetry?",
 	}
-	cmd.AddCommand(newBenchRunCmd(), newBenchImportITBenchCmd())
+	cmd.AddCommand(newBenchRunCmd(), newBenchImportITBenchCmd(), newBenchReportCmd())
 	return cmd
 }
 
@@ -52,6 +52,7 @@ type benchFlags struct {
 	maxTokens    int
 	seed         int64
 	envDigest    string
+	condition    string
 
 	inject          string
 	resetScript     string
@@ -115,6 +116,11 @@ output the same way twice would launder that error into the score.`,
 			if err != nil {
 				return err
 			}
+			if f.condition != "" {
+				if err := validCondition(f.condition); err != nil {
+					return err
+				}
+			}
 			// Policy first: nothing may reach an endpoint or a model until the
 			// local-only rules have passed.
 			if err := enforceLocalPolicy(f); err != nil {
@@ -146,6 +152,7 @@ output the same way twice would launder that error into the score.`,
 				Normalizers: buildNormalizers(f),
 				Seed:        f.seed,
 				EnvDigest:   f.envDigest,
+				Condition:   f.condition,
 				Model:       model,
 			}
 
@@ -187,6 +194,9 @@ output the same way twice would launder that error into the score.`,
 	fl.IntVar(&f.maxTokens, "max-tokens", 100000, "per-run token budget (0 = uncapped)")
 	fl.Int64Var(&f.seed, "seed", 0, "seed recorded in the report for reproducibility")
 	fl.StringVar(&f.envDigest, "env-digest", "", "identifier of the environment under test, recorded in the report")
+	fl.StringVar(&f.condition, "condition", "",
+		"label for the telemetry condition the environment is in (e.g. degraded, remediated); recorded in the "+
+			"report and used by `bench report --compare`. A label only: you put the environment in that state")
 
 	fl.StringVar(&f.inject, "inject", "auto", "injection mode: auto | script | kubectl | none")
 	fl.StringVar(&f.resetScript, "reset-script", "", "script run before injection (script mode)")

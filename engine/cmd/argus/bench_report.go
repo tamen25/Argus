@@ -55,6 +55,24 @@ reads every *.json file in it (not recursively). Everything in the output can be
 recomputed by hand from the run reports: no model is involved.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Flags first: a typo should not cost reading a directory of reports.
+			if format != "md" && format != "json" {
+				return fmt.Errorf("unknown --format %q (want md or json)", format)
+			}
+			var baseline, treatment string
+			if compare != "" {
+				var ok bool
+				if baseline, treatment, ok = strings.Cut(compare, ","); !ok {
+					return fmt.Errorf("--compare wants two conditions: baseline,treatment (got %q)", compare)
+				}
+				baseline, treatment = strings.TrimSpace(baseline), strings.TrimSpace(treatment)
+				for _, label := range []string{baseline, treatment} {
+					if err := validCondition(label); err != nil {
+						return err
+					}
+				}
+			}
+
 			reports, err := loadRunReports(args)
 			if err != nil {
 				return err
@@ -69,16 +87,6 @@ recomputed by hand from the run reports: no model is involved.`,
 				}
 				md, data = leaderboard.RenderLeaderboardMarkdown(lb), lb
 			} else {
-				baseline, treatment, ok := strings.Cut(compare, ",")
-				if !ok {
-					return fmt.Errorf("--compare wants two conditions: baseline,treatment (got %q)", compare)
-				}
-				baseline, treatment = strings.TrimSpace(baseline), strings.TrimSpace(treatment)
-				for _, label := range []string{baseline, treatment} {
-					if err := validCondition(label); err != nil {
-						return err
-					}
-				}
 				c, err := leaderboard.Compare(reports, baseline, treatment)
 				if err != nil {
 					return err
@@ -86,16 +94,11 @@ recomputed by hand from the run reports: no model is involved.`,
 				md, data = leaderboard.RenderComparisonMarkdown(c), c
 			}
 
-			var payload []byte
-			switch format {
-			case "md":
-				payload = []byte(md)
-			case "json":
+			payload := []byte(md)
+			if format == "json" {
 				if payload, err = leaderboard.RenderJSON(data); err != nil {
 					return err
 				}
-			default:
-				return fmt.Errorf("unknown --format %q (want md or json)", format)
 			}
 
 			if out != "" {
