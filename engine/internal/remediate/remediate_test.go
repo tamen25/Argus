@@ -7,7 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/tamen25/Argus/engine/internal/rules"
+	"github.com/tamen25/Argus/engine/internal/rules/builtin"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -55,8 +58,8 @@ func TestRenderUnknownTemplate(t *testing.T) {
 	}
 }
 
-// The five committed templates (master plan rules 1, 2, 4, 5, 7) render
-// against goldens — the review artifact for patch quality.
+// Every template renders against a golden — the review artifact for patch
+// quality. TestEveryTemplateHasAGolden keeps this list complete.
 func TestRenderGoldens(t *testing.T) {
 	cases := map[string]Context{
 		"missing-service-name": {Service: "unknown_service:java", Finding: rules.Finding{
@@ -76,6 +79,23 @@ func TestRenderGoldens(t *testing.T) {
 		"log-level-abuse": {Service: "cart", Finding: rules.Finding{
 			RuleID: "LOG-001", Service: "cart",
 		}},
+		"missing-resource-attributes": {Service: "cart", Finding: rules.Finding{
+			RuleID: "ARG-RES-002", Service: "cart",
+		}},
+		"missing-exemplars": {Service: "checkout", Finding: rules.Finding{
+			RuleID: "ARG-MET-001", Service: "checkout",
+		}},
+		"broken-context-propagation": {Service: "payment", Finding: rules.Finding{
+			RuleID: "SPA-004", Service: "payment",
+			Stats: rules.Stats{Observed: 200, Violations: 30, Ratio: 0.15},
+		}},
+		"log-severity-unset": {Service: "product-reviews", Finding: rules.Finding{
+			RuleID: "LOG-002", Service: "product-reviews",
+			Stats: rules.Stats{Observed: 50, Violations: 50, Ratio: 1},
+		}},
+		"missing-metric-unit":       metCtx(),
+		"unit-in-metric-name":       metCtx(),
+		"histogram-bucket-mismatch": metCtx(),
 	}
 	for name, ctx := range cases {
 		got, err := Render(name, ctx)
@@ -115,6 +135,51 @@ func TestRenderCarriesHumanReviewNotice(t *testing.T) {
 	for format, out := range got {
 		if !strings.Contains(out, "review before applying") {
 			t.Errorf("%s missing human-review notice", format)
+		}
+	}
+}
+
+// A rule that names a template that does not exist fails at the moment a user
+// asks for its fix: `argus remediate` errors and the plugin's remediation
+// panel returns HTTP 500. Seven of the twelve templates the rules named were
+// missing until 2026-10-01, covering 13 of the 18 rules, and nothing noticed.
+func TestEveryRuleTemplateExists(t *testing.T) {
+	rs, err := builtin.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	have := Available()
+	for _, r := range rs {
+		if name := r.Remediation.Template; name != "" && !have[name] {
+			t.Errorf("rule %s names remediation template %q, which does not exist", r.ID, name)
+		}
+	}
+}
+
+// Every template has both formats and a golden.
+func TestEveryTemplateHasAGolden(t *testing.T) {
+	for name := range Available() {
+		for _, ext := range []string{"river", "yaml"} {
+			if _, err := os.Stat(filepath.Join("templates", name+"."+ext+".tmpl")); err != nil {
+				t.Errorf("template %s has no %s form", name, ext)
+			}
+			if _, err := os.Stat(filepath.Join("testdata", "golden", name+"."+ext)); err != nil {
+				t.Errorf("template %s has no %s golden (add it to TestRenderGoldens)", name, ext)
+			}
+		}
+	}
+}
+
+// The Collector form is YAML a human pastes into a config file: it must parse.
+func TestCollectorFormIsValidYAML(t *testing.T) {
+	for name := range Available() {
+		got, err := Render(name, metCtx())
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var doc any
+		if err := yaml.Unmarshal([]byte(got["collector.yaml"]), &doc); err != nil {
+			t.Errorf("%s: collector.yaml does not parse: %v\n%s", name, err, got["collector.yaml"])
 		}
 	}
 }
