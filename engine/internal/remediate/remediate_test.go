@@ -183,3 +183,31 @@ func TestCollectorFormIsValidYAML(t *testing.T) {
 		}
 	}
 }
+
+// The flagship's "remediated" condition is Argus's own fix, not a hand-written
+// stand-in: scenarios/conditions/remediated.alloy must be exactly what this
+// template renders, with only its placeholder filled in. If the template
+// changes, the condition has to be regenerated, and the experiment measures
+// the new output.
+func TestRemediatedConditionIsTheRenderedTemplate(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "scenarios", "conditions", "remediated.alloy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const marker = "// --- rendered by argus remediate ---\n"
+	_, body, ok := strings.Cut(string(raw), marker)
+	if !ok {
+		t.Fatalf("remediated.alloy has no %q line separating its header from the rendered patch", strings.TrimSpace(marker))
+	}
+	out, err := Render("missing-resource-attributes", Context{
+		Service: "condition", Finding: rules.Finding{RuleID: "ARG-RES-002", Service: "condition"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.ReplaceAll(out["alloy.river"], "REPLACE_WITH_ENVIRONMENT", "kind-dev")
+	if body != want {
+		t.Errorf("remediated.alloy differs from the rendered missing-resource-attributes template.\n"+
+			"Regenerate it from the template.\n--- file ---\n%s\n--- template ---\n%s", body, want)
+	}
+}

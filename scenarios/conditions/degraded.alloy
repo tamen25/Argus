@@ -1,0 +1,47 @@
+// Argus bench condition: degraded.
+//
+// A deliberate overlay on the telemetry, applied in the Alloy pipeline before
+// anything reaches Mimir, Loki or Tempo. Each degradation is a defect Argus's
+// own rules detect, so the Score engine sees this condition as worse:
+//
+//   1. Broken trace propagation (SPA-002, SPA-004, ARG-SPA-002): server spans
+//      lose their parent, as if the service had not extracted the caller's
+//      context. The service graph loses those edges and traces fall apart at
+//      every hop.
+//   2. Logs without trace context (ARG-LOG-001): log records lose their trace
+//      and span ids, so a log line can no longer be followed to its trace.
+//
+// It touches traces and logs only, never metrics, and leaves checkout and
+// payment's server spans alone: the scenarios' steady-state gates read app
+// metrics, target_info and the checkout -> payment service-graph edge, and a
+// condition that broke a gate would make every scenario unrunnable.
+//
+// This is our construction, not a defect found in the wild; reports built
+// from it say so.
+//
+// entry: otelcol.processor.transform.condition_degraded
+
+otelcol.processor.transform "condition_degraded" {
+  error_mode = "ignore"
+
+  trace_statements {
+    context    = "span"
+    statements = [
+      `set(span.parent_span_id, SpanID(0x0000000000000000)) where span.kind == SPAN_KIND_SERVER and resource.attributes["service.name"] != "checkout" and resource.attributes["service.name"] != "payment"`,
+    ]
+  }
+
+  log_statements {
+    context    = "log"
+    statements = [
+      `set(log.trace_id, TraceID(0x00000000000000000000000000000000))`,
+      `set(log.span_id, SpanID(0x0000000000000000))`,
+    ]
+  }
+
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
