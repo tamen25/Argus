@@ -51,6 +51,10 @@ nav:
       - ARG-RES-004: rules/arg-res-004.md
       - ARG-MET-001: rules/arg-met-001.md
       - ARG-MET-002: rules/arg-met-002.md
+  - Bench:
+      - Authoring scenarios: bench/authoring-scenarios.md
+      - Scenario 1 validation: bench/scenario-01-validation.md
+  - Releasing: releasing.md
   - Master build plan: argus-master-build-plan.md
 
 markdown_extensions:

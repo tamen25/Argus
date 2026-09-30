@@ -1,4 +1,5 @@
 # Binaries / build output
+/dist/
 engine/bin/
 plugin/dist/
 plugin/coverage/

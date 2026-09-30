@@ -1,12 +1,17 @@
 # Quickstart (dev environment)
 
-> Argus is pre-release (Phase 0). This page covers the development environment only.
+This page covers the development environment. To just run the CLI, download an
+archive for your platform from the
+[GitHub releases](https://github.com/tamen25/Argus/releases) and check it
+against `checksums.txt`. The Grafana plugin zip is attached to the same release
+(see [Releasing](releasing.md) for what each asset contains).
 
 ## Prerequisites
 
 Linux or WSL2 Ubuntu 24.04. Install:
 
-- Go ≥ 1.23
+- Go ≥ 1.25 (the `toolchain` line in `engine/go.mod` pins the exact release,
+  and `go` downloads it automatically)
 - Node 22 + npm
 - Docker (or Docker Desktop with WSL2 integration)
 - [kind](https://kind.sigs.k8s.io/), kubectl, [helm](https://helm.sh/)
