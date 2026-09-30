@@ -5,13 +5,16 @@ SHELL := /bin/bash
 ENGINE_DIR := engine
 PLUGIN_DIR := plugin
 
-.PHONY: dev-up dev-down test test-integration lint build demo demo-down help soak soak-analyze
+.PHONY: dev-up dev-heal dev-down test test-integration lint build demo demo-down help soak soak-analyze
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
 
 dev-up: ## kind cluster: LGTM + otel-demo + chaos-mesh (+ argus from Phase 1)
 	bash deploy/kind/bootstrap.sh
+
+dev-heal: ## Recover after a Docker Desktop restart (re-attach the history mount, wait for LGTM)
+	bash deploy/kind/heal.sh
 
 dev-down: ## Delete the kind dev cluster
 	bash deploy/kind/teardown.sh

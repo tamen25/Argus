@@ -24,6 +24,17 @@ for tool in docker kind kubectl helm; do need "$tool"; done
 
 echo "==> durable history dir (survives cluster recreation)"
 mkdir -p /var/lib/argus/history
+# The sentinel proves to MinIO that it is looking at the real history and not
+# the empty stand-in Docker substitutes when the bind mount fails to attach
+# (values/mimir.yaml, docs/history-durability.md). This script runs in WSL, so
+# it always writes into the real directory — never a stand-in.
+HISTORY_SENTINEL=/var/lib/argus/history/.argus-history-sentinel
+if [ ! -f "$HISTORY_SENTINEL" ]; then
+  printf '%s\n' "Argus history sentinel. Its presence proves this directory is the real" \
+    "telemetry history, not an empty stand-in Docker created because the WSL bind" \
+    "mount failed to attach. MinIO refuses to start without it" \
+    "(docs/history-durability.md). Do not delete." > "$HISTORY_SENTINEL"
+fi
 
 echo "==> kind cluster '${CLUSTER_NAME}'"
 if kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then

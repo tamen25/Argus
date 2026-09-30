@@ -72,6 +72,27 @@ minio:
   enabled: true
   persistence:
     existingClaim: argus-history
+  # History-mount guard (docs/history-durability.md). When Docker Desktop starts
+  # before the Ubuntu WSL distro, the kind extraMount cannot resolve its source
+  # and Docker silently substitutes an EMPTY directory for the history. MinIO
+  # then either crashloops — and its error message advises chmod-ing the path,
+  # which would make it start a fresh, empty history and orphan everything kept
+  # since Phase 0 — or, if the stand-in is ever writable, forks the history
+  # outright.
+  #
+  # The sentinel file lives inside the real history directory and travels with
+  # it. `type: File` makes kubelet refuse to start this pod unless that exact
+  # file exists, so on a detached mount MinIO never runs at all: no fork, and no
+  # misleading advice. Recover with `make dev-heal`.
+  extraVolumes:
+    - name: history-sentinel
+      hostPath:
+        path: /data/argus-history/.argus-history-sentinel
+        type: File
+  extraVolumeMounts:
+    - name: history-sentinel
+      mountPath: /argus-history-sentinel
+      readOnly: true
 
 nginx:
   replicas: 1
