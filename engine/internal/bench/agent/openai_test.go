@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -129,7 +130,7 @@ func TestOpenAI_ToolCallBudget(t *testing.T) {
 	)
 	defer srv.Close()
 	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 1}})
-	if err != ErrBudgetExhausted {
+	if !errors.Is(err, ErrBudgetExhausted) {
 		t.Fatalf("err = %v, want ErrBudgetExhausted", err)
 	}
 	// The reported count must be what was actually executed, never the attempt
@@ -145,7 +146,7 @@ func TestOpenAI_TokenBudget(t *testing.T) {
 	srv := scripted(t, toolCallResp("c1", "query_prometheus", `{"query":"up"}`, 5000))
 	defer srv.Close()
 	_, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxTokens: 1000}})
-	if err != ErrBudgetExhausted {
+	if !errors.Is(err, ErrBudgetExhausted) {
 		t.Fatalf("err = %v, want ErrBudgetExhausted", err)
 	}
 }

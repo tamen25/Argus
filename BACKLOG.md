@@ -34,14 +34,14 @@ next starts, so nothing sits unmerged.
 5. ~~**Plugin hygiene (B-21–B-24).**~~ Done, except what is blocked upstream
    (B-24, and the rest of B-21).
 6. **v1.0 artifacts (B-31–B-33).** The first real scored run is done (B-31) and
-   found harness gaps that come first: B-41 and B-42 (done), and **B-43** (token
-   budget warning, next). After it: the
+   found harness gaps, now fixed (B-39 to B-43). Next: a real run that confirms
+   B-43 once the GPU works again (B-44). After it: the
    flagship `--compare` report and leaderboard (B-33, report generator in
    progress), and the second (judge) model (B-32). The run-matrix cost
    projection is confirmed with the user before the first full run (master plan
    §12.4).
 
-Needs the user: B-35 (catalog submission status).
+Needs the user: B-44 (GPU/Ollama on the maintainer's machine), B-35 (catalog submission status).
 
 ## P2 — Plugin
 
@@ -66,12 +66,12 @@ Needs the user: B-35 (catalog submission status).
 
 Not defects. Tracked here so nothing is lost between sessions.
 
-- [ ] **B-43** — The token budget has no warning. A turn re-sends the whole
-  conversation, so the count grows faster than the agent can track; run 4 ended
-  on the token cap (109404 of 100000) with three tool calls to spare, and with no
-  notice or final turn — unlike the tool-call cap (B-39). The report does not
-  say which cap was hit. Fix: the same notice-and-final-turn treatment when the
-  remaining tokens would not cover another turn, and name the cap in the error.
+- [ ] **B-44** — **Needs the maintainer's machine.** Ollama's `llama-server` fails
+  to initialize CUDA (`0xc0000409`, "shared object initialization failed"),
+  even on a one-line prompt after a restart. It worked earlier on 2026-09-30,
+  and one Ollama restart fixed it once; by 2026-10-01 a restart no longer did.
+  Likely a GPU/driver state that needs a reboot or a driver check. Blocks every
+  real-model run, including the live confirmation of B-43.
 - [ ] **B-32** — The LLM judge needs a second local model; B-05's guard rightly
   blocks self-judging.
 - [ ] **B-33** — Flagship artifacts. Done: the report generator
@@ -96,6 +96,11 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-43** (#77) — the token budget gets the same notice and final turn as
+  the tool-call cap, triggered when the tokens left would not cover another turn
+  like the last one; a diagnosis on the final turn is accepted even if that turn
+  crosses the cap (the true count is reported). The report names the cap that
+  ended a run. Unit- and mutation-tested; the live rerun is blocked by B-44.
 - [x] **B-42** (#76) — discovery tools (`list_metrics`, `list_metric_labels`,
   `list_log_labels`, `list_trace_tags`) and `get_k8s_topology` (workload
   identities via `kubectl get`, plus the service graph; bench fault objects

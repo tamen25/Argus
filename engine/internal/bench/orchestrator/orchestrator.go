@@ -118,6 +118,8 @@ type RunRecord struct {
 	// BudgetExhausted distinguishes "ran out of budget" from "broke" — an
 	// important difference when reading a leaderboard.
 	BudgetExhausted bool `json:"budget_exhausted,omitempty"`
+	// BudgetCap names the cap that ended the run: "tool calls" or "tokens".
+	BudgetCap string `json:"budget_cap,omitempty"`
 }
 
 // Summary aggregates the repeats.
@@ -252,6 +254,10 @@ func runOnce(
 	if err != nil {
 		rec.Error = err.Error()
 		rec.BudgetExhausted = errors.Is(err, agent.ErrBudgetExhausted)
+		var be *agent.BudgetError
+		if errors.As(err, &be) {
+			rec.BudgetCap = be.Cap
+		}
 		return finish()
 	}
 

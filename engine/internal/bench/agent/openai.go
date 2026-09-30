@@ -83,10 +83,7 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 		if err != nil {
 			return s.result(nil), err
 		}
-		s.usage.Tokens += resp.Usage.TotalTokens
-		if task.Budget.MaxTokens > 0 && s.usage.Tokens > task.Budget.MaxTokens {
-			return s.result(nil), ErrBudgetExhausted
-		}
+		s.addTokens(resp.Usage.TotalTokens)
 		if len(resp.Choices) == 0 {
 			return s.result(nil), fmt.Errorf("agent %s: endpoint returned no choices", a.cfg.Name)
 		}
@@ -98,21 +95,25 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s", a.cfg.Name, submitToolName)
 		}
 
-		msgs = append(msgs, msg) // assistant turn carrying the tool_calls
-
+		// A diagnosis ends the run wherever it appears in the turn — even on a
+		// turn that crossed the token cap: those tokens were spent producing it,
+		// and the agent was warned when the budget ran low.
 		for _, tc := range msg.ToolCalls {
 			if tc.Function.Name == submitToolName {
 				return s.result(json.RawMessage(tc.Function.Arguments)), nil
 			}
+		}
+		// Past a cap, or told the budget is spent and asking for a tool anyway:
+		// the run ends. Nothing more is executed, so nothing more is counted — a
+		// run capped at 12 tool calls must never report 13.
+		if s.overTokens() || s.warned {
+			return s.result(nil), s.exhausted()
+		}
+
+		msgs = append(msgs, msg) // assistant turn carrying the tool_calls
+		for _, tc := range msg.ToolCalls {
 			content := budgetRefusal
-			if s.spent() {
-				// Already told the budget was spent, and it asked for a tool
-				// anyway: the run ends. The call is not executed, so it is not
-				// counted — a run capped at 12 must never report 13.
-				if s.warned {
-					return s.result(nil), ErrBudgetExhausted
-				}
-			} else {
+			if !s.spent() {
 				content = s.call(ctx, task.Tools, tc.Function.Name, json.RawMessage(tc.Function.Arguments))
 			}
 			// Every tool_call id needs an answer, so a call made past the cap
@@ -124,9 +125,8 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 				Content:    content,
 			})
 		}
-		if s.spent() && !s.warned {
-			msgs = append(msgs, oaMessage{Role: "user", Content: budgetSpentNotice})
-			s.warned = true
+		if n := s.notice(); n != "" {
+			msgs = append(msgs, oaMessage{Role: "user", Content: n})
 		}
 	}
 	return s.result(nil), fmt.Errorf("agent %s: exceeded %d steps without submitting", a.cfg.Name, hardStep)

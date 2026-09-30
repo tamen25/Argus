@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -63,7 +64,7 @@ func TestAnthropic_ToolCallBudget(t *testing.T) {
 	)
 	defer srv.Close()
 	_, err := newAnt(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 1}})
-	if err != ErrBudgetExhausted {
+	if !errors.Is(err, ErrBudgetExhausted) {
 		t.Fatalf("err = %v, want ErrBudgetExhausted", err)
 	}
 }
@@ -72,7 +73,7 @@ func TestAnthropic_TokenBudget(t *testing.T) {
 	srv := scripted(t, antToolUseResp("t1", "query_prometheus", `{"query":"up"}`, 800, 800))
 	defer srv.Close()
 	_, err := newAnt(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxTokens: 1000}})
-	if err != ErrBudgetExhausted {
+	if !errors.Is(err, ErrBudgetExhausted) {
 		t.Fatalf("err = %v, want ErrBudgetExhausted", err)
 	}
 }

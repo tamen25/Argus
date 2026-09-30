@@ -30,6 +30,28 @@ const DefaultAgentTimeout = 10 * time.Minute
 // run, not a crash.
 var ErrBudgetExhausted = errors.New("agent: budget exhausted before diagnosis")
 
+// Budget caps, as named in a BudgetError.
+const (
+	CapToolCalls = "tool calls"
+	CapTokens    = "tokens"
+)
+
+// BudgetError says which cap ended a run and by how much. It wraps
+// ErrBudgetExhausted, so errors.Is still recognizes it; a report uses Cap to
+// tell a run that ran out of tool calls from one that ran out of tokens.
+type BudgetError struct {
+	Cap   string
+	Used  int
+	Limit int
+}
+
+func (e *BudgetError) Error() string {
+	return fmt.Sprintf("%s: %s cap (%d of %d)", ErrBudgetExhausted, e.Cap, e.Used, e.Limit)
+}
+
+// Unwrap lets errors.Is(err, ErrBudgetExhausted) match.
+func (e *BudgetError) Unwrap() error { return ErrBudgetExhausted }
+
 // Tools is the read-only tool surface an agent may call. *mcp.Registry
 // satisfies it, so the same surface the MCP server exposes is what agents use —
 // a fair, identical comparison across agents (master plan §3.2).
@@ -213,6 +235,14 @@ func budgetBrief(b Budget) string {
 const budgetSpentNotice = "The tool-call budget is now spent: no further tool calls will be executed. " +
 	"Call " + submitToolName + " now with the diagnosis your evidence best supports."
 
+// tokenLowNotice is sent once, when the tokens left would not cover another
+// turn like the last one. Every turn re-sends the whole conversation, so the
+// count grows faster than an agent can track: the fourth real run was cut off at
+// 109404 of 100000 tokens with three tool calls to spare and no warning.
+const tokenLowNotice = "The token budget is nearly spent (%d of %d used): another round of tool calls would " +
+	"exceed it. Call " + submitToolName + " now with the diagnosis your evidence best supports; a tool call " +
+	"now ends the run without an answer."
+
 // budgetRefusal is what a tool call made past the cap receives instead of a
 // result. It is not executed and not counted.
 const budgetRefusal = `{"error":"tool-call budget spent: this call was not executed"}`
@@ -242,14 +272,59 @@ type session struct {
 	budget Budget
 	usage  Usage
 	calls  []ToolCall
-	// warned is set once budgetSpentNotice has been sent. A tool call after that
-	// ends the run.
+	// warned is set once a budget notice has been sent. A tool call after that
+	// ends the run; only submit_diagnosis is accepted.
 	warned bool
+	// lastTurn is the token count of the most recent model turn — the best
+	// estimate of what the next one will cost.
+	lastTurn int
 }
 
 // spent reports whether the tool-call cap has been reached.
 func (s *session) spent() bool {
 	return s.budget.MaxToolCalls > 0 && s.usage.ToolCalls >= s.budget.MaxToolCalls
+}
+
+// addTokens records one model turn.
+func (s *session) addTokens(n int) {
+	s.usage.Tokens += n
+	s.lastTurn = n
+}
+
+// overTokens reports whether the token cap has been exceeded.
+func (s *session) overTokens() bool {
+	return s.budget.MaxTokens > 0 && s.usage.Tokens > s.budget.MaxTokens
+}
+
+// tokensLow reports whether the tokens left would not cover another turn like
+// the last one, with half again for the tool results it adds.
+func (s *session) tokensLow() bool {
+	return s.budget.MaxTokens > 0 && s.budget.MaxTokens-s.usage.Tokens < s.lastTurn+s.lastTurn/2
+}
+
+// notice returns the budget notice due after a turn, or "" when none is. It
+// is sent at most once; sending it starts the agent's final turn.
+func (s *session) notice() string {
+	if s.warned {
+		return ""
+	}
+	switch {
+	case s.spent():
+		s.warned = true
+		return budgetSpentNotice
+	case s.tokensLow():
+		s.warned = true
+		return fmt.Sprintf(tokenLowNotice, s.usage.Tokens, s.budget.MaxTokens)
+	}
+	return ""
+}
+
+// exhausted is the error for a run the budget ended, naming the cap.
+func (s *session) exhausted() error {
+	if s.spent() {
+		return &BudgetError{Cap: CapToolCalls, Used: s.usage.ToolCalls, Limit: s.budget.MaxToolCalls}
+	}
+	return &BudgetError{Cap: CapTokens, Used: s.usage.Tokens, Limit: s.budget.MaxTokens}
 }
 
 // result packages what the run consumed, with raw set on success.
