@@ -37,3 +37,4 @@ site/
 plugin/test-results/
 plugin/playwright-report/
 soak-output/
+.cover.out

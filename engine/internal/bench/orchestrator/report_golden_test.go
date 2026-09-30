@@ -62,7 +62,7 @@ func goldenReport() Report {
 }
 
 // TestBenchReportGoldens locks both report renderings. The bench report was the
-// only report format without one (CLAUDE.md: golden-file tests for every report
+// only report format without one (master plan §5.2: golden-file tests for every report
 // format), so a change to its table layout went unnoticed by every test.
 // Regenerate deliberately with: go test ./internal/bench/orchestrator/ -run Golden -update
 func TestBenchReportGoldens(t *testing.T) {

@@ -23,20 +23,33 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          # go.mod's `toolchain` line is the single source of truth: stdlib
+          # vulnerabilities follow the Go that builds the binary, so CI and a
+          # local build must agree on it. `stable` let an upstream release change
+          # the build (and fail CI) with no change to this repo.
+          go-version-file: engine/go.mod
           cache-dependency-path: engine/go.sum
       - name: golangci-lint (incl. depguard architecture rules)
         uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          # Pinned: `latest` let a new linter release fail CI on unchanged code.
+          # Bump deliberately, and keep it built for the same Go minor as
+          # go.mod's toolchain or it panics loading the standard library.
+          version: v2.14.0
           working-directory: engine
+      - name: govulncheck (fails only on vulnerabilities our code can reach)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
       - name: Builtin rules in sync with /rules
         run: |
           go run ./tools/syncrules
           git diff --exit-code -- internal/rules/builtin || {
             echo "::error::embedded builtin rules drifted from /rules — run 'make rules-sync' and commit"; exit 1; }
       - name: Test
-        run: go test -race ./...
+        run: |
+          set -o pipefail
+          go test -race -cover ./... | tee "$RUNNER_TEMP/cover.out"
+      - name: Coverage gate (>=70% on the deterministic core)
+        run: ../scripts/coverage-gate.sh "$RUNNER_TEMP/cover.out"
       - name: Build
         run: CGO_ENABLED=0 go build -trimpath -o bin/argus ./cmd/argus
 
@@ -55,7 +68,7 @@ jobs:
           cache-dependency-path: plugin/package-lock.json
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version-file: plugin/go.mod
           cache-dependency-path: plugin/go.sum
       - name: Install dependencies
         run: npm ci
@@ -65,8 +78,12 @@ jobs:
         run: npm run test:ci
       - name: Build frontend
         run: npm run build
+      # ./pkg/... rather than ./...: Go does not skip node_modules, and the
+      # npm package `flatted` ships a Go package that ./... would pick up.
       - name: Build backend
-        run: go build ./...
+        run: go build ./pkg/...
+      - name: govulncheck (backend runs inside Grafana)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./pkg/...
 
   dogfood:
     name: Dogfood gate (argus scores itself)
@@ -78,7 +95,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version-file: engine/go.mod
           cache-dependency-path: engine/go.sum
       - name: Build
         run: CGO_ENABLED=0 go build -trimpath -o argus ./cmd/argus
