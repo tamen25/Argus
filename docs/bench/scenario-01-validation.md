@@ -50,7 +50,6 @@ a new scenario.
 
 ```bash
 make dev-up
-ollama create qwen3.6-bench -f deploy/ollama/Modelfile.qwen3.6-bench
 ```
 
 ### 1. Fault applies and removes cleanly
@@ -122,19 +121,18 @@ citations are present and well-formed, never that they are true.
 
 ```bash
 argus bench run --scenario scenarios/cardinality-explosion-frontend.yaml \
-  --agent openai --endpoint http://127.0.0.1:11434/v1/chat/completions \
-  --model qwen3.6-bench \
+  --agent openai --endpoint https://api.example/v1/chat/completions \
+  --model my-model --api-key-env MY_API_KEY \
   --mimir-url http://127.0.0.1:18080 \
-  --inject kubectl --inject-namespace otel-demo --kube-context kind-argus \
+  --inject-namespace otel-demo --kube-context kind-argus \
   --repeats 3 --max-tool-calls 15 --env-digest kind-argus-$(date +%F)
 ```
 
 ## Running the tooling from Windows against a WSL cluster
 
 `make dev-up` runs in WSL2 (the kind config mounts `/var/lib/argus/history` from
-the WSL filesystem), but Ollama listens on Windows loopback and WSL cannot reach
-it there. Since Docker Desktop publishes the kind API port to Windows as well,
-the workable split is: cluster in WSL, `argus` on Windows.
+the WSL filesystem). Docker Desktop publishes the kind API port to Windows as
+well, so `argus` can also run on Windows against the WSL cluster.
 
 ```bash
 wsl -d Ubuntu-24.04 -e bash -c 'kind get kubeconfig --name argus' > argus.kubeconfig
@@ -142,8 +140,7 @@ kubectl --kubeconfig argus.kubeconfig port-forward -n lgtm svc/mimir-gateway 180
 export KUBECONFIG=$PWD/argus.kubeconfig
 ```
 
-Both Mimir (18080) and Ollama (11434) are then on Windows loopback, which is
-what `--local-only` requires.
+Mimir is then on Windows loopback at port 18080.
 
 ## Remaining gaps
 

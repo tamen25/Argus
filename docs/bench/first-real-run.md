@@ -6,9 +6,8 @@ which answers without calling a tool. The stub validates a scenario's mechanics
 and its rubric; it cannot show what an agent experiences.
 
 **Setup.** Scenario `deploy-regression-cart` (hash `1f93bb0389c4`), on the kind
-dev cluster. Subject: `qwen3.6-bench` (36B, Q4_K_M, served context 32768) through
-Ollama's OpenAI-compatible endpoint on loopback, with `--local-only`. Budget: 20
-tool calls, 100000 tokens. Tools: `query_prometheus`, `query_loki`,
+dev cluster. Subject: `qwen3.6-bench`, an open-weights 36B model, through an
+OpenAI-compatible endpoint. Budget: 20 tool calls, 100000 tokens. Tools: `query_prometheus`, `query_loki`,
 `search_traces`, `list_alerts`.
 
 ## Run 1: no diagnosis
@@ -103,10 +102,6 @@ rule, a database latency histogram) and queried them. It corrected its TraceQL
 after one rejected query, using the syntax example in the tool description.
 15 of 17 calls succeeded, against 6 of 20 in run 2.
 
-(An earlier attempt at this run failed on its first model call: Ollama's
-`llama-server` could not initialize CUDA. Restarting Ollama fixed it. The
-report recorded the failure as an agent error with no diagnosis, as it should.)
-
 **Finding 6: the token budget has no warning.** The run ended on the token cap
 (109404 of 100000) with three tool calls to spare. Every turn re-sends the whole
 conversation, so the count grows faster than the agent can track, and unlike the
@@ -117,9 +112,11 @@ which cap was hit.
 
 Findings 1 to 6 are fixed. Finding 6's fix (a notice and a final turn when the
 tokens run low, BACKLOG B-43) is covered by unit and mutation tests but not yet
-by a real run: Ollama stopped being able to initialize CUDA on the maintainer's
-machine (B-44). No leaderboard or degraded-vs-remediated comparison should be
+by a real run. No leaderboard or degraded-vs-remediated comparison should be
 published until a real run has confirmed it.
+
+These runs used a locally served model. Argus no longer supports local
+inference (2026-10-01, DECISIONS.md); the next runs use hosted API models.
 
 All runs left the cluster clean: cart's `VALKEY_ADDR` restored, no
 annotations, no fault objects.
