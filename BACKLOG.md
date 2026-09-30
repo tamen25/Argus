@@ -18,7 +18,7 @@ PR #61, and the live kind cluster.
 Sequenced by what unblocks what. One PR per step; each merges green before the
 next starts, so nothing sits unmerged.
 
-1. **Per-scenario reset/cleanup (B-10).** Unblocks `--repeats >1` on scenario 1
+1. ~~**Per-scenario reset/cleanup (B-10).**~~ Done. Unblocks `--repeats >1` on scenario 1
    (frontend must restart to drop the fault's cumulative series) and every
    mutation scenario. Includes the reset for scenario 1 and the coverage gap it
    touches (B-19).
@@ -37,8 +37,7 @@ next starts, so nothing sits unmerged.
    projection is confirmed with the user before the first full run (master plan
    §12.4).
 
-Anytime: B-17 (deploy argus from `dev-up`), B-28 (stale branches — check each
-PR's state first). Needs the user: B-35 (catalog submission status).
+Anytime: B-17 (deploy argus from `dev-up`). Needs the user: B-35 (catalog submission status).
 
 ## P1 — Scenarios 2–5 (live-validated 2026-07-25; 3 of 4 broken as committed)
 
@@ -47,9 +46,6 @@ the gates and mechanisms are what failed.
 
 - [ ] **B-09** — `redis-latency-cart`: frontend p95 goes from 21 ms to 10 s but with
   **zero 5xx**, so the 5xx-keyed gate never fires. Gate on latency instead.
-- [ ] **B-10** — Reset and cleanup hooks are global CLI flags (`--reset-script`,
-  `--cleanup-script`). Mutation faults and B-03 need restore steps owned by the
-  scenario.
 - [ ] **B-11** — `network-partition-product-catalog`: also no 5xx. Gate on latency.
 - [ ] **B-12** — `dns-failure-frontend`: DNSChaos does not inject on this cluster
   (chaos-daemon panics rewriting resolv.conf; `AllInjected=False`). The
@@ -67,8 +63,6 @@ the gates and mechanisms are what failed.
 
 ## P2 — Quality gates
 
-- [ ] **B-19** — `internal/bench` coverage fell from 83% to 69%:
-  `SteadyState.validate`/`SettleDur` are untested.
 - [ ] **B-20** — No `release.yml`; v0.1–v0.3 were cut by hand. The v1.0 exit gate
   needs goreleaser + plugin zip. With B-07, a released binary's stdlib depends
   on whoever built it.
@@ -89,9 +83,6 @@ the gates and mechanisms are what failed.
 
 ## P3 — Cleanup
 
-- [ ] **B-28** — ~19 stale remote branches from July. They were squash-merged, so
-  `git branch --merged` reports them all unmerged; check each PR's state before
-  deleting.
 - [ ] **B-37** — GitHub Actions pinned to old majors (`checkout@v4`,
   `setup-go@v5`, `setup-node@v4`, `golangci-lint-action@v7`; current are v5+,
   v7, v5+, v9). They run on the deprecated Node 20 runtime, which is why every
@@ -129,6 +120,16 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-10** (#67) — scenario-owned `reset`/`cleanup` hooks and
+  `--inject=auto` (the new default); legacy modes refuse scenarios with hooks.
+  Scenario 1 restarts frontend on reset and cleanup; its steadyState query now
+  forgets dead series, so the baseline clears in ~2 min instead of ~5 (121 s vs
+  302 s, measured).
+- [x] **B-19** (#67) — `internal/bench` coverage 63% → 89%.
+- [x] **B-28** (#67) — 31 remote branches deleted, each confirmed MERGED via its
+  PR (restorable from the PR page). Kept: `release/v0.2-prep`, `release/v0.3`
+  (merged, tags hold the release points — the maintainer's call), and
+  `feat/bench-scenarios-2-5` (source for plan step 2).
 - [x] **B-29** (#64) — stale bucket index after a compactor crashloop is
   documented in `docs/history-durability.md`.
 - [x] **B-16** (#64) — history-mount guard: a sentinel file inside the history,

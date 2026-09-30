@@ -65,6 +65,24 @@ type ScenarioSpec struct {
 	// fault is visible in any backend — and scores near zero for reasons that
 	// have nothing to do with its ability.
 	SteadyState *SteadyState `yaml:"steadyState,omitempty"`
+	// Reset runs before every repeat, after the inject manifests are deleted.
+	// It is where a scenario removes a fault's EFFECTS, not just the fault: the
+	// orchestrator will not inject again until the steadyState signature is
+	// verifiably absent, and some effects outlive the fault's own objects (a
+	// service's OTel SDK keeps cumulative series in memory until it restarts).
+	Reset []Hook `yaml:"reset,omitempty"`
+	// Cleanup runs after every repeat, before the inject manifests are deleted,
+	// even when the repeat failed partway. It restores anything a script step
+	// mutated, so a fault never leaks into the next repeat or the next scenario.
+	Cleanup []Hook `yaml:"cleanup,omitempty"`
+}
+
+// Hook is a scenario-owned lifecycle script. Only scripts: restoring state is
+// procedural (patch back, restart, wait), and a manifest in a cleanup list
+// would be ambiguous — apply it, or delete it?
+type Hook struct {
+	// Script is a path relative to the scenario file, run with bash.
+	Script string `yaml:"script"`
 }
 
 // SteadyState is a PromQL condition polled until it holds. It describes the
@@ -272,6 +290,18 @@ func (s Scenario) validate() error {
 	}
 	if p := s.Spec.Scoring.DecoyPenalty; p != nil && (*p < 0 || *p > 1) {
 		return fmt.Errorf("spec.scoring.decoyPenalty %v out of [0,1]", *p)
+	}
+	// An ordered slice, not a map: Go randomizes map iteration, which would make
+	// the reported error depend on the run when both lists are invalid.
+	for _, list := range []struct {
+		name  string
+		hooks []Hook
+	}{{"reset", s.Spec.Reset}, {"cleanup", s.Spec.Cleanup}} {
+		for i, h := range list.hooks {
+			if strings.TrimSpace(h.Script) == "" {
+				return fmt.Errorf("spec.%s[%d]: script is empty", list.name, i)
+			}
+		}
 	}
 	if ss := s.Spec.SteadyState; ss != nil {
 		if err := ss.validate(); err != nil {

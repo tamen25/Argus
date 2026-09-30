@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bench/judge"
+	"github.com/tamen25/Argus/engine/internal/bench/orchestrator"
 )
 
 // fakeOllamaShow stands in for Ollama's management API on loopback, serving the
@@ -189,5 +191,39 @@ func TestJudgeHasItsOwnTimeout(t *testing.T) {
 	}
 	if a := fl.Lookup("agent-timeout").DefValue; a == j.DefValue {
 		t.Fatalf("judge and agent timeouts share a default (%s); they should be independent", a)
+	}
+}
+
+// TestLegacyInjectModesRefuseScenarioHooks: --inject=script and =kubectl cannot
+// run a scenario's reset/cleanup hooks. They must refuse, never skip: a skipped
+// cleanup leaks a mutated workload into every later repeat and scenario.
+func TestLegacyInjectModesRefuseScenarioHooks(t *testing.T) {
+	sc := bench.Scenario{Metadata: bench.Metadata{Name: "s"},
+		Spec: bench.ScenarioSpec{Cleanup: []bench.Hook{{Script: "restore.sh"}}}}
+	for _, mode := range []string{"script", "kubectl"} {
+		_, err := buildInjector(benchFlags{inject: mode, scenario: "scenarios/s.yaml"}, sc)
+		if err == nil || !strings.Contains(err.Error(), "--inject=auto") {
+			t.Errorf("--inject=%s with hooks: err = %v, want a refusal pointing at --inject=auto", mode, err)
+		}
+	}
+	if _, err := buildInjector(benchFlags{inject: "auto", scenario: "scenarios/s.yaml"}, sc); err != nil {
+		t.Errorf("--inject=auto must accept hooks, got %v", err)
+	}
+	if def := newBenchRunCmd().Flags().Lookup("inject").DefValue; def != "auto" {
+		t.Errorf("--inject default = %s, want auto", def)
+	}
+}
+
+// TestStubUsesRealProbeWhenGivenABackend: without --mimir-url the stub skips
+// the steady-state gate (calibration must not need a cluster); with it, the
+// stub gets the same observing probe a real agent does, so a scenario's
+// lifecycle can be validated end to end at no model cost.
+func TestStubUsesRealProbeWhenGivenABackend(t *testing.T) {
+	sc := bench.Scenario{Spec: bench.ScenarioSpec{SteadyState: &bench.SteadyState{Query: "q"}}}
+	if _, ok := buildProbe(benchFlags{agentKind: "stub"}, sc).(orchestrator.AlwaysReadyProbe); !ok {
+		t.Error("stub without a backend should skip the gate")
+	}
+	if _, ok := buildProbe(benchFlags{agentKind: "stub", mimirURL: "http://127.0.0.1:1"}, sc).(*orchestrator.PromQLProbe); !ok {
+		t.Error("stub with --mimir-url should use the observing probe")
 	}
 }
