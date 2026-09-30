@@ -27,7 +27,7 @@ next starts, so nothing sits unmerged.
    faults on latency, add the egress-blackhole scenario, replace the OOMKill
    mechanism. Each one checked on kind: selector matches, fault bites, gate
    fires, baseline clears, calibration gives 0.00 / 1.00.
-3. **Floor of 8 (B-30).** Three mutation scenarios on top of step 1: broken
+3. ~~**Floor of 8 (B-30).**~~ Done. Three mutation scenarios on top of step 1: broken
    trace propagation, missing `service.name`, deploy regression.
 4. **Release plumbing (B-20, B-37).** goreleaser + plugin zip, with the action
    major-version bumps. Required for the v1.0 exit gate.
@@ -78,9 +78,6 @@ Anytime: B-17 (deploy argus from `dev-up`). Needs the user: B-35 (catalog submis
 
 Not defects. Tracked here so nothing is lost between sessions.
 
-- [ ] **B-30** — Scenario library is at 5/8 of the floor, all five live-validated.
-  Remaining §6.5 priorities (broken trace propagation, missing `service.name`,
-  deploy regression) are script steps with restore hooks, now possible (B-10).
 - [ ] **B-31** — No real model has produced a scored diagnosis yet. The harness is
   validated end to end; the environment blocked it.
 - [ ] **B-32** — The LLM judge needs a second local model; B-05's guard rightly
@@ -92,8 +89,6 @@ Not defects. Tracked here so nothing is lost between sessions.
   environment is unbuilt.
 - [ ] **B-35** — Plugin catalog submission. §9 says to submit at Phase 4 *start*
   (2026-07-20); status unknown.
-- [ ] **B-36** — PR #61 has been open and unreviewed since 2026-07-25. Nothing has
-  merged to `main` since #60.
 
 ---
 
@@ -104,6 +99,12 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-30** (#69) — scenario library at the floor of 8: missing `service.name`,
+  broken trace propagation and a deploy regression, each an env-var mutation of
+  a real workload through `faults/lib/env-fault.sh`, restored namespace-wide by
+  `faults/restore-all-mutations.sh`. All three calibrate to 0.00/0.00/1.00 and
+  pass the full lifecycle on kind. A test holds the floor.
+- [x] **B-36** — PR #61 merged; `main` has moved on through #68.
 - [x] **B-09, B-11, B-12, B-13** (#68) — scenarios 2–5 rebuilt and live-validated:
   latency faults gated on p95 (they produce no 5xx), the egress-blackhole
   scenario written, a real OOMKill via checkout's own memory limit. All five

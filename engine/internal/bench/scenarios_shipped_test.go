@@ -21,8 +21,11 @@ const scenarioDir = "../../../scenarios"
 // than partway through a run matrix that has already spent an hour.
 func TestShippedScenariosLoad(t *testing.T) {
 	paths := shippedScenarios(t)
-	if len(paths) == 0 {
-		t.Fatal("no scenarios found — the library should not be empty")
+	// The master plan (§6.5) sets the Phase 4 cut floor at 8 scenarios. Deleting
+	// or renaming one below it is a gate regression, not a tidy-up.
+	const floor = 8
+	if len(paths) < floor {
+		t.Fatalf("%d scenarios shipped, below the floor of %d", len(paths), floor)
 	}
 	for _, p := range paths {
 		t.Run(filepath.Base(p), func(t *testing.T) {
@@ -108,6 +111,54 @@ func TestShippedScenarioNamesMatchFilenames(t *testing.T) {
 		if sc.Metadata.Name != want {
 			t.Errorf("%s declares metadata.name %q", filepath.Base(p), sc.Metadata.Name)
 		}
+	}
+}
+
+// TestMutationScenariosRestoreEverything: a scenario whose inject script
+// mutates a workload through lib/env-fault.sh must reset and clean up with
+// restore-all-mutations.sh. That hook repairs every recorded mutation in the
+// namespace, so a mutation leaked by a crashed run cannot sit under the next
+// scenario's baseline; a scenario that restored only its own variable would let
+// one leak through.
+func TestMutationScenariosRestoreEverything(t *testing.T) {
+	const restoreAll = "faults/restore-all-mutations.sh"
+	for _, p := range shippedScenarios(t) {
+		sc, err := bench.LoadScenario(p)
+		if err != nil {
+			continue
+		}
+		mutates := false
+		for _, step := range sc.Spec.Inject {
+			if step.Script == "" {
+				continue
+			}
+			body, err := os.ReadFile(filepath.Join(filepath.Dir(p), step.Script))
+			if err != nil {
+				continue // covered by TestShippedScenariosReferenceExistingManifests
+			}
+			if strings.Contains(string(body), "lib/env-fault.sh") {
+				mutates = true
+			}
+		}
+		if !mutates {
+			continue
+		}
+		t.Run(sc.Metadata.Name, func(t *testing.T) {
+			has := func(hooks []bench.Hook) bool {
+				for _, h := range hooks {
+					if h.Script == restoreAll {
+						return true
+					}
+				}
+				return false
+			}
+			if !has(sc.Spec.Reset) {
+				t.Errorf("reset does not run %s", restoreAll)
+			}
+			if !has(sc.Spec.Cleanup) {
+				t.Errorf("cleanup does not run %s", restoreAll)
+			}
+		})
 	}
 }
 

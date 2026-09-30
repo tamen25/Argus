@@ -34,7 +34,7 @@ kubectl -n "$NS" rollout restart deploy/flagd >/dev/null
 kubectl -n "$NS" rollout status deploy/flagd --timeout=3m >/dev/null
 
 expected=$(echo "$updated" | jq -c --arg f "$FLAG" '.flags[$f].variants[.flags[$f].defaultVariant]')
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   got=$(kubectl -n "$NS" run "ofrep-check-$$" --rm -i --restart=Never --quiet \
         --image=curlimages/curl:8.10.1 -- \
         -s -X POST "http://flagd:8016/ofrep/v1/evaluate/flags/${FLAG}" \

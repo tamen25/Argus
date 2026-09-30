@@ -41,12 +41,12 @@ spec:
     min: 1
     settle: 45s
   # The limit and rollout strategy are recorded as annotations at injection and
-  # put back by this hook. On reset it is a no-op unless a previous run left
-  # checkout mutated.
+  # put back by this hook, which also repairs any mutation another scenario
+  # leaked. On reset it is a no-op unless a previous run left something mutated.
   reset:
-    - script: faults/restore-checkout-memory.sh
+    - script: faults/restore-all-mutations.sh
   cleanup:
-    - script: faults/restore-checkout-memory.sh
+    - script: faults/restore-all-mutations.sh
   groundTruth:
     rootCauseEntities:
       - {kind: Deployment, namespace: otel-demo, name: checkout}
