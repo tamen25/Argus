@@ -16,12 +16,12 @@
   "author": "Tamen25",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@grafana/eslint-config": "^10.0.0",
+    "@grafana/eslint-config": "^9.0.0",
     "@grafana/plugin-e2e": "^3.6.1",
     "@grafana/sign-plugin": "^3.2.2",
     "@grafana/tsconfig": "^2.0.1",
     "@playwright/test": "^1.57.0",
-    "@stylistic/eslint-plugin": "^5.10.0",
+    "@stylistic/eslint-plugin-ts": "^4.4.0",
     "@swc/core": "^1.15.0",
     "@swc/helpers": "^0.5.0",
     "@swc/jest": "^0.2.0",
@@ -79,6 +79,9 @@
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "rxjs": "7.8.2"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   },
   "packageManager": "npm@10.9.8"
 }
