@@ -1,0 +1,49 @@
+# Bench scenario (Module C — Phase 4). Fault: product-catalog is cut off from
+# every other workload in the namespace while remaining perfectly healthy itself.
+#
+# The interesting property is the disagreement between viewpoints. From the
+# callers, product-catalog is down. From product-catalog's own telemetry, it is
+# fine — idle, but fine. An agent that only reads caller-side errors concludes
+# the service crashed; the evidence that distinguishes a partition from an outage
+# is that the "dead" service is still emitting.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: network-partition-product-catalog
+  description: >-
+    product-catalog is network-partitioned from its callers. It stays healthy and
+    keeps emitting telemetry while every caller sees it as unreachable.
+spec:
+  environment:
+    app: otel-demo
+  inject:
+    - type: chaosmesh
+      manifest: faults/network-partition-product-catalog.yaml
+      duration: 10m
+  # Gate on frontend LATENCY, not errors. Measured live (2026-07-25): this
+  # fault drives frontend p95 from 21 ms to a saturated 10 s but produces zero
+  # 5xx — requests succeed slowly — so an error-rate gate never fired and the
+  # scenario could never run. 500 ms sits 24x above baseline and 20x below the
+  # fault. A [2m] rate window lets the baseline clear quickly after reset. If no
+  # requests land in the window the quantile is NaN, which the probe treats as
+  # "unknown", never as the fault being present.
+  steadyState:
+    query: histogram_quantile(0.95, sum by (le) (rate(http_server_duration_milliseconds_bucket{job="frontend"}[2m])))
+    min: 500
+    settle: 30s
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: otel-demo, name: product-catalog}
+    category: network-partition
+    # recommendation and frontend are the loudest casualties — recommendation
+    # depends on the catalog for every request. Naming either is the natural
+    # mistake when you follow the errors instead of the topology.
+    decoys:
+      - {kind: Deployment, namespace: otel-demo, name: recommendation}
+      - {kind: Deployment, namespace: otel-demo, name: frontend}
+      - {kind: Deployment, namespace: otel-demo, name: frontend-proxy}
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
+    categoryWeight: 0.5
+    requireEvidence: true

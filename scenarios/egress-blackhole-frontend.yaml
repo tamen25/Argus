@@ -1,0 +1,51 @@
+# Bench scenario (Module C — Phase 4). Fault: the frontend's outbound traffic
+# to three of its backends is black-holed. The backends are healthy and keep
+# serving every other caller; only one client's view of them is broken.
+#
+# The trap is the whole point. The frontend's errors name product-catalog,
+# recommendation and ad as unreachable, so those are the obvious culprits — and
+# all three are healthy. The evidence that separates the readings is that the
+# "broken" services are still emitting telemetry and still answering their
+# other callers. The common factor is the caller.
+#
+# This replaces a DNS-failure scenario: DNSChaos does not inject on this
+# cluster (chaos-mesh 2.8.3's helper panics rewriting resolv.conf), so the same
+# diagnostic shape is built from a directional NetworkChaos partition, which
+# does. See faults/egress-blackhole-frontend.yaml and DECISIONS.md.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: egress-blackhole-frontend
+  description: >-
+    frontend cannot reach product-catalog, recommendation or ad. Those services
+    are healthy and serving other callers; only frontend's egress is broken.
+spec:
+  environment:
+    app: otel-demo
+  inject:
+    - type: chaosmesh
+      manifest: faults/egress-blackhole-frontend.yaml
+      duration: 10m
+  # Unlike the latency faults, this one produces real errors: measured live
+  # (2026-07-25), frontend 5xx rose to 0.150/s, above its successful 0.083/s.
+  # Ambient 5xx is zero, so any sustained rate is the fault. A [2m] window lets
+  # the baseline clear quickly once the partition is lifted.
+  steadyState:
+    query: sum(rate(app_frontend_requests_total{job="frontend",status=~"5.."}[2m]))
+    min: 0.01
+    settle: 30s
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: otel-demo, name: frontend}
+    category: network-partition
+    # Exactly the services frontend's own errors name as unreachable. Each is
+    # healthy and provably still serving other clients.
+    decoys:
+      - {kind: Deployment, namespace: otel-demo, name: product-catalog}
+      - {kind: Deployment, namespace: otel-demo, name: recommendation}
+      - {kind: Deployment, namespace: otel-demo, name: ad}
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
+    categoryWeight: 0.5
+    requireEvidence: true

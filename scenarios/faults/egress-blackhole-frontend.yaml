@@ -1,0 +1,57 @@
+# Fault: the frontend's egress to three backends is black-holed, one direction
+# only. Those backends stay healthy and keep serving every other caller.
+#
+# Scenario: ../egress-blackhole-frontend.yaml
+# Ground truth: Deployment/otel-demo/frontend.
+#
+# WHY NOT DNSChaos
+# This scenario was first written as a DNS failure, which is the more natural way
+# to express "one service cannot find its dependencies". DNSChaos does not work on
+# this cluster: chaos-daemon's helper panics rewriting the target's resolv.conf
+# (`Os { code: 2, kind: NotFound }`, chaos-mesh 2.8.3), the CR reports
+# AllInjected=False, and nothing is injected. Verified against a live cluster —
+# the experiment selects the pod and then silently does nothing to it.
+#
+# A directional NetworkChaos partition produces the same diagnostic shape through
+# a mechanism that demonstrably injects here. Recorded in DECISIONS.md.
+#
+# WHY DIRECTIONAL, AND WHY THIS IS NOT THE OTHER PARTITION SCENARIO
+# `direction: to` cuts only frontend -> backends. Compare
+# network-partition-product-catalog, which isolates one service from everyone: there
+# the odd one out is obvious once you look at the whole topology. Here the
+# backends are healthy and provably serving other callers, and the only broken
+# thing is one client's view of them. An agent that reasons "three services are
+# unreachable, so those three are down" gets it exactly backwards — the common
+# factor is the caller.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: argus-fault-egress-blackhole-frontend
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/managed-by: argus-bench
+    argus.dev/fault: egress-blackhole
+spec:
+  action: partition
+  mode: all
+  direction: to
+  selector:
+    namespaces:
+      - otel-demo
+    labelSelectors:
+      app.kubernetes.io/name: frontend
+  # Scoped to three application backends rather than the whole namespace: the
+  # frontend must keep its path to the OTel collector, or the incident destroys
+  # the evidence needed to diagnose it and every agent scores zero.
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - otel-demo
+      expressionSelectors:
+        - key: app.kubernetes.io/name
+          operator: In
+          values:
+            - product-catalog
+            - recommendation
+            - ad

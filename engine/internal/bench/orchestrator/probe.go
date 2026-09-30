@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -63,6 +64,13 @@ func (p *PromQLProbe) read(ctx context.Context, sc bench.Scenario) (signature, e
 	}
 	if !ok {
 		return absent, nil // empty result: the series does not exist
+	}
+	// histogram_quantile returns NaN when no requests fell in the window. NaN
+	// fails every comparison, so it would otherwise read as "present": a gate
+	// passed with no fault, a baseline that can never be proven clean. It is no
+	// evidence either way.
+	if math.IsNaN(v) {
+		return unknown, nil
 	}
 	if (ss.Min != nil && v < *ss.Min) || (ss.Max != nil && v > *ss.Max) {
 		return absent, nil

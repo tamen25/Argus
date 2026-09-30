@@ -1,0 +1,49 @@
+# Fault: product-catalog is network-partitioned from the rest of the namespace.
+#
+# Scenario: ../network-partition-product-catalog.yaml
+# Ground truth: Deployment/otel-demo/product-catalog.
+#
+# WHY A CHAOS MESH PARTITION AND NOT A NETWORKPOLICY
+# The master plan lists this scenario as "network policy block". A NetworkPolicy
+# is the more faithful expression, but kind's default CNI (kindnet) does NOT
+# enforce NetworkPolicy: the object would be created, report healthy, and block
+# nothing at all. A scenario that silently no-ops is worse than one that is
+# slightly less faithful, because it scores agents against an environment that
+# was never faulted. NetworkChaos partition uses iptables inside the pod netns
+# and actually bites on kind.
+#
+# If you run this on a cluster with a policy-enforcing CNI (Calico, Cilium), a
+# NetworkPolicy variant is the more realistic fault and worth adding alongside.
+# Recorded in DECISIONS.md.
+#
+# ADDITIVE: a Chaos Mesh CR and nothing else.
+#
+# UNVERIFIED: label selector convention. A selector that matches nothing leaves
+# the cluster healthy, which the scenario's steadyState gate turns into a failed
+# run rather than a bogus score.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: argus-fault-partition-product-catalog
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/managed-by: argus-bench
+    argus.dev/fault: network-partition
+spec:
+  action: partition
+  mode: all
+  direction: both
+  selector:
+    namespaces:
+      - otel-demo
+    labelSelectors:
+      app.kubernetes.io/name: product-catalog
+  # Everything else in the namespace is on the far side of the partition, so the
+  # service is unreachable from all of its callers rather than just one — an
+  # incident that looks like the workload is down while it is in fact healthy and
+  # simply cut off. That distinction is the thing being scored.
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - otel-demo

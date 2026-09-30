@@ -1,0 +1,46 @@
+# Fault: 4s network delay on the valkey (Redis) instance backing the cart.
+#
+# Scenario: ../redis-latency-cart.yaml
+# Ground truth: Deployment/otel-demo/valkey-cart.
+#
+# MECHANISM
+# NetworkChaos applies tc netem inside the target pod's network namespace, so
+# every cart -> valkey round trip pays the delay. 4s is chosen to exceed typical
+# client timeouts: a delay small enough to merely slow things down produces an
+# ambiguous incident, and the point of the scenario is a clear one whose cause is
+# still non-obvious. The symptom surfaces at cart and then at the frontend, two
+# hops from the actual culprit.
+#
+# ADDITIVE: this creates a Chaos Mesh CR and nothing else, so the injector's
+# `kubectl delete -f` cleanup removes exactly what it added. See
+# docs/bench/authoring-scenarios.md for why that constraint is not optional.
+#
+# UNVERIFIED: the label selector below follows the otel-demo chart's convention
+# (app.kubernetes.io/name = component). If the chart labels differ, Chaos Mesh
+# applies successfully and affects nothing — which is why the scenario's
+# steadyState gate exists: a fault that does not bite never reaches steady state
+# and the run fails instead of scoring a healthy cluster.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: argus-fault-redis-latency
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/managed-by: argus-bench
+    argus.dev/fault: redis-latency
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - otel-demo
+    labelSelectors:
+      app.kubernetes.io/name: valkey-cart
+  delay:
+    latency: 4s
+    correlation: "0"
+    jitter: 0ms
+  # No spec.duration: the orchestrator owns the fault's lifetime and removes it
+  # on cleanup. A CR that expired on its own would let the environment heal
+  # underneath a still-running agent, and the run would score an incident that
+  # had already resolved.
