@@ -20,8 +20,8 @@ jobs:
       run:
         working-directory: engine
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # go.mod's `toolchain` line is the single source of truth: stdlib
           # vulnerabilities follow the Go that builds the binary, so CI and a
@@ -30,7 +30,7 @@ jobs:
           go-version-file: engine/go.mod
           cache-dependency-path: engine/go.sum
       - name: golangci-lint (incl. depguard architecture rules)
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           # Pinned: `latest` let a new linter release fail CI on unchanged code.
           # Bump deliberately, and keep it built for the same Go minor as
@@ -60,13 +60,13 @@ jobs:
       run:
         working-directory: plugin
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: plugin/package-lock.json
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: plugin/go.mod
           cache-dependency-path: plugin/go.sum
@@ -92,8 +92,8 @@ jobs:
       run:
         working-directory: engine
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: engine/go.mod
           cache-dependency-path: engine/go.sum
@@ -122,11 +122,27 @@ jobs:
           cat dogfood-report.md
           exit "$RC"
 
+  release-config:
+    name: Release config (goreleaser check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The release workflow runs only on a tag, so a broken .goreleaser.yaml
+      # would otherwise surface at release time. Same goreleaser line as there.
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+        env:
+          PLUGIN_RELEASE_DIR: ${{ runner.temp }}
+          ARGUS_SPEC_VERSION: check
+
   helm:
     name: Helm chart lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: helm lint
         run: |
           helm dependency update deploy/helm/argus

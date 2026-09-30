@@ -29,7 +29,7 @@ next starts, so nothing sits unmerged.
    fires, baseline clears, calibration gives 0.00 / 1.00.
 3. ~~**Floor of 8 (B-30).**~~ Done. Three mutation scenarios on top of step 1: broken
    trace propagation, missing `service.name`, deploy regression.
-4. **Release plumbing (B-20, B-37).** goreleaser + plugin zip, with the action
+4. ~~**Release plumbing (B-20, B-37).**~~ Done. goreleaser + plugin zip, with the action
    major-version bumps. Required for the v1.0 exit gate.
 5. **Plugin hygiene (B-21–B-24).** One small PR.
 6. **v1.0 artifacts (B-31–B-33).** A real scored run, the second (judge) model,
@@ -45,12 +45,6 @@ Anytime: B-17 (deploy argus from `dev-up`). Needs the user: B-35 (catalog submis
   said it did (comment corrected alongside this backlog).
   `deploy/kind/argus-engine.yaml` exists, but `bootstrap.sh` never applies it.
 
-## P2 — Quality gates
-
-- [ ] **B-20** — No `release.yml`; v0.1–v0.3 were cut by hand. The v1.0 exit gate
-  needs goreleaser + plugin zip. With B-07, a released binary's stdlib depends
-  on whoever built it.
-
 ## P2 — Plugin
 
 - [ ] **B-21** — npm audit reports 12 (7 high) with **zero shipped exposure**. Prod
@@ -64,13 +58,6 @@ Anytime: B-17 (deploy argus from `dev-up`). Needs the user: B-35 (catalog submis
   assertion `expect(container).toBeInTheDocument()` cannot fail.
 - [ ] **B-24** — `@stylistic/eslint-plugin-ts` is deprecated; migrate to
   `@stylistic/eslint-plugin`.
-
-## P3 — Cleanup
-
-- [ ] **B-37** — GitHub Actions pinned to old majors (`checkout@v4`,
-  `setup-go@v5`, `setup-node@v4`, `golangci-lint-action@v7`; current are v5+,
-  v7, v5+, v9). They run on the deprecated Node 20 runtime, which is why every
-  CI run warns. Bump deliberately, one PR, watching for input renames.
 
 ---
 
@@ -99,6 +86,20 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-20** (#70) — `release.yml` + `.goreleaser.yaml`: a `vX.Y.Z` tag builds
+  the CLI for six platforms and the plugin zip (signed when
+  `GRAFANA_ACCESS_POLICY_TOKEN` is set), with checksums, into a **draft**
+  release. The toolchain comes from `engine/go.mod`, so B-07's concern is
+  settled. CI runs `goreleaser check`; `docs/releasing.md` documents the steps.
+  Validated locally: snapshot build of all six archives, `argus version`
+  stamped, spec pin embedded, plugin zip in the checksums, mage build of all
+  seven plugin backends.
+- [x] **B-37** (#70) — actions at current majors (checkout v7, setup-go v7,
+  setup-node v7, golangci-lint-action v9). The release notes were checked for
+  renamed inputs; none of the ones used here changed.
+- [x] **B-38** (#70) — stale docs: the README status said Phase 1 with "v0.1 tag
+  pending", the quickstart said Phase 0 and Go ≥ 1.23 (the engine needs 1.25), and
+  the bench docs were missing from the mkdocs nav.
 - [x] **B-30** (#69) — scenario library at the floor of 8: missing `service.name`,
   broken trace propagation and a deploy regression, each an env-var mutation of
   a real workload through `faults/lib/env-fault.sh`, restored namespace-wide by

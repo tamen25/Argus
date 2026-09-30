@@ -4,9 +4,9 @@
 history, and proves — with an AI-agent benchmark — whether your observability can actually
 diagnose an incident.
 
-> Status: **Phase 1 — Score engine.** `argus score` (18 rules: 10 spec + 8 argus extensions),
-> remediation templates, evidence-based threshold calibration, and the Grafana app
-> (Overview / Scores / Service graph) run against a live LGTM stack. v0.1 tag pending final review.
+> Status: **Phase 4 — Prove, in progress toward v1.0.** Released: v0.1 (Score — 18 rules:
+> 10 spec + 8 argus extensions), v0.2 (Spend), v0.3 (Backtest). The bench harness and its
+> eight live-validated fault scenarios are on `main`; the flagship benchmark run is next.
 > Roadmap and full specification: [docs/argus-master-build-plan.md](docs/argus-master-build-plan.md).
 
 ## What Argus will do
@@ -67,7 +67,7 @@ docs/        Documentation (mkdocs)
 
 ## Development
 
-Dev environment is Linux (WSL2 Ubuntu 24.04 on Windows). Requires: Go ≥1.23, Node 22, Docker,
+Dev environment is Linux (WSL2 Ubuntu 24.04 on Windows). Requires: Go ≥1.25, Node 22, Docker,
 kind, kubectl, helm, make.
 
 ```bash

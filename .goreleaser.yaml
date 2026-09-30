@@ -1,0 +1,61 @@
+# goreleaser config for the argus engine binary. The Grafana plugin is built
+# and zipped by .github/workflows/release.yml and attached to the same GitHub
+# release through release.extra_files below.
+#
+# The Go toolchain is whatever setup-go installed from engine/go.mod's
+# `toolchain` line, so a released binary's stdlib is pinned by the repo, not by
+# whoever cut the release (see B-07 / B-20).
+version: 2
+project_name: argus
+
+builds:
+  - id: argus
+    dir: engine
+    main: ./cmd/argus
+    binary: argus
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Tag }}
+      # The Instrumentation Score spec commit this release implements, for
+      # binaries run without the repo's pin file on disk.
+      - -X main.embeddedSpecVersion={{ .Env.ARGUS_SPEC_VERSION }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: argus
+    ids: [argus]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "argus_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  extra_files:
+    - glob: "{{ .Env.PLUGIN_RELEASE_DIR }}/*.zip"
+
+release:
+  github:
+    owner: tamen25
+    name: Argus
+  # Release notes are written by hand (they carry the positioning and fidelity
+  # caveats); goreleaser creates the release as a draft for them to be pasted
+  # in, and a maintainer publishes it.
+  draft: true
+  # v1.0.0-rc.1 and similar are marked as pre-releases.
+  prerelease: auto
+  extra_files:
+    - glob: "{{ .Env.PLUGIN_RELEASE_DIR }}/*.zip"
+
+changelog:
+  disable: true
