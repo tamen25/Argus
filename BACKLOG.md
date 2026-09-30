@@ -34,12 +34,6 @@ the gates and mechanisms are what failed.
 
 ## P1 — Infrastructure
 
-- [ ] **B-16** — The kind history bind mount **detaches on every Docker Desktop
-  restart** that beats the Ubuntu distro up (seen 2026-07-25 and 2026-09-30).
-  Docker substitutes an empty root-owned dir; MinIO crashloops and takes Mimir
-  with it. Crashing is the *lucky* outcome: a writable empty dir would silently
-  fork the history kept since Phase 0. Add a sentinel file, a preflight that
-  refuses to start without it, and `make dev-heal`.
 - [ ] **B-17** — `make dev-up` does not deploy argus, though the Makefile comment
   said it did (comment corrected alongside this backlog).
   `deploy/kind/argus-engine.yaml` exists, but `bootstrap.sh` never applies it.
@@ -106,6 +100,10 @@ Not defects. Tracked here so nothing is lost between sessions.
 
 ## Done
 
+- [x] **B-16** (#64) — history-mount guard: a sentinel file inside the history,
+  mounted by MinIO as hostPath `type: File`, so kubelet refuses to start MinIO on
+  a detached (empty) mount; `make dev-heal` re-attaches. Verified against a
+  simulated detach; all history blocks intact.
 - [x] **B-01..B-06** (#61) — the six scoring-integrity bugs from review: the judge
   extracts (never supplies) evidence; repeats inject only into a verified-clean
   baseline, with settle timing out of the shared probe (mutation-tested);
