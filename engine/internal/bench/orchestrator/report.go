@@ -40,6 +40,9 @@ func RenderReportMarkdown(r Report) string {
 	if r.EnvDigest != "" {
 		fmt.Fprintf(&b, "- Environment: `%s`\n", r.EnvDigest)
 	}
+	if r.Condition != "" {
+		fmt.Fprintf(&b, "- Telemetry condition: `%s`\n", r.Condition)
+	}
 	fmt.Fprintf(&b, "- Seed: %d\n", r.Seed)
 	fmt.Fprintf(&b, "- Budget: %s\n", budgetString(r))
 	if m := r.Model; m != nil {
