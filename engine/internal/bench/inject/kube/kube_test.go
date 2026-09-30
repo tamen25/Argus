@@ -34,6 +34,11 @@ func TestKubectlHelperProcess(t *testing.T) {
 			_ = f.Close()
 		}
 	}
+	// Simulate a cluster where one CRD is not installed.
+	if kind := os.Getenv("ARGUS_KUBECTL_UNKNOWN_KIND"); kind != "" && strings.Contains(strings.Join(args, " "), " "+kind+" ") {
+		fmt.Fprintf(os.Stderr, "error: the server doesn't have a resource type %q\n", kind)
+		os.Exit(1)
+	}
 	if os.Getenv("ARGUS_KUBECTL_FAIL") == "1" {
 		fmt.Fprintln(os.Stderr, "the server could not find the requested resource")
 		os.Exit(1)
@@ -55,6 +60,10 @@ func helperInjector(t *testing.T, fail bool) (*Injector, string) {
 		Dir:       "scenarios",
 		Namespace: "otel-demo",
 		Context:   "kind-argus",
+		// Route the re-executed test binary into the helper. Without this it
+		// parses kubectl's flags as its own and fails — which once let a test
+		// that expected a failure pass for the wrong reason.
+		kubectlPrefix: []string{"-test.run=TestKubectlHelperProcess", "--"},
 	}
 	return inj, logPath
 }
@@ -172,3 +181,48 @@ func TestInjectAndCleanup_BuildExpectedKubectlArgs(t *testing.T) {
 
 // Compile-time proof the adapter satisfies the orchestrator port.
 var _ orchestrator.Injector = (*Injector)(nil)
+
+// TestResetSweepsEveryArgusFault is the guard for the leak found on
+// 2026-09-30: a StressChaos from a manual test sat on checkout for two months
+// because a scenario's reset only deletes the manifests it declares. Reset now
+// also sweeps every object carrying the argus-bench label, cluster-wide.
+func TestResetSweepsEveryArgusFault(t *testing.T) {
+	inj, logPath := helperInjector(t, false)
+	if err := inj.Reset(context.Background(), scenarioWith()); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(b)
+	for _, kind := range sweepKinds {
+		want := "delete " + kind + " --all-namespaces -l " + ManagedBy + " --ignore-not-found"
+		if !strings.Contains(log, want) {
+			t.Errorf("reset did not sweep %s; want a call containing %q", kind, want)
+		}
+	}
+}
+
+// TestSweepToleratesMissingCRDs: a cluster without Chaos Mesh must still be able
+// to run manifest-only scenarios.
+func TestSweepToleratesMissingCRDs(t *testing.T) {
+	inj, _ := helperInjector(t, false)
+	t.Setenv("ARGUS_KUBECTL_UNKNOWN_KIND", "dnschaos")
+	if err := inj.Reset(context.Background(), scenarioWith()); err != nil {
+		t.Fatalf("a missing CRD must be skipped, got %v", err)
+	}
+}
+
+// TestSweepSurfacesRealFailures: anything other than a missing CRD means a fault
+// may still be live, and must not be swallowed.
+func TestSweepSurfacesRealFailures(t *testing.T) {
+	inj, _ := helperInjector(t, true)
+	err := inj.Reset(context.Background(), scenarioWith())
+	// Assert the simulated failure's own text, not just "sweeping": a harness
+	// misconfiguration also fails the sweep, and must not satisfy this test.
+	if err == nil || !strings.Contains(err.Error(), "sweeping") ||
+		!strings.Contains(err.Error(), "could not find the requested resource") {
+		t.Fatalf("err = %v, want the simulated sweep failure", err)
+	}
+}

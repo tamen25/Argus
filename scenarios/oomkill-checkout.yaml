@@ -1,0 +1,65 @@
+# Bench scenario (Module C — Phase 4). Fault: checkout is OOM-killed repeatedly
+# and spends the window in CrashLoopBackOff.
+#
+# This is the availability counterpart to the cardinality scenario: the evidence
+# is an ABSENCE. checkout stops emitting entirely, and an agent has to notice
+# that a service which should be reporting is not — a harder read than a metric
+# that spikes, and one that rewards checking topology against what is actually
+# arriving.
+#
+# Note the MCP surface exposes Mimir, Loki and Tempo but no Kubernetes API, so
+# the agent cannot simply list pod restarts. It has to infer the outage from
+# telemetry, which is the point.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: oomkill-checkout
+  description: >-
+    checkout's memory limit is set below its working set, so the kernel
+    OOM-kills it into CrashLoopBackOff; the service stops emitting telemetry
+    entirely and the storefront's checkout path fails.
+spec:
+  environment:
+    app: otel-demo
+  # A script step, not a Chaos Mesh stressor: a stressor running beside checkout
+  # was itself the largest process in the cgroup, so the OOM killer took the
+  # stressor and checkout never restarted. Lowering checkout's own limit gives a
+  # genuine OOMKilled on the real workload (verified: reason OOMKilled, restarts
+  # climbing). See faults/oomkill-checkout.sh.
+  inject:
+    - type: script
+      script: faults/oomkill-checkout.sh
+      duration: 10m
+  # absent() returns 1 when checkout has stopped reporting and an empty result
+  # otherwise, which the probe reads as "not yet". count_over_time[2m] makes the
+  # absence mean "no sample for two minutes" (the SDK exports every 60s), so one
+  # brief restart is not mistaken for an outage, and the baseline clears as soon
+  # as checkout reports again. Measured: absent from t+120s after injection with
+  # no flicker; clean again 76s after restore.
+  steadyState:
+    query: absent(count_over_time(go_goroutine_count{job="checkout"}[2m]))
+    min: 1
+    settle: 45s
+  # The limit and rollout strategy are recorded as annotations at injection and
+  # put back by this hook. On reset it is a no-op unless a previous run left
+  # checkout mutated.
+  reset:
+    - script: faults/restore-checkout-memory.sh
+  cleanup:
+    - script: faults/restore-checkout-memory.sh
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: otel-demo, name: checkout}
+    category: oomkill
+    # frontend and cart carry the visible errors; kafka is downstream of checkout
+    # and goes quiet too, which reads like a broker problem if you only look at
+    # what stopped.
+    decoys:
+      - {kind: Deployment, namespace: otel-demo, name: frontend}
+      - {kind: Deployment, namespace: otel-demo, name: cart}
+      - {kind: Deployment, namespace: otel-demo, name: kafka}
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
+    categoryWeight: 0.5
+    requireEvidence: true

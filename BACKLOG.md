@@ -22,7 +22,7 @@ next starts, so nothing sits unmerged.
    (frontend must restart to drop the fault's cumulative series) and every
    mutation scenario. Includes the reset for scenario 1 and the coverage gap it
    touches (B-19).
-2. **Scenarios 2–5 fixed and live-validated (B-09, B-11, B-12, B-13).** Rebuild
+2. ~~**Scenarios 2–5 fixed and live-validated (B-09, B-11, B-12, B-13).**~~ Done. Rebuild
    the stale `feat/bench-scenarios-2-5` branch on current main; gate latency
    faults on latency, add the egress-blackhole scenario, replace the OOMKill
    mechanism. Each one checked on kind: selector matches, fault bites, gate
@@ -38,22 +38,6 @@ next starts, so nothing sits unmerged.
    §12.4).
 
 Anytime: B-17 (deploy argus from `dev-up`). Needs the user: B-35 (catalog submission status).
-
-## P1 — Scenarios 2–5 (live-validated 2026-07-25; 3 of 4 broken as committed)
-
-Branch `feat/bench-scenarios-2-5`, never PR'd. Selectors all match (1 pod each);
-the gates and mechanisms are what failed.
-
-- [ ] **B-09** — `redis-latency-cart`: frontend p95 goes from 21 ms to 10 s but with
-  **zero 5xx**, so the 5xx-keyed gate never fires. Gate on latency instead.
-- [ ] **B-11** — `network-partition-product-catalog`: also no 5xx. Gate on latency.
-- [ ] **B-12** — `dns-failure-frontend`: DNSChaos does not inject on this cluster
-  (chaos-daemon panics rewriting resolv.conf; `AllInjected=False`). The
-  egress-blackhole manifest replacing it is written and verified (5xx
-  0.150/s), but its scenario YAML is missing.
-- [ ] **B-13** — `oomkill-checkout`: StressChaos injects, but the OOM killer takes the
-  stressor (largest process in checkout's 20 Mi cgroup), not checkout. No restart,
-  and the gate never fires. Needs a different mechanism.
 
 ## P1 — Infrastructure
 
@@ -94,9 +78,9 @@ the gates and mechanisms are what failed.
 
 Not defects. Tracked here so nothing is lost between sessions.
 
-- [ ] **B-30** — Scenario library is at 5/8 of the floor, and four of those need
-  B-09–B-13. Remaining §6.5 priorities (broken trace propagation, missing
-  `service.name`, deploy regression) need B-10.
+- [ ] **B-30** — Scenario library is at 5/8 of the floor, all five live-validated.
+  Remaining §6.5 priorities (broken trace propagation, missing `service.name`,
+  deploy regression) are script steps with restore hooks, now possible (B-10).
 - [ ] **B-31** — No real model has produced a scored diagnosis yet. The harness is
   validated end to end; the environment blocked it.
 - [ ] **B-32** — The LLM judge needs a second local model; B-05's guard rightly
@@ -120,6 +104,13 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-09, B-11, B-12, B-13** (#68) — scenarios 2–5 rebuilt and live-validated:
+  latency faults gated on p95 (they produce no 5xx), the egress-blackhole
+  scenario written, a real OOMKill via checkout's own memory limit. All five
+  scenarios pass the full lifecycle on kind at 1.00 and calibrate to
+  0.00/0.00/1.00. Also: the probe treats NaN as unknown (it passed the gate), and
+  reset sweeps every argus-managed fault (a July leak sat on checkout for two
+  months).
 - [x] **B-10** (#67) — scenario-owned `reset`/`cleanup` hooks and
   `--inject=auto` (the new default); legacy modes refuse scenarios with hooks.
   Scenario 1 restarts frontend on reset and cleanup; its steadyState query now

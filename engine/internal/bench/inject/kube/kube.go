@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bench"
@@ -47,7 +48,42 @@ func New(dir, namespace, kubeContext string) *Injector {
 // Reset deletes every manifest the scenario declares, ignoring absences, so a
 // fault left behind by an earlier run cannot contaminate this one.
 func (i *Injector) Reset(ctx context.Context, sc bench.Scenario) error {
-	return i.deleteAll(ctx, sc)
+	if err := i.deleteAll(ctx, sc); err != nil {
+		return err
+	}
+	return i.sweep(ctx)
+}
+
+// ManagedBy is the label every bench fault object carries. During a run exactly
+// one scenario's fault should exist; anything else carrying this label is
+// residue — from a crashed run, another scenario, or a manual test.
+const ManagedBy = "app.kubernetes.io/managed-by=argus-bench"
+
+// sweepKinds are the kinds bench faults create: Chaos Mesh experiments, and the
+// Deployments/ConfigMaps/Jobs of load-driver faults.
+var sweepKinds = []string{
+	"networkchaos", "stresschaos", "dnschaos", "podchaos", "iochaos", "httpchaos", "timechaos",
+	"deployments", "configmaps", "jobs",
+}
+
+// sweep deletes every argus-managed fault object in the cluster, not only the
+// ones this scenario declares. A scenario's own cleanup can only remove what it
+// knows about: a StressChaos left by a manual test on 2026-07-25 sat on checkout
+// for two months, restarting it repeatedly, and no scenario's reset or baseline
+// check could see it — the baseline only watches the current scenario's
+// signature. Cluster-wide (-A) because an unset --inject-namespace would
+// otherwise sweep "default" and miss the faults entirely; the label makes that
+// safe. A kind whose CRD is not installed is skipped, so a cluster without Chaos
+// Mesh can still run manifest-only scenarios.
+func (i *Injector) sweep(ctx context.Context) error {
+	var first error
+	for _, kind := range sweepKinds {
+		err := i.run(ctx, "delete", kind, "--all-namespaces", "-l", ManagedBy, "--ignore-not-found")
+		if err != nil && !strings.Contains(err.Error(), "doesn't have a resource type") && first == nil {
+			first = fmt.Errorf("sweeping %s: %w", kind, err)
+		}
+	}
+	return first
 }
 
 // Inject applies one manifest step. Script steps are rejected: this injector

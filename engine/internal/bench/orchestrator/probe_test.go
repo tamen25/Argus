@@ -175,3 +175,19 @@ func TestFirstSampleValueRejectsErrorStatus(t *testing.T) {
 		t.Fatal("want an error for status=error")
 	}
 }
+
+// TestProbeTreatsNaNAsUnknown: histogram_quantile returns NaN when no requests
+// fell in the window. NaN fails every comparison, so without special handling a
+// NaN read as "fault present": the steady-state gate could pass with no fault,
+// and a baseline could never be verified clean. NaN is no evidence either way.
+func TestProbeTreatsNaNAsUnknown(t *testing.T) {
+	q := &fakeQuerier{raw: vectorJSON("NaN")}
+	p := &PromQLProbe{Q: q}
+	sc := scenarioWithSteadyState(&bench.SteadyState{Query: "histogram_quantile(0.95, x)", Min: f64(500)})
+	if ok, err := p.Reached(context.Background(), sc); err != nil || ok {
+		t.Fatalf("Reached on NaN = (%v, %v), want (false, nil): NaN must not pass the gate", ok, err)
+	}
+	if clean, err := p.Clean(context.Background(), sc); err != nil || clean {
+		t.Fatalf("Clean on NaN = (%v, %v), want (false, nil): NaN cannot prove a clean baseline", clean, err)
+	}
+}

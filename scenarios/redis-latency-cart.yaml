@@ -1,0 +1,47 @@
+# Bench scenario (Module C — Phase 4). Fault: the valkey instance behind the
+# cart service answers 4s late, so cart stalls and the storefront errors.
+#
+# What makes this worth scoring: the pain is loudest two hops from its cause.
+# The frontend throws 5xx, cart looks slow, and the actually-broken workload is a
+# datastore that is itself perfectly healthy apart from the latency. An agent
+# that stops at the first unhappy service names the wrong thing.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: redis-latency-cart
+  description: >-
+    A 4s network delay on valkey-cart stalls the cart service and surfaces as
+    frontend errors, two hops from the root cause.
+spec:
+  environment:
+    app: otel-demo
+  inject:
+    - type: chaosmesh
+      manifest: faults/redis-latency.yaml
+      duration: 10m
+  # Gate on frontend LATENCY, not errors. Measured live (2026-07-25): this
+  # fault drives frontend p95 from 21 ms to a saturated 10 s but produces zero
+  # 5xx — requests succeed slowly — so an error-rate gate never fired and the
+  # scenario could never run. 500 ms sits 24x above baseline and 20x below the
+  # fault. A [2m] rate window lets the baseline clear quickly after reset. If no
+  # requests land in the window the quantile is NaN, which the probe treats as
+  # "unknown", never as the fault being present.
+  steadyState:
+    query: histogram_quantile(0.95, sum by (le) (rate(http_server_duration_milliseconds_bucket{job="frontend"}[2m])))
+    min: 500
+    settle: 30s
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: otel-demo, name: valkey-cart}
+    category: dependency-latency
+    # cart is where the symptom is loudest and is the single most likely wrong
+    # answer; frontend is where a user would first notice. Both are victims.
+    decoys:
+      - {kind: Deployment, namespace: otel-demo, name: cart}
+      - {kind: Deployment, namespace: otel-demo, name: frontend}
+      - {kind: Deployment, namespace: otel-demo, name: frontend-proxy}
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
+    categoryWeight: 0.5
+    requireEvidence: true
