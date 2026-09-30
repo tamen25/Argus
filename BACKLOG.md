@@ -34,8 +34,8 @@ next starts, so nothing sits unmerged.
 5. ~~**Plugin hygiene (B-21–B-24).**~~ Done, except what is blocked upstream
    (B-24, and the rest of B-21).
 6. **v1.0 artifacts (B-31–B-33).** The first real scored run is done (B-31) and
-   found two harness gaps that come first: B-41 (category vocabulary, done) and
-   **B-42** (telemetry discovery and topology, next). After it: the
+   found harness gaps that come first: B-41 and B-42 (done), and **B-43** (token
+   budget warning, next). After it: the
    flagship `--compare` report and leaderboard (B-33, report generator in
    progress), and the second (judge) model (B-32). The run-matrix cost
    projection is confirmed with the user before the first full run (master plan
@@ -66,13 +66,12 @@ Needs the user: B-35 (catalog submission status).
 
 Not defects. Tracked here so nothing is lost between sessions.
 
-- [ ] **B-42** — **Decided 2026-09-30: add discovery tools and wire topology.** The agent cannot discover what telemetry
-  exists. There is no tool to list metric names or label values, the tool
-  descriptions say nothing about either, and `get_k8s_topology` is not wired
-  into `bench run`. In the first real run 8 of 10 PromQL queries returned
-  nothing (guessed metric names, a `namespace` label that does not exist here).
-  Options: add discovery tools to the MCP surface (extends master plan §3.2's
-  five tools), wire a topology backend, or state the limitation and leave it.
+- [ ] **B-43** — The token budget has no warning. A turn re-sends the whole
+  conversation, so the count grows faster than the agent can track; run 4 ended
+  on the token cap (109404 of 100000) with three tool calls to spare, and with no
+  notice or final turn — unlike the tool-call cap (B-39). The report does not
+  say which cap was hit. Fix: the same notice-and-final-turn treatment when the
+  remaining tokens would not cover another turn, and name the cap in the error.
 - [ ] **B-32** — The LLM judge needs a second local model; B-05's guard rightly
   blocks self-judging.
 - [ ] **B-33** — Flagship artifacts. Done: the report generator
@@ -97,6 +96,11 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-42** (#76) — discovery tools (`list_metrics`, `list_metric_labels`,
+  `list_log_labels`, `list_trace_tags`) and `get_k8s_topology` (workload
+  identities via `kubectl get`, plus the service graph; bench fault objects
+  hidden). Query-tool descriptions point at them and carry neutral syntax
+  examples. On a real run 15 of 17 calls succeeded, against 6 of 20 before.
 - [x] **B-41** (#75) — every agent is offered a closed fault-category list
   (`scenarios/categories.yaml`): an enum on `submit_diagnosis`, and prose in the
   brief for agents that see no tool schema. `bench run` refuses to run without

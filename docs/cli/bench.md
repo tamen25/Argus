@@ -190,7 +190,14 @@ recorded on every report — the same tag at a different quantization or context
 is a different subject, and a leaderboard row without that cannot be reproduced.
 
 API agents get the identical MCP tool set, so the benchmark compares **agents,
-not tool access**. Shell agents bring their own tooling and their token/tool
+not tool access**. That set includes the discovery tools (`list_metrics`,
+`list_metric_labels`, `list_log_labels`, `list_trace_tags`) and
+`get_k8s_topology`, which `--topology auto` (the default) offers whenever
+`kubectl` is on PATH. The topology lists workload identities only, and hides
+the bench's own fault objects (everything labeled
+`app.kubernetes.io/managed-by=argus-bench`): they are the apparatus, and a
+Deployment named `argus-fault-cardinality` would give the answer away. See
+[argus mcp](mcp.md). Shell agents bring their own tooling and their token/tool
 budgets are **not enforceable** — only a wall-clock timeout applies, and the
 report shows their unknown usage dimensions as zero rather than guessing. The
 caps are passed to the wrapper as `ARGUS_MAX_TOOL_CALLS` and `ARGUS_MAX_TOKENS`

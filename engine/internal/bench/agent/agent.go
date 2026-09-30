@@ -177,7 +177,9 @@ func categoryBrief(categories []bench.Category) string {
 
 const systemPrompt = "You are an SRE incident-diagnosis agent. Investigate the incident using the " +
 	"read-only observability tools (metrics, logs, traces, alerts, topology). Do not guess — use the " +
-	"tools to gather evidence. Identify the root-cause Kubernetes entities and the fault category. " +
+	"tools to gather evidence. Metric, label and workload names differ between environments: discover " +
+	"them with the tools rather than assuming them. Identify the root-cause Kubernetes entities and the " +
+	"fault category. " +
 	"Naming the busiest or most obvious service without evidence is scored as a wrong answer, and so " +
 	"is listing many services hoping one is right. " +
 	"When you are confident, call " + submitToolName + " with the root-cause entities, the fault " +

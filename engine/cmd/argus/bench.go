@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -61,6 +63,7 @@ type benchFlags struct {
 	cleanupScript   string
 	injectNamespace string
 	kubeContext     string
+	topology        string
 
 	judgeEndpoint string
 	judgeModel    string
@@ -211,7 +214,9 @@ output the same way twice would launder that error into the score.`,
 	fl.StringVar(&f.resetScript, "reset-script", "", "script run before injection (script mode)")
 	fl.StringVar(&f.cleanupScript, "cleanup-script", "", "script run after each repeat (script mode)")
 	fl.StringVar(&f.injectNamespace, "inject-namespace", "", "namespace passed to kubectl (kubectl mode)")
-	fl.StringVar(&f.kubeContext, "kube-context", "", "kube context used for injection (kubectl mode)")
+	fl.StringVar(&f.kubeContext, "kube-context", "", "kube context used for injection and for get_k8s_topology")
+	fl.StringVar(&f.topology, "topology", "auto",
+		"get_k8s_topology backend: auto (kubectl if on PATH) | kubectl | none. Lists workload identities only, never status")
 
 	fl.StringVar(&f.judgeEndpoint, "judge-endpoint", "", "LLM-judge chat endpoint (fallback normalizer; disclosed in the report)")
 	fl.StringVar(&f.judgeModel, "judge-model", "", "LLM-judge model id")
@@ -361,16 +366,33 @@ func buildTools(f benchFlags) (agent.Tools, error) {
 		return nil, nil
 	}
 	var b mcp.Backends
+	var mimir *backend.Mimir
 	if f.mimirURL != "" {
-		m := backend.NewMimir(f.mimirURL, f.tenant)
-		b.Metrics = m
-		b.Alerts = m
+		mimir = backend.NewMimir(f.mimirURL, f.tenant)
+		b.Metrics = mimir
+		b.Alerts = mimir
+		b.MetricsCatalog = mimir
 	}
 	if f.lokiURL != "" {
-		b.Logs = backend.NewLoki(f.lokiURL, f.tenant)
+		l := backend.NewLoki(f.lokiURL, f.tenant)
+		b.Logs = l
+		b.LogsCatalog = l
 	}
 	if f.tempoURL != "" {
-		b.Traces = backend.NewTempo(f.tempoURL, f.tenant)
+		t := backend.NewTempo(f.tempoURL, f.tenant)
+		b.Traces = t
+		b.TracesCatalog = t
+	}
+	useKubectl, err := topologyMode(f.topology)
+	if err != nil {
+		return nil, err
+	}
+	if useKubectl {
+		// The bench's own fault objects carry the sweep label; hide them. They
+		// are the apparatus, and a Deployment named argus-fault-cardinality
+		// would hand the agent the answer.
+		exclude := strings.Replace(kube.ManagedBy, "=", "!=", 1)
+		b.Topology = backend.NewKubeTopology(f.kubeContext, exclude, mimir)
 	}
 	reg, err := mcp.NewServer(b)
 	if err != nil {
@@ -380,6 +402,26 @@ func buildTools(f benchFlags) (agent.Tools, error) {
 		return nil, fmt.Errorf("%w (an API agent needs at least --mimir-url)", err)
 	}
 	return reg, nil
+}
+
+// topologyMode resolves --topology. "auto" offers get_k8s_topology when kubectl
+// is on PATH, so the surface stays honest: a tool is only offered if it can
+// answer.
+func topologyMode(mode string) (bool, error) {
+	switch mode {
+	case "auto":
+		_, err := exec.LookPath("kubectl")
+		return err == nil, nil
+	case "kubectl":
+		if _, err := exec.LookPath("kubectl"); err != nil {
+			return false, fmt.Errorf("--topology=kubectl: kubectl is not on PATH")
+		}
+		return true, nil
+	case "none":
+		return false, nil
+	default:
+		return false, fmt.Errorf("unknown --topology %q (want auto, kubectl or none)", mode)
+	}
 }
 
 // buildProbe returns the steady-state gate. A scenario that declares a
