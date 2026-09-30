@@ -82,9 +82,14 @@ Not defects. Tracked here so nothing is lost between sessions.
   five tools), wire a topology backend, or state the limitation and leave it.
 - [ ] **B-32** — The LLM judge needs a second local model; B-05's guard rightly
   blocks self-judging.
-- [ ] **B-33** — Not started: flagship report (`bench report --compare
-  degraded,remediated`), leaderboard page, run-matrix cost projection (§12.4 —
-  confirm with the user before the first full run).
+- [ ] **B-33** — Flagship artifacts. Done: the report generator
+  (`bench report`, `--compare`, `bench run --condition`). Still open: (a) how
+  the environment is put into the `degraded` and `remediated` conditions — a
+  repeatable script, not a manual step; (b) the plugin leaderboard page and the
+  engine endpoint behind it; (c) the run-matrix cost projection (§12.4 —
+  confirm with the user before the first full run). Blocked on B-41 and B-42:
+  a comparison published from the current tool surface would measure the
+  harness.
 - [ ] **B-34** — `deploy/terraform/` is a README placeholder; the EKS headline
   environment is unbuilt.
 - [ ] **B-35** — Plugin catalog submission. §9 says to submit at Phase 4 *start*
@@ -99,6 +104,11 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-33, report generator** (#74) — `argus bench report` builds a leaderboard
+  (agents × scenarios, one board per condition) or, with
+  `--compare baseline,treatment`, the degraded-vs-remediated comparison from
+  run reports. `bench run --condition` labels a run. Paired scenarios only, no
+  zero-filling, pooled runs, and every like-for-like problem disclosed.
 - [x] **B-31** (#73) — a real model has produced a scored diagnosis:
   `qwen3.6-bench` on `deploy-regression-cart`, 265 s, 20 tool calls, score 0.00
   (named `flagd`, not `cart`). Written up in `docs/bench/first-real-run.md`

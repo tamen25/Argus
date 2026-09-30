@@ -35,7 +35,7 @@ Decoys named (plausible-but-wrong entities asserted): Deployment/otel-demo/produ
 - Normalization used: **json** — deterministic.
 - Normalization used: **llm-judge** — a model mapped free-form agent output into the scored schema; this step is not deterministic.
 - 1 of 54 tool calls returned an error to the agent (a rejected query, or a backend that did not answer). Read `tool_log` in the JSON report before attributing a low score to the agent alone.
-- Score = (1−w)·entity agreement + w·category match, less a penalty per decoy named, clamped to [0,1]; it is zero if the scenario required cited evidence and none was given. Deterministic and recomputable by hand from this table.
+- Score = (1−w)·entity agreement + w·category match, less a penalty per decoy named, clamped to [0,1]; it is zero if the scenario required cited evidence and none was given. Deterministic and recomputable by hand from the runs table of a run report.
 - Evidence is checked for presence and well-formedness, NOT for truth: verifying an observation would mean re-running the agent's queries. A fabricated citation passes this check — cited telemetry is a floor on effort, not proof of correctness.
 - An agent's prose is recorded but never scored.
 - Runs that produced no diagnosis (agent error or exhausted budget) are counted separately and excluded from the means — they are not scored as zero. Read the means together with the answered rate.

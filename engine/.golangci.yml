@@ -21,6 +21,7 @@ linters:
             - "**/internal/cost/**"
             - "**/internal/backtest/**"
             - "**/internal/bench/scoring/**"
+            - "**/internal/bench/leaderboard/**"
             - "**/internal/calibrate/**"
             - "**/internal/stats/**"
           deny:

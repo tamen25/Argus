@@ -82,6 +82,11 @@ type Options struct {
 	Seed int64
 	// EnvDigest identifies the environment under test, recorded in the report.
 	EnvDigest string
+	// Condition labels the telemetry condition the environment was in for this
+	// run (e.g. "degraded", "remediated"). It is only a label: the operator
+	// puts the environment in that condition, and `bench report --compare`
+	// groups reports by it.
+	Condition string
 	// Model is the provenance of the inference that served this run — tag,
 	// quantization, served context, endpoint. Without it a leaderboard row
 	// cannot be reproduced: the same tag at a different quantization or context
@@ -140,6 +145,7 @@ type Report struct {
 	ScenarioHash string           `json:"scenario_hash"`
 	Agent        string           `json:"agent"`
 	EnvDigest    string           `json:"env_digest,omitempty"`
+	Condition    string           `json:"condition,omitempty"`
 	Seed         int64            `json:"seed"`
 	Budget       agent.Budget     `json:"budget"`
 	Model        *local.ModelInfo `json:"model,omitempty"`
@@ -170,6 +176,7 @@ func Run(
 		ScenarioHash: hash,
 		Agent:        ag.Name(),
 		EnvDigest:    opts.EnvDigest,
+		Condition:    opts.Condition,
 		Seed:         opts.Seed,
 		Budget:       opts.Budget,
 		Model:        opts.Model,
@@ -414,6 +421,11 @@ func withDefaults(o Options) Options {
 	}
 	return o
 }
+
+// Summarize aggregates run records the same way a Report's own Summary is
+// built. Exported so a leaderboard can pool the runs of several reports and
+// recompute, rather than average their means.
+func Summarize(runs []RunRecord) Summary { return summarize(runs) }
 
 func summarize(runs []RunRecord) Summary {
 	s := Summary{Attempts: len(runs)}
