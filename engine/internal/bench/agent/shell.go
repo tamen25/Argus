@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -65,6 +66,10 @@ func (s *ShellAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 	cmd.Env = append(cmd.Env,
 		"ARGUS_SCENARIO="+task.Scenario,
 		"ARGUS_BRIEF="+task.Brief,
+		// Argus cannot see or cap what an external agent spends. The budget is
+		// passed along so a wrapper can enforce it; zero means uncapped.
+		"ARGUS_MAX_TOOL_CALLS="+strconv.Itoa(task.Budget.MaxToolCalls),
+		"ARGUS_MAX_TOKENS="+strconv.Itoa(task.Budget.MaxTokens),
 	)
 	cmd.Stdin = strings.NewReader(task.Brief)
 

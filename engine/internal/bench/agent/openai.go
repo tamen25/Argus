@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -52,24 +51,27 @@ func NewOpenAI(cfg OpenAIConfig) *OpenAIAgent {
 // Name identifies the agent in the run record.
 func (a *OpenAIAgent) Name() string { return a.cfg.Name }
 
-// Diagnose runs the tool-use loop. Budget caps are enforced between steps:
-// tool calls are counted (submit_diagnosis is terminal and not counted), and
-// cumulative reported tokens are summed as a conservative upper bound.
+// Diagnose runs the tool-use loop. The agent is told its budget up front.
+// Tool calls are counted (submit_diagnosis is terminal and not counted), and
+// cumulative reported tokens are summed as a conservative upper bound. When the
+// last permitted tool call has been used the agent is told so and gets one more
+// turn, in which only submit_diagnosis is accepted.
 func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 	tools := a.toolDefs(task.Tools)
 	msgs := []oaMessage{
 		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: task.Brief + "\n\nWhen you have identified the root cause, call " + submitToolName + "."},
+		{Role: "user", Content: task.Brief + "\n\nWhen you have identified the root cause, call " +
+			submitToolName + "." + budgetBrief(task.Budget)},
 	}
 
-	var usage Usage
+	s := &session{budget: task.Budget}
 	hardStep := 20
 	if task.Budget.MaxToolCalls > 0 {
 		hardStep = task.Budget.MaxToolCalls + 2 // room for the terminal submit + a final turn
 	}
 
 	for step := 0; step < hardStep; step++ {
-		usage.Steps++
+		s.usage.Steps++
 		resp, err := a.chat(ctx, oaRequest{
 			Model:      a.cfg.Model,
 			Messages:   msgs,
@@ -77,36 +79,42 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 			ToolChoice: "auto",
 		})
 		if err != nil {
-			return Result{Usage: usage}, err
+			return s.result(nil), err
 		}
-		usage.Tokens += resp.Usage.TotalTokens
-		if task.Budget.MaxTokens > 0 && usage.Tokens > task.Budget.MaxTokens {
-			return Result{Usage: usage}, ErrBudgetExhausted
+		s.usage.Tokens += resp.Usage.TotalTokens
+		if task.Budget.MaxTokens > 0 && s.usage.Tokens > task.Budget.MaxTokens {
+			return s.result(nil), ErrBudgetExhausted
 		}
 		if len(resp.Choices) == 0 {
-			return Result{Usage: usage}, fmt.Errorf("agent %s: endpoint returned no choices", a.cfg.Name)
+			return s.result(nil), fmt.Errorf("agent %s: endpoint returned no choices", a.cfg.Name)
 		}
 		msg := resp.Choices[0].Message
 
 		if len(msg.ToolCalls) == 0 {
 			// The model answered without calling submit_diagnosis: no structured
 			// diagnosis. Treated as a failed run, not a silent empty answer.
-			return Result{Usage: usage}, fmt.Errorf("agent %s: finished without calling %s", a.cfg.Name, submitToolName)
+			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s", a.cfg.Name, submitToolName)
 		}
 
 		msgs = append(msgs, msg) // assistant turn carrying the tool_calls
 
 		for _, tc := range msg.ToolCalls {
 			if tc.Function.Name == submitToolName {
-				return Result{Raw: json.RawMessage(tc.Function.Arguments), Usage: usage}, nil
+				return s.result(json.RawMessage(tc.Function.Arguments)), nil
 			}
-			// Check before counting: incrementing first reports a call that was
-			// never executed, so a run capped at 12 would truthfully say 13.
-			if task.Budget.MaxToolCalls > 0 && usage.ToolCalls >= task.Budget.MaxToolCalls {
-				return Result{Usage: usage}, ErrBudgetExhausted
+			content := budgetRefusal
+			if s.spent() {
+				// Already told the budget was spent, and it asked for a tool
+				// anyway: the run ends. The call is not executed, so it is not
+				// counted — a run capped at 12 must never report 13.
+				if s.warned {
+					return s.result(nil), ErrBudgetExhausted
+				}
+			} else {
+				content = s.call(ctx, task.Tools, tc.Function.Name, json.RawMessage(tc.Function.Arguments))
 			}
-			usage.ToolCalls++
-			content := a.runTool(ctx, task.Tools, tc)
+			// Every tool_call id needs an answer, so a call made past the cap
+			// in the same turn gets the refusal rather than silence.
 			msgs = append(msgs, oaMessage{
 				Role:       "tool",
 				ToolCallID: tc.ID,
@@ -114,19 +122,12 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 				Content:    content,
 			})
 		}
+		if s.spent() && !s.warned {
+			msgs = append(msgs, oaMessage{Role: "user", Content: budgetSpentNotice})
+			s.warned = true
+		}
 	}
-	return Result{Usage: usage}, fmt.Errorf("agent %s: exceeded %d steps without submitting", a.cfg.Name, hardStep)
-}
-
-// runTool executes one requested tool call and returns the content string to
-// feed back. A tool error is returned to the model as JSON so it can adapt,
-// rather than aborting the run.
-func (a *OpenAIAgent) runTool(ctx context.Context, tools Tools, tc oaToolCall) string {
-	out, err := tools.Call(ctx, tc.Function.Name, json.RawMessage(tc.Function.Arguments))
-	if err != nil {
-		return `{"error":` + strconv.Quote(err.Error()) + `}`
-	}
-	return string(out)
+	return s.result(nil), fmt.Errorf("agent %s: exceeded %d steps without submitting", a.cfg.Name, hardStep)
 }
 
 // toolDefs converts the read-only MCP tools into OpenAI function definitions and

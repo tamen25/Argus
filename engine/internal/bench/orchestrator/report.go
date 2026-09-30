@@ -60,21 +60,21 @@ func RenderReportMarkdown(r Report) string {
 		s.BudgetExhausted, s.MeanToolCalls, s.MeanTokens)
 
 	fmt.Fprintf(&b, "## Runs\n\n")
-	fmt.Fprintf(&b, "| # | Score | Entity | Category | Decoys | Evidence | Normalization | Tool calls | Tokens | Outcome |\n")
-	fmt.Fprintf(&b, "|---:|---:|---:|---|---:|---|---|---:|---:|---|\n")
+	fmt.Fprintf(&b, "| # | Score | Entity | Category | Decoys | Evidence | Normalization | Tool calls | Tool errors | Tokens | Outcome |\n")
+	fmt.Fprintf(&b, "|---:|---:|---:|---|---:|---|---|---:|---:|---:|---|\n")
 	for _, run := range r.Runs {
 		score, ent, cat, decoys, ev := "—", "—", "—", "—", "—"
 		if run.Score != nil {
 			score = fmt.Sprintf("%.2f", run.Score.Score)
 			ent = fmt.Sprintf("%.2f", run.Score.EntityScore)
-			cat = boolMark(run.Score.CategoryMatch)
+			cat = categoryCell(run.Score.CategoryMatch, run.Score.Category)
 			decoys = fmt.Sprintf("%d", len(run.Score.DecoysNamed))
 			ev = evidenceCell(run.Score.EvidenceCount, run.Score.CitedSignals, run.Score.EvidenceMissing,
 				run.Score.MalformedEvidence)
 		}
-		fmt.Fprintf(&b, "| %d | %s | %s | %s | %s | %s | %s | %d | %d | %s |\n",
+		fmt.Fprintf(&b, "| %d | %s | %s | %s | %s | %s | %s | %d | %d | %d | %s |\n",
 			run.Repeat, score, ent, cat, decoys, ev, dash(run.Normalization),
-			run.Usage.ToolCalls, run.Usage.Tokens, outcome(run))
+			run.Usage.ToolCalls, run.Usage.ToolErrors, run.Usage.Tokens, outcome(run))
 	}
 	fmt.Fprintf(&b, "\n")
 
@@ -86,14 +86,83 @@ func RenderReportMarkdown(r Report) string {
 		fmt.Fprintf(&b, "Most-missed ground-truth entities: %s\n\n", strings.Join(miss, ", "))
 	}
 
+	if lines := toolUse(r); len(lines) > 0 {
+		fmt.Fprintf(&b, "## Tool use\n\n")
+		for _, l := range lines {
+			fmt.Fprintf(&b, "- %s\n", l)
+		}
+		fmt.Fprintf(&b, "\n")
+	}
+
 	fmt.Fprintf(&b, "## Method and caveats\n\n")
 	for _, m := range normalizationMethods(r) {
 		fmt.Fprintf(&b, "- Normalization used: **%s**%s\n", m, methodNote(m))
+	}
+	if calls, errs := toolErrorTotals(r); errs > 0 {
+		fmt.Fprintf(&b, "- %d of %d tool calls returned an error to the agent (a rejected query, or a backend that did not answer). "+
+			"Read `tool_log` in the JSON report before attributing a low score to the agent alone.\n", errs, calls)
 	}
 	for _, c := range standingBenchCaveats {
 		fmt.Fprintf(&b, "- %s\n", c)
 	}
 	return b.String()
+}
+
+// StandingCaveats returns the caveats every rendering of bench results must
+// carry, for reports built from run reports (the leaderboard and comparison).
+func StandingCaveats() []string {
+	return append([]string{}, standingBenchCaveats...)
+}
+
+// categoryCell shows what the agent said when it did not match: "no" alone
+// hides whether the answer was a near miss or a different fault entirely.
+func categoryCell(match bool, given string) string {
+	if match || given == "" {
+		return boolMark(match)
+	}
+	return fmt.Sprintf("no (`%s`)", given)
+}
+
+// toolUse summarizes each run's tool log: which tools, how often, how many
+// errors. Runs without a log (no tool use, or an agent Argus cannot observe)
+// are omitted.
+func toolUse(r Report) []string {
+	var out []string
+	for _, run := range r.Runs {
+		if len(run.ToolLog) == 0 {
+			continue
+		}
+		count, errs := map[string]int{}, map[string]int{}
+		for _, c := range run.ToolLog {
+			count[c.Tool]++
+			if c.Error != "" {
+				errs[c.Tool]++
+			}
+		}
+		names := make([]string, 0, len(count))
+		for n := range count {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		parts := make([]string, 0, len(names))
+		for _, n := range names {
+			p := fmt.Sprintf("`%s` ×%d", n, count[n])
+			if errs[n] > 0 {
+				p += fmt.Sprintf(" (%d failed)", errs[n])
+			}
+			parts = append(parts, p)
+		}
+		out = append(out, fmt.Sprintf("Run %d: %s", run.Repeat, strings.Join(parts, ", ")))
+	}
+	return out
+}
+
+func toolErrorTotals(r Report) (calls, errs int) {
+	for _, run := range r.Runs {
+		calls += run.Usage.ToolCalls
+		errs += run.Usage.ToolErrors
+	}
+	return calls, errs
 }
 
 // quantSuffix renders the weight format, which changes what a tag means: the

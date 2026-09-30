@@ -16,25 +16,29 @@ var update = flag.Bool("update", false, "rewrite golden files")
 
 // goldenReport exercises every branch the bench report renders: a cited
 // diagnosis, a named decoy, a malformed citation, an uncited answer, a
-// budget-exhausted run, an LLM-judge normalization, and model provenance whose
-// served context differs from the architectural maximum.
+// budget-exhausted run, an LLM-judge normalization, a tool log with a failed
+// call, a wrong category, and model provenance whose served context differs
+// from the architectural maximum.
 func goldenReport() Report {
 	e := func(name string) bench.Entity {
 		return bench.Entity{Kind: "Deployment", Namespace: "otel-demo", Name: name}
 	}
 	cited := scoring.Result{
 		Scenario: "cardinality-explosion-frontend", Score: 1, EntityScore: 1, CategoryMatch: true,
+		Category:      "cardinality-explosion",
 		EvidenceCount: 2, CitedSignals: []string{"logs", "metrics"},
 		Matched: []bench.Entity{e("frontend")},
 	}
 	decoy := scoring.Result{
 		Scenario: "cardinality-explosion-frontend", Score: 0, EntityScore: 0.5, CategoryMatch: false,
+		Category:      "high-latency",
 		EvidenceCount: 1, CitedSignals: []string{"metrics"}, MalformedEvidence: 1,
 		DecoysNamed: []bench.Entity{e("product-reviews")},
 		Matched:     []bench.Entity{e("frontend")}, Extra: []bench.Entity{e("product-reviews")},
 	}
 	uncited := scoring.Result{
 		Scenario: "cardinality-explosion-frontend", Score: 0, EntityScore: 1, CategoryMatch: true,
+		Category:        "cardinality-explosion",
 		EvidenceMissing: true, Matched: []bench.Entity{e("frontend")},
 	}
 	r := Report{
@@ -50,7 +54,14 @@ func goldenReport() Report {
 			EffectiveNumCtx: 32768, ArchContextLength: 262144,
 		},
 		Runs: []RunRecord{
-			{Repeat: 0, Score: &cited, Normalization: "json", Usage: agent.Usage{ToolCalls: 9, Tokens: 14000}},
+			{Repeat: 0, Score: &cited, Normalization: "json",
+				Usage: agent.Usage{ToolCalls: 3, ToolErrors: 1, Tokens: 14000},
+				ToolLog: []agent.ToolCall{
+					{Tool: "query_prometheus", Arguments: `{"query":"count by (job) (app_frontend_requests_total)"}`, ResultBytes: 812},
+					{Tool: "query_prometheus", Arguments: `{"query":"rate(app_frontend_requests_total["}`,
+						Error: "bad_data: parse error: unexpected end of input", ResultBytes: 64},
+					{Tool: "query_loki", Arguments: `{"query":"{service_name=\"frontend\"}"}`, ResultBytes: 2048},
+				}},
 			{Repeat: 1, Score: &decoy, Normalization: "llm-judge", Usage: agent.Usage{ToolCalls: 12, Tokens: 18000}},
 			{Repeat: 2, Score: &uncited, Normalization: "json", Usage: agent.Usage{ToolCalls: 4, Tokens: 6000}},
 			{Repeat: 3, Error: "agent: budget exhausted before diagnosis", BudgetExhausted: true,

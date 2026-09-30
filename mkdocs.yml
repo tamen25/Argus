@@ -54,6 +54,7 @@ nav:
   - Bench:
       - Authoring scenarios: bench/authoring-scenarios.md
       - Scenario 1 validation: bench/scenario-01-validation.md
+      - First real-model run: bench/first-real-run.md
   - Releasing: releasing.md
   - Master build plan: argus-master-build-plan.md
 

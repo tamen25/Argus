@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -65,24 +64,27 @@ func NewAnthropic(cfg AnthropicConfig) *AnthropicAgent {
 // Name identifies the agent in the run record.
 func (a *AnthropicAgent) Name() string { return a.cfg.Name }
 
-// Diagnose runs the tool-use loop. Budget semantics match the OpenAI agent:
-// tool calls counted (submit_diagnosis terminal, not counted), input+output
-// tokens summed, overrun returns ErrBudgetExhausted with partial usage.
+// Diagnose runs the tool-use loop. Budget semantics match the OpenAI agent: the
+// budget is stated up front, tool calls are counted (submit_diagnosis terminal,
+// not counted), input+output tokens summed, and once the last permitted tool
+// call is used the agent is told and gets one turn to submit. An overrun
+// returns ErrBudgetExhausted with partial usage.
 func (a *AnthropicAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 	tools := a.toolDefs(task.Tools)
 	msgs := []antMessage{{
-		Role:    "user",
-		Content: []antBlock{{Type: "text", Text: task.Brief + "\n\nWhen you have identified the root cause, call " + submitToolName + "."}},
+		Role: "user",
+		Content: []antBlock{{Type: "text", Text: task.Brief + "\n\nWhen you have identified the root cause, call " +
+			submitToolName + "." + budgetBrief(task.Budget)}},
 	}}
 
-	var usage Usage
+	s := &session{budget: task.Budget}
 	hardStep := 20
 	if task.Budget.MaxToolCalls > 0 {
 		hardStep = task.Budget.MaxToolCalls + 2
 	}
 
 	for step := 0; step < hardStep; step++ {
-		usage.Steps++
+		s.usage.Steps++
 		resp, err := a.messages(ctx, antRequest{
 			Model:     a.cfg.Model,
 			MaxTokens: a.cfg.MaxTokens,
@@ -91,11 +93,11 @@ func (a *AnthropicAgent) Diagnose(ctx context.Context, task Task) (Result, error
 			Tools:     tools,
 		})
 		if err != nil {
-			return Result{Usage: usage}, err
+			return s.result(nil), err
 		}
-		usage.Tokens += resp.Usage.InputTokens + resp.Usage.OutputTokens
-		if task.Budget.MaxTokens > 0 && usage.Tokens > task.Budget.MaxTokens {
-			return Result{Usage: usage}, ErrBudgetExhausted
+		s.usage.Tokens += resp.Usage.InputTokens + resp.Usage.OutputTokens
+		if task.Budget.MaxTokens > 0 && s.usage.Tokens > task.Budget.MaxTokens {
+			return s.result(nil), ErrBudgetExhausted
 		}
 
 		// The assistant turn (its content blocks) must be echoed back verbatim.
@@ -109,35 +111,34 @@ func (a *AnthropicAgent) Diagnose(ctx context.Context, task Task) (Result, error
 			}
 			sawToolUse = true
 			if b.Name == submitToolName {
-				return Result{Raw: b.Input, Usage: usage}, nil
+				return s.result(b.Input), nil
 			}
-			// Check before counting: incrementing first reports a call that was
-			// never executed, so a run capped at 12 would truthfully say 13.
-			if task.Budget.MaxToolCalls > 0 && usage.ToolCalls >= task.Budget.MaxToolCalls {
-				return Result{Usage: usage}, ErrBudgetExhausted
+			content := budgetRefusal
+			if s.spent() {
+				// Told the budget was spent and asked for a tool anyway: the
+				// run ends, and the unexecuted call is not counted.
+				if s.warned {
+					return s.result(nil), ErrBudgetExhausted
+				}
+			} else {
+				content = s.call(ctx, task.Tools, b.Name, b.Input)
 			}
-			usage.ToolCalls++
-			toolResults = append(toolResults, antBlock{
-				Type:      "tool_result",
-				ToolUseID: b.ID,
-				Content:   a.runToolBlock(ctx, task.Tools, b),
-			})
+			// Every tool_use id needs a tool_result, so a call made past the
+			// cap in the same turn gets the refusal.
+			toolResults = append(toolResults, antBlock{Type: "tool_result", ToolUseID: b.ID, Content: content})
 		}
 
 		if !sawToolUse {
-			return Result{Usage: usage}, fmt.Errorf("agent %s: finished without calling %s", a.cfg.Name, submitToolName)
+			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s", a.cfg.Name, submitToolName)
+		}
+		if s.spent() && !s.warned {
+			// Text after the tool_result blocks, in the same user turn.
+			toolResults = append(toolResults, antBlock{Type: "text", Text: budgetSpentNotice})
+			s.warned = true
 		}
 		msgs = append(msgs, antMessage{Role: "user", Content: toolResults})
 	}
-	return Result{Usage: usage}, fmt.Errorf("agent %s: exceeded %d steps without submitting", a.cfg.Name, hardStep)
-}
-
-func (a *AnthropicAgent) runToolBlock(ctx context.Context, tools Tools, b antBlock) string {
-	out, err := tools.Call(ctx, b.Name, b.Input)
-	if err != nil {
-		return `{"error":` + strconv.Quote(err.Error()) + `}`
-	}
-	return string(out)
+	return s.result(nil), fmt.Errorf("agent %s: exceeded %d steps without submitting", a.cfg.Name, hardStep)
 }
 
 func (a *AnthropicAgent) toolDefs(tools Tools) []antTool {

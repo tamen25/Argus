@@ -33,12 +33,15 @@ next starts, so nothing sits unmerged.
    major-version bumps. Required for the v1.0 exit gate.
 5. ~~**Plugin hygiene (B-21–B-24).**~~ Done, except what is blocked upstream
    (B-24, and the rest of B-21).
-6. **v1.0 artifacts (B-31–B-33).** A real scored run, the second (judge) model,
-   the flagship `--compare` report and leaderboard. The run-matrix cost
+6. **v1.0 artifacts (B-31–B-33).** The first real scored run is done (B-31) and
+   found two harness gaps that come first: **B-41** (category vocabulary) and
+   **B-42** (telemetry discovery). Both need a decision. After them: the
+   flagship `--compare` report and leaderboard (B-33, report generator in
+   progress), and the second (judge) model (B-32). The run-matrix cost
    projection is confirmed with the user before the first full run (master plan
    §12.4).
 
-Needs the user: B-35 (catalog submission status).
+Needs the user: B-41 and B-42 (decisions), B-35 (catalog submission status).
 
 ## P2 — Plugin
 
@@ -63,8 +66,20 @@ Needs the user: B-35 (catalog submission status).
 
 Not defects. Tracked here so nothing is lost between sessions.
 
-- [ ] **B-31** — No real model has produced a scored diagnosis yet. The harness is
-  validated end to end; the environment blocked it.
+- [ ] **B-41** — **Needs a decision.** The fault category is half the score and the
+  agent is never shown the vocabulary: ground truth is a slug
+  (`deploy-regression`), the first real run answered `PerformanceDegradation`.
+  No agent can match a slug it has not seen, so 0.50 is the practical ceiling.
+  Recommended: a closed category list, offered as an enum on `submit_diagnosis`
+  with a one-line description each, held as data next to the scenarios and
+  enforced by the scenario loader. See `docs/bench/first-real-run.md`.
+- [ ] **B-42** — **Needs a decision.** The agent cannot discover what telemetry
+  exists. There is no tool to list metric names or label values, the tool
+  descriptions say nothing about either, and `get_k8s_topology` is not wired
+  into `bench run`. In the first real run 8 of 10 PromQL queries returned
+  nothing (guessed metric names, a `namespace` label that does not exist here).
+  Options: add discovery tools to the MCP surface (extends master plan §3.2's
+  five tools), wire a topology backend, or state the limitation and leave it.
 - [ ] **B-32** — The LLM judge needs a second local model; B-05's guard rightly
   blocks self-judging.
 - [ ] **B-33** — Not started: flagship report (`bench report --compare
@@ -84,6 +99,15 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-31** (#73) — a real model has produced a scored diagnosis:
+  `qwen3.6-bench` on `deploy-regression-cart`, 265 s, 20 tool calls, score 0.00
+  (named `flagd`, not `cart`). Written up in `docs/bench/first-real-run.md`
+  with the five harness findings it produced.
+- [x] **B-39** (#73) — the agent is told its budget, and gets one turn to submit
+  once the last tool call is used. The first real run was cut off at 20 calls
+  having never been told a limit existed.
+- [x] **B-40** (#73) — run reports carry a tool log (tool, arguments, error, result
+  size; never the telemetry itself) and the category the agent gave.
 - [x] **B-17** (#72) — `make dev-up` deploys the argus engine: `bootstrap.sh` builds
   the image from the checkout, loads it into kind and applies
   `deploy/kind/argus-engine.yaml` (`ARGUS_SKIP_ENGINE=1` opts out).
