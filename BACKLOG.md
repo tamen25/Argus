@@ -95,6 +95,11 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-47** (#80) — 7 of the 12 remediation templates the rules named did not
+  exist (13 of 18 rules), so `argus remediate` and the plugin's remediation
+  panel failed for them — including ARG-RES-002, which fires on 17 of 18
+  services here. All 12 now exist; a test fails if a rule names a missing
+  template, and every Collector form passes `otelcol-contrib validate`.
 - [x] **B-45** (#79) — `engine/argus` (a 53 MB build committed in #31) untracked and
   git-ignored. It remains in history: purging it needs a force push, which the
   `main` ruleset forbids.
