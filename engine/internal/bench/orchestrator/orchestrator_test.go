@@ -72,10 +72,14 @@ func (s *scriptAgent) Diagnose(_ context.Context, task agent.Task) (agent.Result
 	i := s.call
 	s.call++
 	usage := agent.Usage{ToolCalls: 2, Tokens: 100, Steps: 2}
-	if i < len(s.errs) && s.errs[i] != nil {
-		return agent.Result{Usage: usage}, s.errs[i]
+	calls := []agent.ToolCall{
+		{Tool: "query_prometheus", Arguments: `{"query":"up"}`, ResultBytes: 17},
+		{Tool: "query_loki", Arguments: `{"query":"{job=\"x\"}"}`, ResultBytes: 40},
 	}
-	return agent.Result{Raw: json.RawMessage(s.answers[i]), Usage: usage}, nil
+	if i < len(s.errs) && s.errs[i] != nil {
+		return agent.Result{Usage: usage, Calls: calls}, s.errs[i]
+	}
+	return agent.Result{Raw: json.RawMessage(s.answers[i]), Usage: usage, Calls: calls}, nil
 }
 
 const perfect = `{"root_cause_entities":[{"kind":"Deployment","namespace":"otel-demo","name":"checkout"}],"category":"cardinality-explosion"}`
@@ -162,6 +166,13 @@ func TestRun_AgentFailureRecordedNotFatal(t *testing.T) {
 	}
 	if rep.Runs[0].Score != nil {
 		t.Error("failed run must not carry a score (no silent zero)")
+	}
+	// A failed run is exactly the one whose tool log matters: it is the only
+	// record of what the agent spent its budget on.
+	for i, run := range rep.Runs {
+		if len(run.ToolLog) != 2 || run.ToolLog[0].Tool != "query_prometheus" {
+			t.Errorf("run %d tool log = %+v, want the agent's two calls", i, run.ToolLog)
+		}
 	}
 	if rep.Summary.Failures != 1 || rep.Summary.BudgetExhausted != 1 || rep.Summary.Diagnoses != 1 {
 		t.Errorf("summary = %+v", rep.Summary)

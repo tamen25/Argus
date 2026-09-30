@@ -94,13 +94,17 @@ type Options struct {
 // RunRecord is one attempt: what was consumed, how it was normalized, and how
 // it scored. A run with no diagnosis records why rather than scoring zero.
 type RunRecord struct {
-	Repeat        int             `json:"repeat"`
-	Started       time.Time       `json:"started"`
-	Finished      time.Time       `json:"finished"`
-	Usage         agent.Usage     `json:"usage"`
-	Normalization string          `json:"normalization,omitempty"`
-	Score         *scoring.Result `json:"score,omitempty"`
-	Error         string          `json:"error,omitempty"`
+	Repeat   int         `json:"repeat"`
+	Started  time.Time   `json:"started"`
+	Finished time.Time   `json:"finished"`
+	Usage    agent.Usage `json:"usage"`
+	// ToolLog is what the agent asked its tools, in order, and whether each call
+	// was answered. It is what separates an agent that investigated badly from
+	// one whose tools were failing under it.
+	ToolLog       []agent.ToolCall `json:"tool_log,omitempty"`
+	Normalization string           `json:"normalization,omitempty"`
+	Score         *scoring.Result  `json:"score,omitempty"`
+	Error         string           `json:"error,omitempty"`
 	// BudgetExhausted distinguishes "ran out of budget" from "broke" — an
 	// important difference when reading a leaderboard.
 	BudgetExhausted bool `json:"budget_exhausted,omitempty"`
@@ -228,6 +232,7 @@ func runOnce(
 		Budget:   opts.Budget,
 	})
 	rec.Usage = res.Usage
+	rec.ToolLog = res.Calls
 	if err != nil {
 		rec.Error = err.Error()
 		rec.BudgetExhausted = errors.Is(err, agent.ErrBudgetExhausted)

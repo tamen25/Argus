@@ -26,7 +26,8 @@ func TestShellHelperProcess(t *testing.T) {
 	case "empty":
 		// print nothing
 	case "echo-env":
-		fmt.Printf("scenario=%s brief=%s", os.Getenv("ARGUS_SCENARIO"), os.Getenv("ARGUS_BRIEF"))
+		fmt.Printf("scenario=%s brief=%s calls=%s tokens=%s", os.Getenv("ARGUS_SCENARIO"), os.Getenv("ARGUS_BRIEF"),
+			os.Getenv("ARGUS_MAX_TOOL_CALLS"), os.Getenv("ARGUS_MAX_TOKENS"))
 	case "hang":
 		time.Sleep(30 * time.Second)
 	default: // echo stdin back
@@ -67,6 +68,7 @@ func TestShell_CapturesStdoutFromStdin(t *testing.T) {
 func TestShell_PassesScenarioAndBriefEnv(t *testing.T) {
 	res, err := helperShell("echo-env", 30*time.Second).Diagnose(context.Background(), Task{
 		Scenario: "cardinality-explosion-checkout", Brief: "series spike",
+		Budget: Budget{MaxToolCalls: 20, MaxTokens: 100000},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -74,6 +76,10 @@ func TestShell_PassesScenarioAndBriefEnv(t *testing.T) {
 	got := string(res.Raw)
 	if !strings.Contains(got, "scenario=cardinality-explosion-checkout") || !strings.Contains(got, "brief=series spike") {
 		t.Errorf("raw = %q", got)
+	}
+	// Argus cannot cap an external agent, so the budget is handed to the wrapper.
+	if !strings.Contains(got, "calls=20") || !strings.Contains(got, "tokens=100000") {
+		t.Errorf("raw = %q, want the budget passed in the environment", got)
 	}
 }
 

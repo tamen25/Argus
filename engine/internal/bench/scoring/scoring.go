@@ -29,6 +29,9 @@ type Result struct {
 	// ScoringSpec.CategoryWeight: naming the right workload for the wrong reason
 	// is a partial answer, not a complete one.
 	CategoryMatch bool `json:"category_match"`
+	// Category is the classification the agent gave, recorded verbatim so a
+	// report shows what a non-match actually said.
+	Category string `json:"category"`
 	// DecoysNamed are plausible-but-wrong entities the agent asserted. Each costs
 	// ScoringSpec.DecoyPenalty.
 	DecoysNamed []bench.Entity `json:"decoys_named,omitempty"`
@@ -77,6 +80,7 @@ func Score(gt bench.GroundTruth, spec bench.ScoringSpec, d bench.Diagnosis) Resu
 	res := Result{
 		Scenario:          d.Scenario,
 		CategoryMatch:     strings.EqualFold(strings.TrimSpace(gt.Category), strings.TrimSpace(d.Category)),
+		Category:          strings.TrimSpace(d.Category),
 		DecoysNamed:       decoysNamed(gt.Decoys, got),
 		EvidenceCount:     len(d.WellFormedEvidence()),
 		CitedSignals:      d.CitedSignals(),

@@ -8,7 +8,7 @@ truth — repeated for variance.
 
 ```bash
 argus bench run \
-  --scenario scenarios/cardinality-explosion-checkout.yaml \
+  --scenario scenarios/cardinality-explosion-frontend.yaml \
   --agent openai --endpoint https://api.example/v1/chat/completions \
   --model my-model --api-key-env MY_API_KEY \
   --mimir-url http://mimir-gateway.lgtm.svc \
@@ -31,6 +31,12 @@ argus bench run \
   enforced per run and printed on the report; an uncapped run says so
   explicitly. A low score under a tight budget is a budget result, not only a
   capability result.
+- **The agent knows its budget.** The brief states the caps and what running out
+  means. When the last permitted tool call has been used the agent is told so
+  and gets one more turn, in which only `submit_diagnosis` is accepted; a tool
+  call made past the cap is refused, not executed and not counted. A limit the
+  subject cannot see measures whether it happens to stop early, not whether it
+  can diagnose within a budget.
 
 ## How a diagnosis is scored
 
@@ -176,7 +182,9 @@ is a different subject, and a leaderboard row without that cannot be reproduced.
 API agents get the identical MCP tool set, so the benchmark compares **agents,
 not tool access**. Shell agents bring their own tooling and their token/tool
 budgets are **not enforceable** — only a wall-clock timeout applies, and the
-report shows their unknown usage dimensions as zero rather than guessing.
+report shows their unknown usage dimensions as zero rather than guessing. The
+caps are passed to the wrapper as `ARGUS_MAX_TOOL_CALLS` and `ARGUS_MAX_TOKENS`
+(`0` = uncapped) so it can enforce them itself.
 
 ## Normalization (and when a model is involved)
 
@@ -251,6 +259,16 @@ at no model cost.
 Every report carries the reproducibility record — scenario hash, agent, env
 digest, seed, budget — plus the standing caveats, which cannot be stripped from
 a rendering.
+
+Each run also records its **tool log**: every tool call the agent made, with its
+arguments (truncated) and whether it returned an error. The answers are not kept
+— they are raw telemetry, and only their size is recorded. The markdown report
+summarizes the log per run and counts tool errors; the JSON report carries it in
+full as `tool_log`. It is what separates an agent that investigated badly from
+one whose queries were being rejected, and a run with many tool errors says so
+in its caveats. The category an agent gave is recorded verbatim too, so a
+mismatch shows what it actually said. Shell agents have no tool log: Argus cannot
+see their tool use.
 
 ## Importing ITBench scenarios
 

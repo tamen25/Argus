@@ -72,6 +72,11 @@ func TestScore_CategoryCaseInsensitive(t *testing.T) {
 	if !r.CategoryMatch {
 		t.Error("category match should be case-insensitive")
 	}
+	// What the agent said is kept verbatim, so a report can show a near miss.
+	if miss := Score(g, spec, diag(" high-latency ", ent("Deployment", "ns", "a"))); miss.CategoryMatch || miss.Category != "high-latency" {
+		t.Errorf("mismatch recorded as match=%v category=%q, want false and the agent's own words",
+			miss.CategoryMatch, miss.Category)
+	}
 	// Default (empty) EntityMatch is jaccard, no partial credit -> exact set = 1.
 	if r.EntityScore != 1 {
 		t.Errorf("EntityScore = %v, want 1", r.EntityScore)

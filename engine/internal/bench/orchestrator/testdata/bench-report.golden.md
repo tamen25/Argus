@@ -13,23 +13,28 @@
 
 | Score (mean ± sd) | Answered | Entity score | Category match | Uncited | Budget exhausted | Mean tool calls | Mean tokens |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| **0.33 ± 0.47** | 3/4 (75%) | 0.83 ± 0.24 | 67% | 33% | 1 | 15.0 | 22500 |
+| **0.33 ± 0.47** | 3/4 (75%) | 0.83 ± 0.24 | 67% | 33% | 1 | 13.5 | 22500 |
 
 ## Runs
 
-| # | Score | Entity | Category | Decoys | Evidence | Normalization | Tool calls | Tokens | Outcome |
-|---:|---:|---:|---|---:|---|---|---:|---:|---|
-| 0 | 1.00 | 1.00 | yes | 0 | 2 (logs, metrics) | json | 9 | 14000 | diagnosed |
-| 1 | 0.00 | 0.50 | no | 1 | 1 (metrics) +1 malformed | llm-judge | 12 | 18000 | diagnosed |
-| 2 | 0.00 | 1.00 | yes | 0 | **none** | json | 4 | 6000 | diagnosed |
-| 3 | — | — | — | — | — | — | 35 | 52000 | budget exhausted |
+| # | Score | Entity | Category | Decoys | Evidence | Normalization | Tool calls | Tool errors | Tokens | Outcome |
+|---:|---:|---:|---|---:|---|---|---:|---:|---:|---|
+| 0 | 1.00 | 1.00 | yes | 0 | 2 (logs, metrics) | json | 3 | 1 | 14000 | diagnosed |
+| 1 | 0.00 | 0.50 | no (`high-latency`) | 1 | 1 (metrics) +1 malformed | llm-judge | 12 | 0 | 18000 | diagnosed |
+| 2 | 0.00 | 1.00 | yes | 0 | **none** | json | 4 | 0 | 6000 | diagnosed |
+| 3 | — | — | — | — | — | — | 35 | 0 | 52000 | budget exhausted |
 
 Decoys named (plausible-but-wrong entities asserted): Deployment/otel-demo/product-reviews (1/4)
+
+## Tool use
+
+- Run 0: `query_loki` ×1, `query_prometheus` ×2 (1 failed)
 
 ## Method and caveats
 
 - Normalization used: **json** — deterministic.
 - Normalization used: **llm-judge** — a model mapped free-form agent output into the scored schema; this step is not deterministic.
+- 1 of 54 tool calls returned an error to the agent (a rejected query, or a backend that did not answer). Read `tool_log` in the JSON report before attributing a low score to the agent alone.
 - Score = (1−w)·entity agreement + w·category match, less a penalty per decoy named, clamped to [0,1]; it is zero if the scenario required cited evidence and none was given. Deterministic and recomputable by hand from this table.
 - Evidence is checked for presence and well-formedness, NOT for truth: verifying an observation would mean re-running the agent's queries. A fabricated citation passes this check — cited telemetry is a floor on effort, not proof of correctness.
 - An agent's prose is recorded but never scored.

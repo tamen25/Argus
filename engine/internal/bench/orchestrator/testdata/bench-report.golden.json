@@ -22,16 +22,36 @@
       "started": "0001-01-01T00:00:00Z",
       "finished": "0001-01-01T00:00:00Z",
       "usage": {
-        "tool_calls": 9,
+        "tool_calls": 3,
+        "tool_errors": 1,
         "tokens": 14000,
         "steps": 0
       },
+      "tool_log": [
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"query\":\"count by (job) (app_frontend_requests_total)\"}",
+          "result_bytes": 812
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"query\":\"rate(app_frontend_requests_total[\"}",
+          "error": "bad_data: parse error: unexpected end of input",
+          "result_bytes": 64
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"query\":\"{service_name=\\\"frontend\\\"}\"}",
+          "result_bytes": 2048
+        }
+      ],
       "normalization": "json",
       "score": {
         "scenario": "cardinality-explosion-frontend",
         "score": 1,
         "entity_score": 1,
         "category_match": true,
+        "category": "cardinality-explosion",
         "evidence_count": 2,
         "cited_signals": [
           "logs",
@@ -54,6 +74,7 @@
       "finished": "0001-01-01T00:00:00Z",
       "usage": {
         "tool_calls": 12,
+        "tool_errors": 0,
         "tokens": 18000,
         "steps": 0
       },
@@ -63,6 +84,7 @@
         "score": 0,
         "entity_score": 0.5,
         "category_match": false,
+        "category": "high-latency",
         "decoys_named": [
           {
             "kind": "Deployment",
@@ -98,6 +120,7 @@
       "finished": "0001-01-01T00:00:00Z",
       "usage": {
         "tool_calls": 4,
+        "tool_errors": 0,
         "tokens": 6000,
         "steps": 0
       },
@@ -107,6 +130,7 @@
         "score": 0,
         "entity_score": 1,
         "category_match": true,
+        "category": "cardinality-explosion",
         "evidence_count": 0,
         "evidence_missing": true,
         "matched": [
@@ -126,6 +150,7 @@
       "finished": "0001-01-01T00:00:00Z",
       "usage": {
         "tool_calls": 35,
+        "tool_errors": 0,
         "tokens": 52000,
         "steps": 0
       },
@@ -145,7 +170,7 @@
     "stddev_entity_score": 0.23570226039551584,
     "category_match_rate": 0.6666666666666666,
     "evidence_missing_rate": 0.3333333333333333,
-    "mean_tool_calls": 15,
+    "mean_tool_calls": 13.5,
     "mean_tokens": 22500
   }
 }
