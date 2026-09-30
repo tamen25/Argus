@@ -148,3 +148,45 @@ func TestBenchReport_RejectsWhatItCannotRead(t *testing.T) {
 		})
 	}
 }
+
+func TestBenchRun_NeedsTheCategoryList(t *testing.T) {
+	// No list beside the scenario and none given: refused before anything runs.
+	dir := t.TempDir()
+	alone := filepath.Join(dir, "scenario.yaml")
+	if err := os.WriteFile(alone, []byte(benchScenarioYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := execute(t, "bench", "run", "--scenario", alone, "--agent", "stub", "--inject", "none")
+	if err == nil || !strings.Contains(err.Error(), "no fault category list at") {
+		t.Errorf("err = %v, want the missing category list reported", err)
+	}
+
+	// A scenario whose category is not on the list could never be answered.
+	other := filepath.Join(t.TempDir(), "categories.yaml")
+	list := strings.Replace(benchCategoriesYAML, "cardinality-explosion", "alert-storm", 1)
+	if err := os.WriteFile(other, []byte(list), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = execute(t, "bench", "run", "--scenario", writeScenario(t), "--agent", "stub",
+		"--inject", "none", "--categories", other)
+	if err == nil || !strings.Contains(err.Error(), `"cardinality-explosion" is not in the category list`) {
+		t.Errorf("err = %v, want the unlisted ground-truth category refused", err)
+	}
+}
+
+func TestBenchRun_ReportRecordsTheOfferedCategories(t *testing.T) {
+	chat := chatWithSubmit(t)
+	defer chat.Close()
+	mimir := mimirStub(t)
+	defer mimir.Close()
+
+	dir := t.TempDir()
+	runBench(t, dir, "degraded", chat.URL, mimir.URL)
+	b, err := os.ReadFile(filepath.Join(dir, "degraded.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"categories_offered"`) || !strings.Contains(string(b), `"insufficient-kubernetes-resource-quota"`) {
+		t.Errorf("run report does not record the categories it offered:\n%s", b)
+	}
+}

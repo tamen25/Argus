@@ -3,6 +3,13 @@
   "scenario_hash": "8fb638d665e5",
   "agent": "qwen3.6-bench",
   "env_digest": "kind-argus-golden",
+  "categories_offered": [
+    "cardinality-explosion",
+    "dependency-latency",
+    "deploy-regression",
+    "network-partition",
+    "oomkill"
+  ],
   "seed": 7,
   "budget": {
     "MaxToolCalls": 35,

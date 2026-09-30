@@ -383,10 +383,12 @@ func dataCaveats(reports []orchestrator.Report) []string {
 	hashes := map[string]map[string]bool{}  // scenario → hashes
 	budgets := map[string]map[string]bool{} // agent → budgets
 	models := map[string]map[string]bool{}  // agent → model provenance
+	lists := map[string]bool{}              // category lists offered
 	judged := 0
 	for _, r := range reports {
 		add(hashes, r.Scenario, short(r.ScenarioHash))
 		add(budgets, r.Agent, budget(r.Budget))
+		lists[strings.Join(r.CategoriesOffered, ", ")] = true
 		if r.Model != nil {
 			add(models, r.Agent, fmt.Sprintf("%s %s ctx %d weights %s",
 				r.Model.Model, r.Model.Quantization, r.Model.EffectiveNumCtx, short(r.Model.WeightsDigest)))
@@ -420,6 +422,16 @@ func dataCaveats(reports []orchestrator.Report) []string {
 				a, len(models[a]), strings.Join(sortedKeys(models[a]), "; ")))
 		}
 	}
+	// The category is half of a score by default, and it is matched against the
+	// list the agent was shown. Runs offered different lists, or none, answered
+	// different questions.
+	if len(lists) > 1 {
+		out = append(out, fmt.Sprintf(
+			"Runs were offered %d different fault category lists%s. Their category scores are not like-for-like.",
+			len(lists), noListNote(lists)))
+	} else if lists[""] {
+		out = append(out, "No run was offered a fault category list, so an agent could match the category only by guessing its exact name.")
+	}
 	if judged > 0 {
 		out = append(out, fmt.Sprintf(
 			"%d run(s) were normalized by a non-deterministic method (an LLM judge), not parsed as JSON. See the run reports.", judged))
@@ -432,6 +444,13 @@ func dataCaveats(reports []orchestrator.Report) []string {
 func withScoring(own []string) []string {
 	out := append([]string{}, own...)
 	return append(out, orchestrator.StandingCaveats()...)
+}
+
+func noListNote(lists map[string]bool) string {
+	if lists[""] {
+		return " (some were offered none)"
+	}
+	return ""
 }
 
 func filter(reports []orchestrator.Report, condition string) []orchestrator.Report {

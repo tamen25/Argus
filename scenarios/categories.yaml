@@ -1,0 +1,41 @@
+# The closed list of fault categories for this scenario library.
+#
+# A diagnosis is scored on the entities it names and on the fault category, and
+# the category is compared by exact match. So every agent is shown this list and
+# chooses from it; a scenario's groundTruth.category must be on it (a test and
+# `argus bench run` both enforce that).
+#
+# Rules for this file:
+# - A description says what a KIND of fault is. It never mentions a service, a
+#   metric or anything else that belongs to one scenario.
+# - The list is longer than the scenarios that use it, on purpose: categories
+#   with no scenario yet are distractors, and they are the planned scenarios
+#   (master plan §6.5).
+# - Agents always see the list sorted by name, so the order here carries no hint.
+# - Renaming or removing a category changes what earlier runs were offered. Runs
+#   record the list they were given; do not compare across such a change.
+apiVersion: argus/v1alpha1
+kind: BenchCategories
+categories:
+  - name: alert-storm
+    description: An alert rule fires far more often, or for far more targets, than the underlying condition warrants.
+  - name: broken-trace-propagation
+    description: A workload does not propagate trace context, so its spans are not linked to the traces of its callers.
+  - name: cardinality-explosion
+    description: A label on a metric takes unbounded values, so the number of active series grows without limit.
+  - name: certificate-expiry
+    description: A TLS certificate has expired or is no longer valid, so connections that depend on it fail.
+  - name: dependency-latency
+    description: Something a workload depends on (a datastore, cache or downstream service) answers slowly, so its callers slow down or time out.
+  - name: deploy-regression
+    description: A rollout changed a workload's image or configuration, and the new version misbehaves.
+  - name: disk-pressure
+    description: A node or volume is out of disk space, so writes fail or pods are evicted.
+  - name: missing-service-name
+    description: A workload's telemetry carries no usable service.name, so it arrives unattributed or under a default name.
+  - name: network-partition
+    description: Traffic between workloads is blocked or dropped while the workloads themselves are healthy.
+  - name: oomkill
+    description: A container is killed for exceeding its memory limit, usually repeatedly.
+  - name: storage-throttling
+    description: A backing store rate-limits or rejects requests, so reads or writes are delayed or fail.

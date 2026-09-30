@@ -4,6 +4,7 @@
 - Agent: `qwen3.6-bench`
 - Scenario hash: `8fb638d665e5`
 - Environment: `kind-argus-golden`
+- Fault categories offered: 5 (`cardinality-explosion`, `dependency-latency`, `deploy-regression`, `network-partition`, `oomkill`)
 - Seed: 7
 - Budget: 35 tool calls / 400000 tokens per run
 - Model: `qwen3.6-bench` (36.0B Q4_K_M) served at `http://127.0.0.1:11434/v1/chat/completions`

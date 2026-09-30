@@ -34,14 +34,14 @@ next starts, so nothing sits unmerged.
 5. ~~**Plugin hygiene (B-21–B-24).**~~ Done, except what is blocked upstream
    (B-24, and the rest of B-21).
 6. **v1.0 artifacts (B-31–B-33).** The first real scored run is done (B-31) and
-   found two harness gaps that come first: **B-41** (category vocabulary) and
-   **B-42** (telemetry discovery). Both need a decision. After them: the
+   found two harness gaps that come first: B-41 (category vocabulary, done) and
+   **B-42** (telemetry discovery and topology, next). After it: the
    flagship `--compare` report and leaderboard (B-33, report generator in
    progress), and the second (judge) model (B-32). The run-matrix cost
    projection is confirmed with the user before the first full run (master plan
    §12.4).
 
-Needs the user: B-41 and B-42 (decisions), B-35 (catalog submission status).
+Needs the user: B-35 (catalog submission status).
 
 ## P2 — Plugin
 
@@ -66,14 +66,7 @@ Needs the user: B-41 and B-42 (decisions), B-35 (catalog submission status).
 
 Not defects. Tracked here so nothing is lost between sessions.
 
-- [ ] **B-41** — **Needs a decision.** The fault category is half the score and the
-  agent is never shown the vocabulary: ground truth is a slug
-  (`deploy-regression`), the first real run answered `PerformanceDegradation`.
-  No agent can match a slug it has not seen, so 0.50 is the practical ceiling.
-  Recommended: a closed category list, offered as an enum on `submit_diagnosis`
-  with a one-line description each, held as data next to the scenarios and
-  enforced by the scenario loader. See `docs/bench/first-real-run.md`.
-- [ ] **B-42** — **Needs a decision.** The agent cannot discover what telemetry
+- [ ] **B-42** — **Decided 2026-09-30: add discovery tools and wire topology.** The agent cannot discover what telemetry
   exists. There is no tool to list metric names or label values, the tool
   descriptions say nothing about either, and `get_k8s_topology` is not wired
   into `bench run`. In the first real run 8 of 10 PromQL queries returned
@@ -104,6 +97,11 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-41** (#75) — every agent is offered a closed fault-category list
+  (`scenarios/categories.yaml`): an enum on `submit_diagnosis`, and prose in the
+  brief for agents that see no tool schema. `bench run` refuses to run without
+  it, or with a scenario whose category is not on it. Verified on a real run:
+  the model answered from the list.
 - [x] **B-33, report generator** (#74) — `argus bench report` builds a leaderboard
   (agents × scenarios, one board per condition) or, with
   `--compare baseline,treatment`, the degraded-vs-remediated comparison from

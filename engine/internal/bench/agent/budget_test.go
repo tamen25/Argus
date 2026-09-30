@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/tamen25/Argus/engine/internal/bench"
 )
 
 // recording returns canned responses like scripted, and keeps every request
@@ -271,5 +273,88 @@ func TestAnthropic_SubmitsOnTheFinalTurn(t *testing.T) {
 	}
 	if !strings.Contains(bodies[1], "budget is now spent") {
 		t.Errorf("the model was not told its budget was spent before its final turn:\n%s", bodies[1])
+	}
+}
+
+var testCategories = []bench.Category{
+	{Name: "deploy-regression", Description: "A rollout misbehaves."},
+	{Name: "oomkill", Description: "A container is killed for exceeding its memory limit."},
+}
+
+// The category is scored by exact match. The first real run answered
+// "PerformanceDegradation" because nothing had shown it the vocabulary.
+func TestSubmitSchema_OffersTheCategoryList(t *testing.T) {
+	var schema struct {
+		Required   []string `json:"required"`
+		Properties map[string]struct {
+			Type        string   `json:"type"`
+			Enum        []string `json:"enum"`
+			Description string   `json:"description"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(submitSchema(testCategories), &schema); err != nil {
+		t.Fatalf("schema is not valid JSON: %v", err)
+	}
+	cat := schema.Properties["category"]
+	if strings.Join(cat.Enum, ",") != "deploy-regression,oomkill" {
+		t.Errorf("category enum = %v, want exactly the listed names in order", cat.Enum)
+	}
+	for _, c := range testCategories {
+		if !strings.Contains(cat.Description, c.Name+" — "+c.Description) {
+			t.Errorf("category description does not explain %q: %s", c.Name, cat.Description)
+		}
+	}
+	// Everything else about the schema is untouched.
+	if len(schema.Properties) != 5 || strings.Join(schema.Required, ",") != "root_cause_entities,category,evidence" {
+		t.Errorf("schema changed beyond the category: %d properties, required %v", len(schema.Properties), schema.Required)
+	}
+	if len(schema.Properties["evidence"].Type) == 0 {
+		t.Error("evidence property lost its type")
+	}
+
+	// Without a list the category stays free text: no enum is invented.
+	if err := json.Unmarshal(submitSchema(nil), &schema); err != nil {
+		t.Fatal(err)
+	}
+	if len(schema.Properties["category"].Enum) != 0 {
+		t.Errorf("no list given, yet the schema has an enum: %v", schema.Properties["category"].Enum)
+	}
+}
+
+func TestAgents_SendTheCategoryListToTheModel(t *testing.T) {
+	task := Task{Scenario: "s", Brief: "an incident", Tools: &fakeTools{}, Categories: testCategories}
+
+	var oa []string
+	srv := recording(t, &oa, toolCallResp("c1", submitToolName, diagArgs, 50))
+	defer srv.Close()
+	if _, err := newAgent(t, srv).Diagnose(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	var ant []string
+	asrv := recording(t, &ant, antToolUseResp("t1", submitToolName, diagArgs, 5, 5))
+	defer asrv.Close()
+	if _, err := newAnt(t, asrv).Diagnose(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, body := range map[string]string{"openai": oa[0], "anthropic": ant[0]} {
+		// In the tool schema (as an enum) and in the brief (as prose).
+		if !strings.Contains(body, `"enum":["deploy-regression","oomkill"]`) {
+			t.Errorf("%s: submit_diagnosis has no category enum:\n%s", name, body)
+		}
+		if !strings.Contains(body, "give exactly one of these names as the category") {
+			t.Errorf("%s: the brief does not list the categories:\n%s", name, body)
+		}
+	}
+}
+
+func TestCategoryBrief(t *testing.T) {
+	got := categoryBrief(testCategories)
+	if !strings.Contains(got, "\n- deploy-regression: A rollout misbehaves.") ||
+		!strings.Contains(got, "\n- oomkill: A container is killed") {
+		t.Errorf("brief = %q", got)
+	}
+	if categoryBrief(nil) != "" {
+		t.Error("no list must add nothing to the brief")
 	}
 }

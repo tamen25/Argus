@@ -26,11 +26,12 @@ var t0 = time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 // ran out of budget. startMinute keeps reports distinct, as real ones are.
 func report(agentName, scenario, condition string, startMinute int, scores ...float64) orchestrator.Report {
 	r := orchestrator.Report{
-		Scenario:     scenario,
-		ScenarioHash: "aaaaaaaaaaaa" + scenario,
-		Agent:        agentName,
-		Condition:    condition,
-		Budget:       agent.Budget{MaxToolCalls: 20, MaxTokens: 100000},
+		Scenario:          scenario,
+		ScenarioHash:      "aaaaaaaaaaaa" + scenario,
+		Agent:             agentName,
+		Condition:         condition,
+		Budget:            agent.Budget{MaxToolCalls: 20, MaxTokens: 100000},
+		CategoriesOffered: []string{"cardinality-explosion", "dependency-latency", "deploy-regression", "network-partition", "oomkill"},
 	}
 	for i, s := range scores {
 		run := orchestrator.RunRecord{
@@ -258,7 +259,10 @@ func TestDataCaveats_DiscloseWhatIsNotLikeForLike(t *testing.T) {
 	q8 := report("model-b", "s1-cardinality", "remediated", 340, 1)
 	q8.Model = &local.ModelInfo{Model: "model-b", Quantization: "Q8_0", EffectiveNumCtx: 32768, WeightsDigest: "sha256:2222222222222222"}
 
-	c, err := Compare(append(matrix(), changed, otherBudget, judged, q4, q8), "degraded", "remediated")
+	otherList := report("model-a", "s2-latency", "remediated", 350, 1)
+	otherList.CategoriesOffered = nil
+
+	c, err := Compare(append(matrix(), changed, otherBudget, judged, q4, q8, otherList), "degraded", "remediated")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,6 +271,7 @@ func TestDataCaveats_DiscloseWhatIsNotLikeForLike(t *testing.T) {
 		"Agent `model-a` ran under 2 different budgets",
 		"Agent `model-b` was served by 2 different model builds",
 		"1 run(s) were normalized by a non-deterministic method",
+		"Runs were offered 2 different fault category lists (some were offered none)",
 	} {
 		if !containsCaveat(c.Caveats, want) {
 			t.Errorf("missing caveat %q in:\n%s", want, strings.Join(c.Caveats, "\n"))

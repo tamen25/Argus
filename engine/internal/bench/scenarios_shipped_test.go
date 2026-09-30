@@ -164,9 +164,16 @@ func TestMutationScenariosRestoreEverything(t *testing.T) {
 
 func shippedScenarios(t *testing.T) []string {
 	t.Helper()
-	paths, err := filepath.Glob(filepath.Join(scenarioDir, "*.yaml"))
+	all, err := filepath.Glob(filepath.Join(scenarioDir, "*.yaml"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	// categories.yaml lives beside the scenarios and is not one.
+	var paths []string
+	for _, p := range all {
+		if filepath.Base(p) != "categories.yaml" {
+			paths = append(paths, p)
+		}
 	}
 	return paths
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,6 +54,7 @@ type benchFlags struct {
 	seed         int64
 	envDigest    string
 	condition    string
+	categories   string
 
 	inject          string
 	resetScript     string
@@ -121,6 +123,10 @@ output the same way twice would launder that error into the score.`,
 					return err
 				}
 			}
+			categories, err := loadCategories(f, sc)
+			if err != nil {
+				return err
+			}
 			// Policy first: nothing may reach an endpoint or a model until the
 			// local-only rules have passed.
 			if err := enforceLocalPolicy(f); err != nil {
@@ -153,6 +159,7 @@ output the same way twice would launder that error into the score.`,
 				Seed:        f.seed,
 				EnvDigest:   f.envDigest,
 				Condition:   f.condition,
+				Categories:  categories,
 				Model:       model,
 			}
 
@@ -194,6 +201,8 @@ output the same way twice would launder that error into the score.`,
 	fl.IntVar(&f.maxTokens, "max-tokens", 100000, "per-run token budget (0 = uncapped)")
 	fl.Int64Var(&f.seed, "seed", 0, "seed recorded in the report for reproducibility")
 	fl.StringVar(&f.envDigest, "env-digest", "", "identifier of the environment under test, recorded in the report")
+	fl.StringVar(&f.categories, "categories", "",
+		"fault category list offered to the agent (default: categories.yaml next to the scenario)")
 	fl.StringVar(&f.condition, "condition", "",
 		"label for the telemetry condition the environment is in (e.g. degraded, remediated); recorded in the "+
 			"report and used by `bench report --compare`. A label only: you put the environment in that state")
@@ -453,6 +462,30 @@ func buildNormalizers(f benchFlags) []bench.Normalizer {
 		}))
 	}
 	return ns
+}
+
+// loadCategories loads the category list the agent will choose from: the file
+// given by --categories, or categories.yaml beside the scenario. There is no
+// "none": the category is scored by exact match, so a run without the list
+// would score every agent on whether it guessed the library's slugs.
+func loadCategories(f benchFlags, sc bench.Scenario) (bench.Categories, error) {
+	path := f.categories
+	if path == "" {
+		path = filepath.Join(filepath.Dir(f.scenario), "categories.yaml")
+	}
+	c, err := bench.LoadCategories(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return bench.Categories{}, fmt.Errorf(
+				"no fault category list at %s: the agent must be shown the categories it is scored against "+
+					"(create the file, or pass --categories; see docs/bench/authoring-scenarios.md)", path)
+		}
+		return bench.Categories{}, err
+	}
+	if err := c.Check(sc); err != nil {
+		return bench.Categories{}, err
+	}
+	return c, nil
 }
 
 func writeBenchReport(cmd *cobra.Command, f benchFlags, rep orchestrator.Report) error {

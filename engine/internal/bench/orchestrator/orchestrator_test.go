@@ -245,6 +245,46 @@ func TestRun_AgentReceivesScenarioAndBudget(t *testing.T) {
 	}
 }
 
+// Every agent is offered the same category list, sorted, and the report records
+// what was offered so a later run can tell whether it is comparable.
+func TestRun_OffersTheCategoryListAndRecordsIt(t *testing.T) {
+	ag := &scriptAgent{answers: []string{perfect}}
+	opts := fastOpts(1)
+	opts.Categories = bench.Categories{Categories: []bench.Category{
+		{Name: "oomkill", Description: "killed for memory"},
+		{Name: "cardinality-explosion", Description: "series grow"},
+		{Name: "deploy-regression", Description: "a rollout misbehaves"},
+	}}
+	rep, err := Run(context.Background(), testScenario(), ag, nil, &fakeInjector{}, okProbe{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var offered []string
+	for _, c := range ag.lastTask.Categories {
+		offered = append(offered, c.Name)
+	}
+	const want = "cardinality-explosion,deploy-regression,oomkill"
+	if strings.Join(offered, ",") != want {
+		t.Errorf("agent was offered %v, want the list sorted by name", offered)
+	}
+	if strings.Join(rep.CategoriesOffered, ",") != want {
+		t.Errorf("report records %v, want %s", rep.CategoriesOffered, want)
+	}
+	if md := RenderReportMarkdown(rep); !strings.Contains(md, "Fault categories offered: 3 (`cardinality-explosion`, `deploy-regression`, `oomkill`)") {
+		t.Errorf("report does not list the offered categories:\n%s", md)
+	}
+
+	// A run with no list says so: its category score was a guess at a slug.
+	none, err := Run(context.Background(), testScenario(), &scriptAgent{answers: []string{perfect}}, nil,
+		&fakeInjector{}, okProbe{}, fastOpts(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md := RenderReportMarkdown(none); !strings.Contains(md, "Fault categories offered: **none**") {
+		t.Errorf("a run without a category list does not say so:\n%s", md)
+	}
+}
+
 // A second normalizer is only reached when the first fails, and the method
 // actually used is what gets recorded.
 type fallbackNormalizer struct{ used *bool }
