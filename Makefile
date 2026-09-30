@@ -1,4 +1,4 @@
-# Argus — development targets (CLAUDE.md contract: created in Phase 0, kept working forever).
+# Argus — development targets (created in Phase 0; keep them working).
 # Run from repo root on Linux/WSL2. Requires: go, node/npm, docker, kind, kubectl, helm.
 
 SHELL := /bin/bash
@@ -10,7 +10,7 @@ PLUGIN_DIR := plugin
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
 
-dev-up: ## kind cluster: LGTM + otel-demo + chaos-mesh (+ argus from Phase 1)
+dev-up: ## kind cluster: LGTM + otel-demo + chaos-mesh (argus itself not deployed yet — BACKLOG B-17)
 	bash deploy/kind/bootstrap.sh
 
 dev-down: ## Delete the kind dev cluster

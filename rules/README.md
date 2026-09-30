@@ -1,7 +1,7 @@
 # Built-in rules
 
 Rule definitions (YAML + CEL) load from here in Phase 1. Two trees, kept
-strictly separate (CLAUDE.md):
+strictly separate (master plan §4):
 
 - `spec/` — rules implementing the upstream
   [Instrumentation Score specification](https://github.com/instrumentation-score/spec).
