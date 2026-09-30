@@ -1,0 +1,55 @@
+# Bench scenario (Module C — Phase 4). Fault: payment is rolled out with trace
+# context propagation disabled.
+#
+# Every service is healthy and every request succeeds. What breaks is the
+# trace: payment's spans start new traces instead of joining checkout's, so the
+# checkout -> payment edge vanishes from the service graph and checkout's traces
+# end at an outbound call that nothing answers. The tempting read is that
+# checkout stopped calling payment, or that the trace pipeline is dropping
+# spans. The evidence against both is that payment's own request rate is
+# unchanged — the calls arrive, they just are not linked.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: broken-trace-propagation-payment
+  description: >-
+    payment is redeployed with OTEL_PROPAGATORS=none. It keeps serving, but its
+    spans no longer join the caller's trace, so the checkout -> payment edge
+    disappears from the service graph.
+spec:
+  environment:
+    app: otel-demo
+  inject:
+    - type: script
+      script: faults/broken-propagation-payment.sh
+      duration: 10m
+  # The share of payment's server calls that the service graph attributes to
+  # checkout. At baseline it is 1 (checked live: edge rate equals payment's
+  # server rate); with propagation off the edge rate is 0. "or vector(0)" keeps
+  # the ratio defined when the edge series goes stale. If payment serves nothing
+  # at all the ratio is empty, which reads as "not reached" — correctly, since
+  # an idle payment proves nothing about propagation.
+  steadyState:
+    query: >-
+      (sum(rate(traces_service_graph_request_total{client="checkout",server="payment"}[2m])) or vector(0))
+      / sum(rate(traces_spanmetrics_calls_total{service="payment",span_kind="SPAN_KIND_SERVER"}[2m]))
+    max: 0.1
+    settle: 30s
+  reset:
+    - script: faults/restore-all-mutations.sh
+  cleanup:
+    - script: faults/restore-all-mutations.sh
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: otel-demo, name: payment}
+    category: broken-trace-propagation
+    # checkout is where the broken traces visibly end; the collector is where
+    # "missing spans" looks like it should be investigated.
+    decoys:
+      - {kind: Deployment, namespace: otel-demo, name: checkout}
+      - {kind: DaemonSet, namespace: lgtm, name: alloy}
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
+    categoryWeight: 0.5
+    requireEvidence: true

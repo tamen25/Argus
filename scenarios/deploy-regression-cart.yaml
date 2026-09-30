@@ -1,0 +1,51 @@
+# Bench scenario (Module C — Phase 4). Fault: cart is rolled out with a bad
+# cache address — a config regression that ships cleanly and then fails every
+# request.
+#
+# The rollout succeeds: the new pod starts, passes readiness, and reports. Then
+# every cart operation fails because the cache it was pointed at does not
+# exist. The errors surface in frontend and name the cache, so valkey-cart —
+# healthy, and serving nothing because nothing reaches it — is the obvious
+# culprit. The evidence that separates the readings is timing and ownership:
+# the errors begin at cart's rollout, and valkey-cart's own telemetry shows no
+# fault. This mirrors redis-latency-cart, where the cache really is at fault.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: deploy-regression-cart
+  description: >-
+    cart is redeployed with VALKEY_ADDR pointing at a port nothing listens on.
+    The rollout succeeds, then every cart operation fails and frontend returns
+    errors naming the cache.
+spec:
+  environment:
+    app: otel-demo
+  # A config regression rather than a bad image; see
+  # faults/deploy-regression-cart.sh and DECISIONS.md for why.
+  inject:
+    - type: script
+      script: faults/deploy-regression-cart.sh
+      duration: 10m
+  # Ambient frontend 5xx is zero, so any sustained rate is the fault. Measured
+  # live: 0.016-0.065/s while cart was misconfigured.
+  steadyState:
+    query: sum(rate(app_frontend_requests_total{job="frontend",status=~"5.."}[2m]))
+    min: 0.01
+    settle: 30s
+  reset:
+    - script: faults/restore-all-mutations.sh
+  cleanup:
+    - script: faults/restore-all-mutations.sh
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: otel-demo, name: cart}
+    category: deploy-regression
+    # valkey-cart is named by the errors; frontend is where they are returned.
+    decoys:
+      - {kind: Deployment, namespace: otel-demo, name: valkey-cart}
+      - {kind: Deployment, namespace: otel-demo, name: frontend}
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
+    categoryWeight: 0.5
+    requireEvidence: true

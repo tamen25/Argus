@@ -1,0 +1,55 @@
+# Bench scenario (Module C — Phase 4). Fault: payment is rolled out with an
+# empty OTEL_SERVICE_NAME and reports under the SDK's default resource name.
+#
+# Nothing is down. Checkouts succeed, payment answers every call, and no error
+# rate moves. What breaks is attribution: "payment" goes silent in every
+# backend, and an unfamiliar service called unknown_service:/nodejs/bin/node
+# appears doing exactly payment's work. An agent that reads the silence as an
+# outage is wrong; the evidence is that the traffic is still there under a
+# different name. This is the telemetry-quality fault Argus's own Score engine
+# flags statically (A1), seen here from the incident side.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: missing-service-name-payment
+  description: >-
+    payment is redeployed without a service name. It keeps serving, but its
+    telemetry arrives as unknown_service:/nodejs/bin/node, so payment appears
+    to have stopped reporting.
+spec:
+  environment:
+    app: otel-demo
+  # A script step: the fault is a config change to an existing workload, which a
+  # Chaos Mesh manifest cannot express. See faults/missing-service-name-payment.sh.
+  inject:
+    - type: script
+      script: faults/missing-service-name-payment.sh
+      duration: 10m
+  # Any unknown_service series means an SDK in the namespace lost its name; at
+  # baseline there are none (checked live). count_over_time[2m] rides out the
+  # 60s export interval and lets the baseline clear two minutes after restore.
+  steadyState:
+    query: count(count_over_time(target_info{job=~"unknown_service.*"}[2m]))
+    min: 1
+    settle: 30s
+  # Restores every recorded mutation in the namespace, so a mutation leaked by a
+  # crashed run is repaired before this one injects. A no-op when clean.
+  reset:
+    - script: faults/restore-all-mutations.sh
+  cleanup:
+    - script: faults/restore-all-mutations.sh
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: otel-demo, name: payment}
+    category: missing-service-name
+    # checkout is payment's only caller and the obvious place to look when
+    # payment "disappears"; the collector is where a naming problem looks like
+    # it could have been introduced.
+    decoys:
+      - {kind: Deployment, namespace: otel-demo, name: checkout}
+      - {kind: DaemonSet, namespace: lgtm, name: alloy}
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
+    categoryWeight: 0.5
+    requireEvidence: true

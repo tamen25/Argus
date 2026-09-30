@@ -150,6 +150,16 @@ and remove the record only after the rollout succeeds, so a failed restore can
 simply run again. See `faults/oomkill-checkout.sh` and
 `faults/restore-checkout-memory.sh`.
 
+A fault that is one environment-variable change needs no restore logic of its
+own: source `faults/lib/env-fault.sh` and call
+`set_env DEPLOY CONTAINER VAR VALUE`. It records the original entry — a literal,
+a `valueFrom` reference, or the variable's absence — as an annotation on the
+Deployment. Use `faults/restore-all-mutations.sh` as both `reset` and `cleanup`:
+it restores **every** recorded mutation in the namespace, not only the current
+scenario's, so a mutation leaked by a crashed run is repaired before the next
+one injects. It is the mutation counterpart of the label sweep in rule 7. A new
+kind of mutation must be added to it.
+
 ## 7. Every fault object carries the sweep label
 
 ```yaml
