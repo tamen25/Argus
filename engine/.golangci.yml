@@ -1,5 +1,5 @@
 # golangci-lint v2 config for the Argus engine.
-# Binding architecture rule 2 (CLAUDE.md): deterministic core, LLM at the edge —
+# Binding architecture rule 2 (master plan §5.1): deterministic core, LLM at the edge —
 # rules/, cost/, backtest/, bench (except the flagged normalization path) never
 # import the LLM client. Enforced here via depguard; CI runs this on every PR.
 version: "2"

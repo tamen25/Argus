@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Enforce the coverage bar from CLAUDE.md ("Quality bar") on the deterministic
+# Enforce the coverage bar from the master plan (§5.2 Quality bar) on the deterministic
 # core: the packages whose output is a score, a cost, or a verdict, and so must
 # be the most thoroughly tested code in the repo.
 #
