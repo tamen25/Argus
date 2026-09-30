@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Argus dev environment bootstrap (Phase 0 deliverable, master plan §9).
-# One command: kind cluster + LGTM stack + OpenTelemetry Demo + Chaos Mesh.
+# One command: kind cluster + LGTM stack + OpenTelemetry Demo + Chaos Mesh +
+# the argus engine, built from this checkout.
 # Idempotent: safe to re-run; every install is `helm upgrade --install`.
 #
 # Usage: bash deploy/kind/bootstrap.sh   (or: make dev-up)
@@ -93,6 +94,13 @@ helm upgrade --install chaos-mesh chaos-mesh/chaos-mesh \
   --version "${CHAOS_MESH_CHART_VERSION}" -n chaos-mesh \
   -f "${SCRIPT_DIR}/values/chaos-mesh.yaml" --timeout 10m
 
+# Alloy already mirrors telemetry to argus-engine.argus.svc (values/alloy.yaml);
+# until the engine exists that exporter only retries. ARGUS_SKIP_ENGINE=1 skips
+# the image build for an LGTM-only cluster.
+if [ "${ARGUS_SKIP_ENGINE:-0}" != "1" ]; then
+  CLUSTER="${CLUSTER_NAME}" bash "${SCRIPT_DIR}/deploy-engine.sh"
+fi
+
 echo "==> waiting for workloads (this can take a few minutes on first run)"
 kubectl -n lgtm rollout status deploy/grafana --timeout=10m
 kubectl -n lgtm rollout status sts/loki --timeout=10m || true
@@ -106,6 +114,7 @@ Argus dev environment is up.
   OTLP gRPC      localhost:4317          (Alloy)
   OTLP HTTP      localhost:4318          (Alloy)
   In-cluster     alloy.lgtm.svc:4317|4318
+  Argus engine   argus-engine.argus.svc:8080   (kubectl -n argus port-forward svc/argus-engine 8080)
 
 REMINDER (master plan §9): history accumulation started. Log every induced
 fault or incident in incidents.yaml at repo root — Phase 3 backtests depend

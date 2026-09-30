@@ -5,13 +5,16 @@ SHELL := /bin/bash
 ENGINE_DIR := engine
 PLUGIN_DIR := plugin
 
-.PHONY: dev-up dev-heal dev-down test coverage test-integration lint build demo demo-down help soak soak-analyze
+.PHONY: dev-up dev-engine dev-heal dev-down test coverage test-integration lint build demo demo-down help soak soak-analyze
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
 
-dev-up: ## kind cluster: LGTM + otel-demo + chaos-mesh (argus itself not deployed yet — BACKLOG B-17)
+dev-up: ## kind cluster: LGTM + otel-demo + chaos-mesh + the argus engine built from this checkout
 	bash deploy/kind/bootstrap.sh
+
+dev-engine: ## Rebuild the engine image from this checkout and redeploy it on the dev cluster
+	bash deploy/kind/deploy-engine.sh
 
 dev-heal: ## Recover after a Docker Desktop restart (re-attach the history mount, wait for LGTM)
 	bash deploy/kind/heal.sh
