@@ -71,7 +71,7 @@ Dev environment is Linux (WSL2 Ubuntu 24.04 on Windows). Requires: Go ≥1.25, N
 kind, kubectl, helm, make.
 
 ```bash
-make dev-up    # kind cluster: LGTM stack + OpenTelemetry Demo + Chaos Mesh
+make dev-up    # kind cluster: LGTM stack + OpenTelemetry Demo + Chaos Mesh + the argus engine
 make dev-down  # delete the cluster
 make test      # unit tests, all modules
 make lint      # golangci-lint + eslint

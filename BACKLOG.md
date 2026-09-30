@@ -38,13 +38,7 @@ next starts, so nothing sits unmerged.
    projection is confirmed with the user before the first full run (master plan
    §12.4).
 
-Anytime: B-17 (deploy argus from `dev-up`). Needs the user: B-35 (catalog submission status).
-
-## P1 — Infrastructure
-
-- [ ] **B-17** — `make dev-up` does not deploy argus, though the Makefile comment
-  said it did (comment corrected alongside this backlog).
-  `deploy/kind/argus-engine.yaml` exists, but `bootstrap.sh` never applies it.
+Needs the user: B-35 (catalog submission status).
 
 ## P2 — Plugin
 
@@ -90,6 +84,11 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-17** (#72) — `make dev-up` deploys the argus engine: `bootstrap.sh` builds
+  the image from the checkout, loads it into kind and applies
+  `deploy/kind/argus-engine.yaml` (`ARGUS_SKIP_ENGINE=1` opts out).
+  `make dev-engine` redeploys after a code change. The soak harness uses the same
+  script instead of its own copy of those steps.
 - [x] **B-22, B-23** and the fixable part of **B-21** (#71) — `@grafana/*` 13.0.2 →
   13.0.10; `react-router-dom` moved to `devDependencies` (only a test imports
   it); in-range audit fixes applied; `uuid` overridden to the patched 11.1.1 —

@@ -29,6 +29,11 @@ This creates a kind cluster named `argus` running:
   accumulation), Loki (logs), Tempo (traces), Grafana, Alloy (OTLP gateway)
 - **OpenTelemetry Demo** — the workload emitting telemetry
 - **Chaos Mesh** — fault injection for bench scenarios and incident logging
+- **The argus engine** — built from your checkout, in namespace `argus`,
+  receiving the sampled telemetry mirror from Alloy. After changing engine code,
+  `make dev-engine` rebuilds and redeploys it. Reach its API with
+  `kubectl -n argus port-forward svc/argus-engine 8080`, then
+  <http://localhost:8080/api/report>.
 
 Grafana: <http://localhost:3000> (admin / argus-dev). OTLP endpoint inside the cluster:
 `alloy.lgtm.svc:4317` (gRPC) / `:4318` (HTTP).

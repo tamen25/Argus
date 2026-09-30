@@ -29,17 +29,10 @@ mkdir -p "$OUT"
 echo "soak: output -> $OUT (${SOAK_HOURS}h, sample every ${SAMPLE_SECONDS}s)"
 
 # --- stand up the engine + mirror (idempotent) -----------------------------
-echo "soak: building engine image"
-docker build -q -t argus-engine:dev \
-  --build-arg SPEC_VERSION="$(cat "$ROOT/.instrumentation-score-version")" \
-  --build-arg VERSION="soak-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)" \
-  "$ROOT/engine"
-kind load docker-image argus-engine:dev --name "$CLUSTER"
-
-kubectl apply -f "$ROOT/deploy/kind/argus-engine.yaml"
-# pick up a freshly loaded image even if the tag didn't change
-kubectl rollout restart deployment/argus-engine -n argus
-kubectl rollout status deployment/argus-engine -n argus --timeout=120s
+echo "soak: building and deploying the engine"
+ARGUS_ROOT="$ROOT" CLUSTER="$CLUSTER" \
+  ARGUS_VERSION="soak-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)" \
+  bash "$ROOT/deploy/kind/deploy-engine.sh"
 
 echo "soak: wiring alloy mirror (helm upgrade with repo values)"
 ALLOY_CHART_VERSION="$(grep -oP 'ALLOY_CHART_VERSION:-\K[0-9.]+' "$ROOT/deploy/kind/bootstrap.sh" || true)"
