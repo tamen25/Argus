@@ -41,6 +41,37 @@ type AlertsBackend interface {
 	ListAlerts(ctx context.Context, state string) (json.RawMessage, error)
 }
 
+// The catalog ports answer "what telemetry exists here?". Metric names, label
+// names and attribute names differ between environments, and a query on a name
+// that does not exist returns an empty result rather than an error — so an agent
+// without these can spend its whole budget on guesses. They are what a human
+// gets from a metric browser.
+//
+// Unlike the query ports they return plain lists, not the backend's raw body:
+// a list has to be filtered and capped before it goes to a model, and that
+// needs the values, not an opaque document.
+
+// MetricsCatalog lists metric names and the labels on them. selector is an
+// optional PromQL series selector (e.g. `{job="cart"}`) that narrows the scope.
+type MetricsCatalog interface {
+	MetricNames(ctx context.Context, selector string) ([]string, error)
+	LabelNames(ctx context.Context, selector string) ([]string, error)
+	LabelValues(ctx context.Context, label, selector string) ([]string, error)
+}
+
+// LogsCatalog lists the stream labels logs are indexed by, and their values.
+type LogsCatalog interface {
+	LogLabelNames(ctx context.Context) ([]string, error)
+	LogLabelValues(ctx context.Context, label string) ([]string, error)
+}
+
+// TracesCatalog lists the attributes traces can be searched by, and their
+// values. Names are scoped the way TraceQL writes them (resource.service.name).
+type TracesCatalog interface {
+	TraceTagNames(ctx context.Context) ([]string, error)
+	TraceTagValues(ctx context.Context, tag string) ([]string, error)
+}
+
 // Backends bundles the ports a Server needs. A nil backend disables its tool:
 // NewServer only registers a tool whose backend is present, so a partial
 // deployment exposes a smaller, honest surface rather than tools that error.
@@ -50,4 +81,8 @@ type Backends struct {
 	Traces   TracesBackend
 	Topology TopologyBackend
 	Alerts   AlertsBackend
+
+	MetricsCatalog MetricsCatalog
+	LogsCatalog    LogsCatalog
+	TracesCatalog  TracesCatalog
 }

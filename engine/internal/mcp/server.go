@@ -24,28 +24,35 @@ const (
 func NewServer(b Backends) (*Registry, error) {
 	r := NewRegistry()
 
+	// Discovery and topology come first in the list: they are what an agent
+	// should reach for before it queries, and models read tool lists in order.
+	var tools []Tool
+	if b.Topology != nil {
+		tools = append(tools, topologyTool(b.Topology))
+	}
+	if b.MetricsCatalog != nil {
+		tools = append(tools, metricsListTool(b.MetricsCatalog), metricLabelsTool(b.MetricsCatalog))
+	}
+	if b.LogsCatalog != nil {
+		tools = append(tools, logLabelsTool(b.LogsCatalog))
+	}
+	if b.TracesCatalog != nil {
+		tools = append(tools, traceTagsTool(b.TracesCatalog))
+	}
 	if b.Metrics != nil {
-		if err := r.Register(promTool(b.Metrics)); err != nil {
-			return nil, err
-		}
+		tools = append(tools, promTool(b.Metrics, b.MetricsCatalog != nil))
 	}
 	if b.Logs != nil {
-		if err := r.Register(lokiTool(b.Logs)); err != nil {
-			return nil, err
-		}
+		tools = append(tools, lokiTool(b.Logs, b.LogsCatalog != nil))
 	}
 	if b.Traces != nil {
-		if err := r.Register(tracesTool(b.Traces)); err != nil {
-			return nil, err
-		}
-	}
-	if b.Topology != nil {
-		if err := r.Register(topologyTool(b.Topology)); err != nil {
-			return nil, err
-		}
+		tools = append(tools, tracesTool(b.Traces, b.TracesCatalog != nil))
 	}
 	if b.Alerts != nil {
-		if err := r.Register(alertsTool(b.Alerts)); err != nil {
+		tools = append(tools, alertsTool(b.Alerts))
+	}
+	for _, t := range tools {
+		if err := r.Register(t); err != nil {
 			return nil, err
 		}
 	}
@@ -56,7 +63,17 @@ func NewServer(b Backends) (*Registry, error) {
 	return r, nil
 }
 
-func promTool(m MetricsBackend) Tool {
+// hint appends a pointer to the discovery tool, but only when that tool is part
+// of the surface: a description must not send an agent to a tool it was not
+// given.
+func hint(description string, available bool, pointer string) string {
+	if !available {
+		return description
+	}
+	return description + " " + pointer
+}
+
+func promTool(m MetricsBackend, catalog bool) Tool {
 	type args struct {
 		Query string `json:"query"`
 		Time  string `json:"time,omitempty"`
@@ -72,8 +89,10 @@ func promTool(m MetricsBackend) Tool {
 		`"end":{"type":"string","description":"RFC3339 range end"},` +
 		`"step":{"type":"string","description":"Range step duration, e.g. 30s"}}}`
 	return Tool{
-		Name:        ToolQueryPrometheus,
-		Description: "Run a read-only PromQL query against Mimir. Instant by default; range if start, end and step are given.",
+		Name: ToolQueryPrometheus,
+		Description: hint("Run a read-only PromQL query against Mimir. Instant by default; range if start, end and step are given. "+
+			"A query on a metric or label that does not exist returns an empty result, not an error.",
+			catalog, "Find real names with "+ToolListMetrics+" and "+ToolListMetricLabels+" first."),
 		InputSchema: json.RawMessage(schema),
 		ReadOnly:    true,
 		Handler: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
@@ -112,7 +131,7 @@ func promTool(m MetricsBackend) Tool {
 	}
 }
 
-func lokiTool(l LogsBackend) Tool {
+func lokiTool(l LogsBackend, catalog bool) Tool {
 	type args struct {
 		Query string `json:"query"`
 		Start string `json:"start,omitempty"`
@@ -126,8 +145,10 @@ func lokiTool(l LogsBackend) Tool {
 		`"end":{"type":"string","description":"RFC3339 end; default now"},` +
 		`"limit":{"type":"integer","description":"Max log lines; default 100"}}}`
 	return Tool{
-		Name:        ToolQueryLoki,
-		Description: "Run a read-only LogQL range query against Loki.",
+		Name: ToolQueryLoki,
+		Description: hint("Run a read-only LogQL range query against Loki, e.g. {label=\"value\"} |= \"text\". "+
+			"The limit is this tool's own argument, not part of the query.",
+			catalog, "Find the stream labels and their values with "+ToolListLogLabels+" first."),
 		InputSchema: json.RawMessage(schema),
 		ReadOnly:    true,
 		Handler: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
@@ -163,7 +184,7 @@ func lokiTool(l LogsBackend) Tool {
 	}
 }
 
-func tracesTool(tb TracesBackend) Tool {
+func tracesTool(tb TracesBackend, catalog bool) Tool {
 	type args struct {
 		Query string `json:"query"`
 		Limit int    `json:"limit,omitempty"`
@@ -173,8 +194,11 @@ func tracesTool(tb TracesBackend) Tool {
 		`"query":{"type":"string","description":"TraceQL / Tempo search query"},` +
 		`"limit":{"type":"integer","description":"Max traces; default 20"}}}`
 	return Tool{
-		Name:        ToolSearchTraces,
-		Description: "Search traces in Tempo (read-only).",
+		Name: ToolSearchTraces,
+		Description: hint("Search traces in Tempo with a TraceQL query (read-only), e.g. "+
+			"{ resource.service.name = \"my-service\" && status = error }. "+
+			"The limit is this tool's own argument, not part of the query.",
+			catalog, "Find attribute names and values with "+ToolListTraceTags+" first."),
 		InputSchema: json.RawMessage(schema),
 		ReadOnly:    true,
 		Handler: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
@@ -201,8 +225,10 @@ func topologyTool(tp TopologyBackend) Tool {
 	schema := `{"type":"object","additionalProperties":false,` +
 		`"properties":{"namespace":{"type":"string","description":"Namespace to scope topology; empty = all"}}}`
 	return Tool{
-		Name:        ToolGetK8sTopology,
-		Description: "Return service/Kubernetes topology (read-only).",
+		Name: ToolGetK8sTopology,
+		Description: "List the cluster's workloads (kind, namespace, name) and, where trace-derived service-graph " +
+			"metrics exist, which service calls which (read-only). Workloads are listed by identity only, without " +
+			"status. Use it to learn the exact kind, namespace and name of what you are diagnosing.",
 		InputSchema: json.RawMessage(schema),
 		ReadOnly:    true,
 		Handler: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {

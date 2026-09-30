@@ -17,14 +17,52 @@ argus mcp --mimir-url http://mimir-gateway.lgtm.svc \
 
 | Tool | Backend | Enabled by |
 |------|---------|-----------|
+| `get_k8s_topology` | Kubernetes (`kubectl get`), plus the service graph from Mimir | `--kube-topology` |
+| `list_metrics` | Mimir (label API) | `--mimir-url` |
+| `list_metric_labels` | Mimir (label API) | `--mimir-url` |
+| `list_log_labels` | Loki (label API) | `--loki-url` |
+| `list_trace_tags` | Tempo (tag search API) | `--tempo-url` |
 | `query_prometheus` | Mimir (Prometheus API) | `--mimir-url` |
-| `list_alerts` | Mimir (Prometheus API) | `--mimir-url` |
 | `query_loki` | Loki | `--loki-url` |
 | `search_traces` | Tempo | `--tempo-url` |
+| `list_alerts` | Mimir (Prometheus API) | `--mimir-url` |
 
 `query_prometheus` is an instant query by default; supply `start`, `end`, and
 `step` for a range query. `list_alerts` accepts an optional `state` (e.g.
 `firing`), filtered client-side so the argument is honored rather than ignored.
+
+### Discovery
+
+Metric names, label names and trace attributes differ between environments, and
+a query on a name that does not exist returns an empty result rather than an
+error. The `list_*` tools say what exists, the way a metric browser does for a
+human:
+
+- `list_metrics` — metric names with samples in the last 15 minutes; optional
+  `selector` (e.g. `{job="my-service"}`) and `match` (substring).
+- `list_metric_labels` — label names, or with `label`, that label's values.
+- `list_log_labels` — Loki stream labels, or one label's values (last hour).
+- `list_trace_tags` — Tempo attributes, scoped as TraceQL writes them
+  (`resource.service.name`), or one attribute's values.
+
+Each answers `{"total", "returned", "truncated", "values"}`, sorted and capped
+at 100 values by default (500 at most): a busy Mimir has thousands of metric
+names, and handed over whole they would fill a model's context. `truncated`
+says when to narrow the request. These four are the one place the server shapes
+an answer; every query tool still returns the backend's JSON unchanged.
+
+The query tools' descriptions point at the discovery tools only when those are
+offered, and use neutral examples (`my-service`), never a name from your
+environment.
+
+### Topology
+
+`get_k8s_topology` lists the cluster's Deployments, StatefulSets and DaemonSets
+by **identity only** — kind, namespace, name, never status — so an agent learns
+what the entities are called, not which one is broken. With `--mimir-url` it
+adds the trace-derived service graph (`traces_service_graph_request_total`,
+caller → callee). It runs `kubectl get` with your current kubeconfig
+(`--kube-context` to choose); that is a read, and the only command it issues.
 
 ## Read-only by construction
 

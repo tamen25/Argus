@@ -1,6 +1,6 @@
 # The first real-model run (deploy-regression-cart)
 
-A record of the first three bench runs against a real model, on 2026-09-30, and
+A record of the first bench runs against a real model, on 2026-09-30, and
 what they showed about the harness. Every run before this used the calibration stub,
 which answers without calling a tool. The stub validates a scenario's mechanics
 and its rubric; it cannot show what an agent experiences.
@@ -89,13 +89,35 @@ searches were rejected as invalid TraceQL. And it named the root cause as
 cluster's workloads, it had no way to know the entities are `Deployment`s in
 `otel-demo`, so even the right service name would have scored zero.
 
+## Run 4: with discovery tools and topology
+
+| Wall clock | Tool calls | Tool errors | Tokens | Outcome |
+|---:|---:|---:|---:|---|
+| 309 s | 17 | 2 | 109404 | token budget exhausted |
+
+Findings 3 and 5 are fixed: the surface now has `list_metrics`,
+`list_metric_labels`, `list_log_labels`, `list_trace_tags` and
+`get_k8s_topology`. The investigation changed completely. The model called
+`get_k8s_topology` first, then found real metric names (a span-error recording
+rule, a database latency histogram) and queried them. It corrected its TraceQL
+after one rejected query, using the syntax example in the tool description.
+15 of 17 calls succeeded, against 6 of 20 in run 2.
+
+(An earlier attempt at this run failed on its first model call: Ollama's
+`llama-server` could not initialize CUDA. Restarting Ollama fixed it. The
+report recorded the failure as an agent error with no diagnosis, as it should.)
+
+**Finding 6: the token budget has no warning.** The run ended on the token cap
+(109404 of 100000) with three tool calls to spare. Every turn re-sends the whole
+conversation, so the count grows faster than the agent can track, and unlike the
+tool-call cap there was no notice and no final turn. The report also did not say
+which cap was hit.
+
 ## What this means for results
 
-Findings 1, 2 and 4 are fixed. Findings 3 and 5 are open (BACKLOG B-42), and
-until they are, a bench score measures the harness as much as the agent: the
-entity half of the rubric depends on the agent guessing this environment's label
-scheme and its workload kinds. No leaderboard or degraded-vs-remediated
-comparison should be published from the current surface.
+Findings 1 to 5 are fixed. Finding 6 is open (BACKLOG B-43). Until it is, a run
+can still end on a budget the agent could not see coming, so no leaderboard or
+degraded-vs-remediated comparison should be published yet.
 
-All three runs left the cluster clean: cart's `VALKEY_ADDR` restored, no
+All runs left the cluster clean: cart's `VALKEY_ADDR` restored, no
 annotations, no fault objects.

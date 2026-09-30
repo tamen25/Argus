@@ -174,6 +174,9 @@ or a manual test: a StressChaos applied by hand on 2026-07-25 sat on checkout fo
 two months, restarting it repeatedly, and no scenario's reset or baseline check
 could see it. A test fails if any fault manifest object lacks the label.
 
+The label also hides the object from `get_k8s_topology`. The agent is shown the
+cluster's workloads, and a fault Deployment in that list would name the answer.
+
 ## 8. Do not break the telemetry the agent needs
 
 A fault that cuts the OTel exporter's path to the collector destroys its own

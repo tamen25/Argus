@@ -190,3 +190,25 @@ func TestBenchRun_ReportRecordsTheOfferedCategories(t *testing.T) {
 		t.Errorf("run report does not record the categories it offered:\n%s", b)
 	}
 }
+
+func TestTopologyMode(t *testing.T) {
+	if on, err := topologyMode("none"); on || err != nil {
+		t.Errorf("none = %v, %v", on, err)
+	}
+	if _, err := topologyMode("client-go"); err == nil {
+		t.Error("an unknown mode was accepted")
+	}
+	// auto never errors: it offers the tool only when kubectl can answer.
+	if _, err := topologyMode("auto"); err != nil {
+		t.Errorf("auto: %v", err)
+	}
+	// kubectl is explicit, so a missing binary is an error rather than a
+	// silently smaller surface.
+	t.Setenv("PATH", t.TempDir())
+	if _, err := topologyMode("kubectl"); err == nil || !strings.Contains(err.Error(), "not on PATH") {
+		t.Errorf("err = %v, want kubectl reported missing", err)
+	}
+	if on, err := topologyMode("auto"); on || err != nil {
+		t.Errorf("auto without kubectl = %v, %v; want the tool left out", on, err)
+	}
+}

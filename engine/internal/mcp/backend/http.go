@@ -159,3 +159,129 @@ func (t *Tempo) Search(ctx context.Context, query string, limit int) (json.RawMe
 	q.Set("limit", strconv.Itoa(limit))
 	return getRaw(ctx, t.hc, t.base+"/api/search?"+q.Encode(), t.tenant)
 }
+
+// catalogWindow is how far back the discovery calls look. They answer "what
+// exists now", and a short recent window is served by the ingesters, which
+// keeps it working while a store-gateway's bucket index is stale.
+const catalogWindow = 15 * time.Minute
+
+// stringList decodes the {"status":"success","data":[...]} shape the
+// Prometheus and Loki label APIs share.
+func stringList(raw json.RawMessage) ([]string, error) {
+	var doc struct {
+		Status string   `json:"status"`
+		Data   []string `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("decoding label list: %w", err)
+	}
+	if doc.Status != "success" {
+		return nil, fmt.Errorf("backend answered status %q", doc.Status)
+	}
+	return doc.Data, nil
+}
+
+// labels calls one of the Prometheus label endpoints, scoped to the recent
+// window and, when given, to a series selector.
+func (m *Mimir) labels(ctx context.Context, path, selector string) ([]string, error) {
+	now := time.Now()
+	q := url.Values{}
+	q.Set("start", now.Add(-catalogWindow).UTC().Format(time.RFC3339))
+	q.Set("end", now.UTC().Format(time.RFC3339))
+	if selector != "" {
+		q.Set("match[]", selector)
+	}
+	raw, err := getRaw(ctx, m.hc, m.base+"/prometheus/api/v1/"+path+"?"+q.Encode(), m.tenant)
+	if err != nil {
+		return nil, err
+	}
+	return stringList(raw)
+}
+
+// MetricNames lists the metric names with recent samples.
+func (m *Mimir) MetricNames(ctx context.Context, selector string) ([]string, error) {
+	return m.labels(ctx, "label/__name__/values", selector)
+}
+
+// LabelNames lists the label names on recent series.
+func (m *Mimir) LabelNames(ctx context.Context, selector string) ([]string, error) {
+	return m.labels(ctx, "labels", selector)
+}
+
+// LabelValues lists one label's values on recent series.
+func (m *Mimir) LabelValues(ctx context.Context, label, selector string) ([]string, error) {
+	return m.labels(ctx, "label/"+url.PathEscape(label)+"/values", selector)
+}
+
+func (l *Loki) labels(ctx context.Context, path string) ([]string, error) {
+	now := time.Now()
+	q := url.Values{}
+	q.Set("start", now.Add(-time.Hour).UTC().Format(time.RFC3339Nano))
+	q.Set("end", now.UTC().Format(time.RFC3339Nano))
+	raw, err := getRaw(ctx, l.hc, l.base+"/loki/api/v1/"+path+"?"+q.Encode(), l.tenant)
+	if err != nil {
+		return nil, err
+	}
+	return stringList(raw)
+}
+
+// LogLabelNames lists the stream labels seen in the last hour.
+func (l *Loki) LogLabelNames(ctx context.Context) ([]string, error) {
+	return l.labels(ctx, "labels")
+}
+
+// LogLabelValues lists one stream label's values over the last hour.
+func (l *Loki) LogLabelValues(ctx context.Context, label string) ([]string, error) {
+	return l.labels(ctx, "label/"+url.PathEscape(label)+"/values")
+}
+
+// TraceTagNames lists searchable attribute names, scoped as TraceQL writes
+// them: resource.service.name, span.http.method. Intrinsics (duration, status,
+// name, …) have no scope prefix.
+func (t *Tempo) TraceTagNames(ctx context.Context) ([]string, error) {
+	raw, err := getRaw(ctx, t.hc, t.base+"/api/v2/search/tags", t.tenant)
+	if err != nil {
+		return nil, err
+	}
+	var doc struct {
+		Scopes []struct {
+			Name string   `json:"name"`
+			Tags []string `json:"tags"`
+		} `json:"scopes"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("decoding trace tags: %w", err)
+	}
+	var names []string
+	for _, s := range doc.Scopes {
+		for _, tag := range s.Tags {
+			if s.Name == "intrinsic" || s.Name == "" {
+				names = append(names, tag)
+			} else {
+				names = append(names, s.Name+"."+tag)
+			}
+		}
+	}
+	return names, nil
+}
+
+// TraceTagValues lists the values of one scoped attribute.
+func (t *Tempo) TraceTagValues(ctx context.Context, tag string) ([]string, error) {
+	raw, err := getRaw(ctx, t.hc, t.base+"/api/v2/search/tag/"+url.PathEscape(tag)+"/values", t.tenant)
+	if err != nil {
+		return nil, err
+	}
+	var doc struct {
+		TagValues []struct {
+			Value string `json:"value"`
+		} `json:"tagValues"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("decoding trace tag values: %w", err)
+	}
+	values := make([]string, 0, len(doc.TagValues))
+	for _, v := range doc.TagValues {
+		values = append(values, v.Value)
+	}
+	return values, nil
+}
