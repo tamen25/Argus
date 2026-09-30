@@ -5,7 +5,7 @@ SHELL := /bin/bash
 ENGINE_DIR := engine
 PLUGIN_DIR := plugin
 
-.PHONY: dev-up dev-down test test-integration lint build demo demo-down help soak soak-analyze
+.PHONY: dev-up dev-down test coverage test-integration lint build demo demo-down help soak soak-analyze
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
@@ -19,6 +19,10 @@ dev-down: ## Delete the kind dev cluster
 test: ## Unit tests, all modules
 	cd $(ENGINE_DIR) && go test ./...
 	@if [ -f $(PLUGIN_DIR)/package.json ]; then cd $(PLUGIN_DIR) && npm run test:ci --if-present; fi
+
+coverage: ## Engine tests + the >=70% coverage gate CI enforces on the deterministic core
+	cd $(ENGINE_DIR) && go test -cover ./... > $(CURDIR)/.cover.out; rc=$$?; cat $(CURDIR)/.cover.out; exit $$rc
+	bash scripts/coverage-gate.sh .cover.out
 
 test-integration: ## Integration tests (testcontainers; needs docker)
 	cd $(ENGINE_DIR) && go test -tags integration -count=1 ./...
