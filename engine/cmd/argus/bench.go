@@ -89,9 +89,10 @@ budget or errors is recorded as producing no diagnosis; it is NOT scored as
 zero, so a crashed run cannot quietly drag an average down.
 
 Injection modes:
-  --inject=script   run the scenario's script steps locally
-  --inject=kubectl  apply the scenario's kubectl/chaosmesh manifests with
-                    kubectl, and delete them again on cleanup
+  --inject=auto     (default) manifests via kubectl, scripts via bash, and the
+                    scenario's own reset/cleanup hooks
+  --inject=script   legacy: script steps only
+  --inject=kubectl  legacy: manifest steps only
   --inject=none     inject nothing; score against an environment you already
                     put into the desired state yourself
 
@@ -134,7 +135,7 @@ output the same way twice would launder that error into the score.`,
 			if err != nil {
 				return err
 			}
-			inj, err := buildInjector(f)
+			inj, err := buildInjector(f, sc)
 			if err != nil {
 				return err
 			}
@@ -187,7 +188,7 @@ output the same way twice would launder that error into the score.`,
 	fl.Int64Var(&f.seed, "seed", 0, "seed recorded in the report for reproducibility")
 	fl.StringVar(&f.envDigest, "env-digest", "", "identifier of the environment under test, recorded in the report")
 
-	fl.StringVar(&f.inject, "inject", "script", "injection mode: script | kubectl | none")
+	fl.StringVar(&f.inject, "inject", "auto", "injection mode: auto | script | kubectl | none")
 	fl.StringVar(&f.resetScript, "reset-script", "", "script run before injection (script mode)")
 	fl.StringVar(&f.cleanupScript, "cleanup-script", "", "script run after each repeat (script mode)")
 	fl.StringVar(&f.injectNamespace, "inject-namespace", "", "namespace passed to kubectl (kubectl mode)")
@@ -367,10 +368,12 @@ func buildTools(f benchFlags) (agent.Tools, error) {
 // always-ready behavior, and its report must not claim steady state was
 // verified.
 func buildProbe(f benchFlags, sc bench.Scenario) orchestrator.SteadyStateProbe {
-	// The calibration stub reads no telemetry, so gating it on the environment
-	// measures nothing — and would make calibrating a rubric require a live
-	// cluster, which defeats the point of having a rubric instrument at all.
-	if sc.Spec.SteadyState == nil || f.agentKind == "stub" {
+	// Without a metrics backend the calibration stub skips the gate: it reads no
+	// telemetry, and calibrating a rubric must not require a live cluster. Given
+	// --mimir-url it takes the full lifecycle a real agent does (baseline,
+	// inject, steady state, reset), which makes it a free way to validate a
+	// scenario's mechanics end to end before spending model time on it.
+	if sc.Spec.SteadyState == nil || (f.agentKind == "stub" && f.mimirURL == "") {
 		return orchestrator.AlwaysReadyProbe{}
 	}
 	var q orchestrator.InstantQuerier
@@ -383,8 +386,32 @@ func buildProbe(f benchFlags, sc bench.Scenario) orchestrator.SteadyStateProbe {
 	return &orchestrator.PromQLProbe{Q: q}
 }
 
-func buildInjector(f benchFlags) (orchestrator.Injector, error) {
+func buildInjector(f benchFlags, sc bench.Scenario) (orchestrator.Injector, error) {
+	// The legacy single-adapter modes cannot run a scenario's own reset/cleanup
+	// hooks. Refuse rather than skip them: a skipped cleanup leaks a mutated
+	// workload into every later repeat and scenario, and a skipped reset leaves
+	// the baseline dirty.
+	if (f.inject == "script" || f.inject == "kubectl") && (len(sc.Spec.Reset) > 0 || len(sc.Spec.Cleanup) > 0) {
+		return nil, fmt.Errorf("scenario %q declares reset/cleanup hooks, which --inject=%s cannot run; "+
+			"use --inject=auto (the default)", sc.Metadata.Name, f.inject)
+	}
+	dir := filepath.Dir(f.scenario)
 	switch f.inject {
+	case "auto":
+		return orchestrator.AutoInjector{
+			Manifests: kube.New(dir, f.injectNamespace, f.kubeContext),
+			Scripts: orchestrator.ScriptInjector{
+				Dir: dir,
+				// bash explicitly, not the script's shebang: the maintainer runs
+				// argus on Windows, where a .sh file cannot be exec'd directly.
+				Shell:   "bash",
+				Timeout: 5 * time.Minute,
+				Env: []string{
+					"ARGUS_NAMESPACE=" + f.injectNamespace,
+					"ARGUS_KUBE_CONTEXT=" + f.kubeContext,
+				},
+			},
+		}, nil
 	case "none":
 		return orchestrator.NoopInjector{}, nil
 	case "script":
@@ -397,7 +424,7 @@ func buildInjector(f benchFlags) (orchestrator.Injector, error) {
 	case "kubectl":
 		return kube.New(filepath.Dir(f.scenario), f.injectNamespace, f.kubeContext), nil
 	default:
-		return nil, fmt.Errorf("unknown --inject %q (want script, kubectl or none)", f.inject)
+		return nil, fmt.Errorf("unknown --inject %q (want auto, script, kubectl or none)", f.inject)
 	}
 }
 

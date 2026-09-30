@@ -193,24 +193,57 @@ that never needed it never mention it.
 
 | `--inject` | Behavior |
 |---|---|
-| `script` (default) | Runs the scenario's `type: script` steps locally |
-| `kubectl` | Applies the scenario's `kubectl`/`chaosmesh` manifests with `kubectl`, deleting them again on cleanup (`--inject-namespace`, `--kube-context`) |
+| `auto` (default) | Manifest steps (`kubectl`, `chaosmesh`) via `kubectl`; `script` steps and the scenario's own `reset`/`cleanup` hooks via `bash` |
+| `script` | Legacy: script steps only |
+| `kubectl` | Legacy: manifest steps only |
 | `none` | Injects nothing — score against an environment you set up yourself |
 
-A Chaos Mesh experiment is itself a CRD manifest, so `kubectl` mode covers both
-manifest step types. It shells out to `kubectl` rather than embedding a
-Kubernetes API client: the fault surface is "apply this manifest, then delete
-it", and this is a bench-time tool, not part of the read-only product path.
+`--inject-namespace` and `--kube-context` apply to manifest steps and are passed
+to scripts as `ARGUS_NAMESPACE` and `ARGUS_KUBE_CONTEXT`, so both target the
+same cluster. `kubectl` is shelled out to rather than embedded: the fault surface
+is "apply this manifest, then delete it", and this is a bench-time tool, not part
+of the read-only product path.
 
 **Each injector rejects step types it cannot execute** rather than skipping
 them, so a scenario is never scored against an environment that was never
-faulted. Cleanup deletes every declared manifest — and keeps going past a
-failed delete, since stopping at the first error leaves more faults behind than
-it removes.
+faulted. For the same reason the legacy modes **refuse** a scenario that
+declares hooks instead of skipping its restores.
 
-Steady-state detection is not yet wired: an inject step is expected to settle
-before the agent is called, and a report produced this way does not claim steady
-state was verified.
+### Scenario hooks: undoing a fault's effects
+
+Deleting a fault's objects is not always enough to undo it. Scenario 1's load
+driver can be deleted, but frontend's OTel SDK keeps exporting every series the
+driver created until frontend restarts. A scenario therefore owns its restores:
+
+```yaml
+spec:
+  reset:                               # before every repeat, after the fault's objects are deleted
+    - script: faults/restart-frontend.sh
+  cleanup:                             # after every repeat, even a failed one
+    - script: faults/restart-frontend.sh
+```
+
+**Reset** deletes the fault's objects first, then runs its hooks — stop the
+source before cleaning up after it. **Cleanup** runs the hooks, then deletes the
+objects, and keeps going past failures, since a half-finished cleanup leaves more
+of the fault behind than it removes. Hooks are scripts only: restoring state is
+procedural, and a manifest in a cleanup list would be ambiguous (apply it, or
+delete it?).
+
+### Steady state and baselines
+
+A scenario's `steadyState` query gates the agent: nothing is asked until the
+fault's signature has held for the settle window. Before each repeat injects,
+the same signature must be observably **absent** (see "Repeats start from a
+clean baseline" above). Prefer a query that forgets a series once it stops being
+written — `count(count_over_time(x[2m]))` rather than `count(x)` — or every
+repeat waits out Prometheus's 5-minute lookback: measured on scenario 1, the
+baseline clears in 121 s with the first form and 302 s with the second.
+
+With `--agent=stub` and no `--mimir-url`, the gate is skipped so a rubric can be
+calibrated without a cluster. Given `--mimir-url`, the stub takes the full
+lifecycle a real agent does, which validates a scenario's mechanics end to end
+at no model cost.
 
 ## Output
 

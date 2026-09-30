@@ -33,14 +33,30 @@ spec:
   # The agent must not be asked until the fault is visible in Mimir. Applying the
   # manifest and querying immediately would show a healthy system: metrics reach
   # the backend a scrape interval or more after the workload changes.
-  # Ambient frontend series sit around 40; three drivers add roughly 700/minute,
-  # so 300 is unambiguous and reached in well under a minute. The settle window
-  # requires the level to hold, so a single scrape spike cannot pass for an
-  # established state.
+  #
+  # Measured 2026-09-30: ambient frontend series sit around 40, and three
+  # drivers add about 55 series a minute (584 after 10m), so 300 is reached in
+  # roughly five minutes, inside the 10m window. The settle window requires the
+  # level to hold, so a single scrape spike cannot pass for an established state.
+  #
+  # count_over_time[2m] rather than a plain count: a plain instant count keeps
+  # counting a series for Prometheus's 5m lookback after it stops receiving
+  # samples, so it takes ~5 minutes to clear after a reset; this counts only
+  # series still being written, and clears in ~2 (measured: 121s vs 302s). That
+  # matters because every repeat waits for the baseline to clear before
+  # injecting.
   steadyState:
-    query: count(app_frontend_requests_total{job="frontend"})
+    query: count(count_over_time(app_frontend_requests_total{job="frontend"}[2m]))
     min: 300
     settle: 30s
+  # Deleting the driver stops new series but not old ones: frontend's OTel SDK
+  # keeps exporting every attribute set it has seen until it restarts. Restart
+  # on reset, so each repeat starts clean, and on cleanup, so the NEXT scenario's
+  # agent does not inherit an inflated frontend as a confounder.
+  reset:
+    - script: faults/restart-frontend.sh
+  cleanup:
+    - script: faults/restart-frontend.sh
   groundTruth:
     rootCauseEntities:
       - {kind: Deployment, namespace: otel-demo, name: frontend}
