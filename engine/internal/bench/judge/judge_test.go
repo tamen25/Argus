@@ -114,3 +114,44 @@ func TestExtractJSON(t *testing.T) {
 		}
 	}
 }
+
+// TestJudge_ExtractsEvidence is the regression guard for B-01. The judge's
+// extraction shape used to omit evidence, so every judge-normalized answer had
+// zero citations and every prose agent scored 0 on a requireEvidence scenario.
+// A test cannot make a model obey a prompt, so this pins what the code
+// controls: the prompt asks for evidence and forbids inventing it, and evidence
+// the judge returns reaches the Diagnosis intact.
+func TestJudge_ExtractsEvidence(t *testing.T) {
+	var sentPrompt string
+	reply := `{"root_cause_entities":[{"kind":"Deployment","namespace":"otel-demo","name":"frontend"}],` +
+		`"category":"cardinality-explosion",` +
+		`"evidence":[{"signal":"metrics","query":"count(app_frontend_requests_total)","observation":"series tripled"}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct{ Role, Content string } `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range body.Messages {
+			sentPrompt += m.Content + "\n"
+		}
+		b, _ := json.Marshal(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": reply}}}})
+		_, _ = w.Write(b)
+	}))
+	defer srv.Close()
+
+	d, err := newJudge(srv).Normalize(context.Background(), []byte("I queried Mimir and saw series triple on frontend."), "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"evidence"`, "never supply a citation", `"evidence": []`} {
+		if !strings.Contains(sentPrompt, want) {
+			t.Errorf("judge prompt is missing %q — without it prose agents cannot be credited for evidence, "+
+				"or can be credited for evidence they never gave", want)
+		}
+	}
+	if len(d.Evidence) != 1 || d.Evidence[0].Signal != "metrics" || d.Evidence[0].Observation != "series tripled" {
+		t.Fatalf("Evidence = %+v, want the one citation the judge returned", d.Evidence)
+	}
+}

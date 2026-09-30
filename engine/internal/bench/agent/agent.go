@@ -9,9 +9,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/tamen25/Argus/engine/internal/mcp"
 )
+
+// DefaultAgentTimeout caps a single model call when an adapter is built without
+// its own HTTP client. It is generous because the benchmark's default subject is
+// local inference: a thinking model on CPU routinely spends minutes on one turn,
+// and a timeout that fires mid-investigation is recorded as an agent failure
+// when it is really a limit of the machine. Tune with --agent-timeout.
+const DefaultAgentTimeout = 10 * time.Minute
 
 // ErrBudgetExhausted is returned when a run hits its tool-call or token cap
 // before producing a diagnosis. The orchestrator records it as a no-diagnosis
@@ -78,15 +86,22 @@ const submitToolName = "submit_diagnosis"
 // submitToolSchema is the JSON-Schema for submit_diagnosis arguments. It mirrors
 // the scored fields of bench.Diagnosis (scenario is injected by us, not the
 // agent, so it is intentionally absent here).
-const submitToolSchema = `{"type":"object","required":["root_cause_entities","category"],` +
+const submitToolSchema = `{"type":"object","required":["root_cause_entities","category","evidence"],` +
 	`"properties":{` +
 	`"root_cause_entities":{"type":"array","items":{"type":"object","required":["kind","name"],` +
 	`"properties":{"kind":{"type":"string"},"namespace":{"type":"string"},"name":{"type":"string"}}}},` +
 	`"category":{"type":"string"},` +
+	`"evidence":{"type":"array","description":"Telemetry supporting the conclusion. Cite what you actually queried.",` +
+	`"items":{"type":"object","required":["signal","observation"],` +
+	`"properties":{"signal":{"type":"string","enum":["metrics","logs","traces","alerts","topology"]},` +
+	`"query":{"type":"string"},"observation":{"type":"string"}}}},` +
 	`"summary":{"type":"string"},` +
 	`"confidence":{"type":"number"}}}`
 
 const systemPrompt = "You are an SRE incident-diagnosis agent. Investigate the incident using the " +
 	"read-only observability tools (metrics, logs, traces, alerts, topology). Do not guess — use the " +
 	"tools to gather evidence. Identify the root-cause Kubernetes entities and the fault category. " +
-	"When you are confident, call " + submitToolName + " with the root-cause entities and category."
+	"Naming the busiest or most obvious service without evidence is scored as a wrong answer, and so " +
+	"is listing many services hoping one is right. " +
+	"When you are confident, call " + submitToolName + " with the root-cause entities, the fault " +
+	"category, and the specific telemetry you observed as evidence."

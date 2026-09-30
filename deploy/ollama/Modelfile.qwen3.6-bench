@@ -1,0 +1,65 @@
+# Bench subject: qwen3.6 with a context large enough to hold the benchmark.
+#
+# Build:
+#   ollama create qwen3.6-bench -f deploy/ollama/Modelfile.qwen3.6-bench
+#
+# Verify (must print 32768, not the architectural 262144):
+#   curl -s http://127.0.0.1:11434/api/show -d '{"model":"qwen3.6-bench"}' \
+#     | grep num_ctx
+#
+# WHY THIS FILE EXISTS
+# `ollama pull qwen3.6:35b-a3b-q4_K_M` gives a model whose architecture supports
+# 262144 tokens but which carries NO num_ctx parameter. Ollama therefore serves
+# it at its own small default. The read-only MCP surface is five tools plus their
+# JSON schemas, and each diagnosis turn appends telemetry excerpts to a growing
+# transcript; that overruns the default quickly. The model then drops the
+# earliest tool output with no error and no warning, and the agent fails for
+# reasons that have nothing to do with its diagnostic ability.
+#
+# A benchmark result produced under silent truncation is worse than no result,
+# because it looks like a finding. `argus bench run` probes /api/show and aborts
+# below --min-context (default 32768) rather than trusting this file was built.
+FROM qwen3.6:35b-a3b-q4_K_M
+
+PARAMETER num_ctx 32768
+
+# Partial GPU offload: 28 of 40 layers on the card, the rest in system RAM.
+#
+# This model is ~22 GiB at Q4_K_M and does not fit a 16 GB card. Letting Ollama
+# size the offload itself does not degrade gracefully — it over-commits and dies
+# with "CUDA error: shared object initialization failed", taking llama-server
+# with it (0xc0000409). That failure is NOT a Blackwell/driver incompatibility
+# and NOT caused by num_ctx above: the same crash happens on the base model, and
+# an explicit layer count works fine. Pinning the number is the whole fix.
+#
+# Set here rather than per request because Ollama's OpenAI-compatible /v1
+# endpoint does not accept native options, and the bench agent speaks /v1.
+#
+# Measured on an RTX 5070 Ti (16.3 GB, driver 610.74) at num_ctx 32768, with the
+# model unloaded between measurements — leaving a previous runner resident makes
+# the lower settings look far worse than they are:
+#
+#   num_gpu     tok/s    note
+#    0 (CPU)     2.4     baseline
+#   20          22.7
+#   26          46.1     <- chosen (mean of 2)
+#   28          48.8     mean of 2; VRAM 16.0 of 16.3 GB
+#   30           6.1     thrashing — reports no error, just collapses
+#
+# 28 is ~5% faster than 26 and leaves roughly 300 MB of VRAM free. 26 gives up
+# that 5% for ~1.1 GB of headroom, which is the better trade for an unattended
+# matrix: anything else claiming VRAM mid-run (a browser, Docker Desktop, the
+# desktop compositor) tips it into the 30-layer regime, and that failure is
+# silent — worse-than-CPU throughput with no error to alert you. Raise to 28 for
+# attended runs on an otherwise idle machine.
+#
+# The full 32k KV cache is allocated up front, so these numbers already include
+# it; context filling during a run will not push it over later.
+PARAMETER num_gpu 26
+
+# Sampling is deliberately left at the model's own recommended values
+# (temperature 1, top_p 0.95, top_k 20, presence_penalty 1.5) rather than forced
+# to greedy decoding. Qwen thinking models degrade into repetition loops at
+# temperature 0, which would look like agent incompetence in the results. Run
+# variance is handled the honest way instead — `--repeats N`, with the standard
+# deviation reported next to every mean.

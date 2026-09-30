@@ -1,16 +1,16 @@
-# Argus — development targets (CLAUDE.md contract: created in Phase 0, kept working forever).
+# Argus — development targets (created in Phase 0; keep them working).
 # Run from repo root on Linux/WSL2. Requires: go, node/npm, docker, kind, kubectl, helm.
 
 SHELL := /bin/bash
 ENGINE_DIR := engine
 PLUGIN_DIR := plugin
 
-.PHONY: dev-up dev-heal dev-down test test-integration lint build demo demo-down help soak soak-analyze
+.PHONY: dev-up dev-heal dev-down test coverage test-integration lint build demo demo-down help soak soak-analyze
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
 
-dev-up: ## kind cluster: LGTM + otel-demo + chaos-mesh (+ argus from Phase 1)
+dev-up: ## kind cluster: LGTM + otel-demo + chaos-mesh (argus itself not deployed yet — BACKLOG B-17)
 	bash deploy/kind/bootstrap.sh
 
 dev-heal: ## Recover after a Docker Desktop restart (re-attach the history mount, wait for LGTM)
@@ -22,6 +22,10 @@ dev-down: ## Delete the kind dev cluster
 test: ## Unit tests, all modules
 	cd $(ENGINE_DIR) && go test ./...
 	@if [ -f $(PLUGIN_DIR)/package.json ]; then cd $(PLUGIN_DIR) && npm run test:ci --if-present; fi
+
+coverage: ## Engine tests + the >=70% coverage gate CI enforces on the deterministic core
+	cd $(ENGINE_DIR) && go test -cover ./... > $(CURDIR)/.cover.out; rc=$$?; cat $(CURDIR)/.cover.out; exit $$rc
+	bash scripts/coverage-gate.sh .cover.out
 
 test-integration: ## Integration tests (testcontainers; needs docker)
 	cd $(ENGINE_DIR) && go test -tags integration -count=1 ./...
