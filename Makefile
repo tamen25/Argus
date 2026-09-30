@@ -10,7 +10,7 @@ PLUGIN_DIR := plugin
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
 
-dev-up: ## kind cluster: LGTM + otel-demo + chaos-mesh (+ argus from Phase 1)
+dev-up: ## kind cluster: LGTM + otel-demo + chaos-mesh (argus itself not deployed yet — BACKLOG B-17)
 	bash deploy/kind/bootstrap.sh
 
 dev-down: ## Delete the kind dev cluster
