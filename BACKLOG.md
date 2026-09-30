@@ -73,9 +73,6 @@ Not defects. Tracked here so nothing is lost between sessions.
   HolmesGPT), and the spend cap. With local inference removed (2026-10-01), every
   real run is a paid API call. Measured: one run is roughly 50k–110k tokens, so
   the floor matrix (48 runs) is about 2.5M–5M tokens per agent.
-- [ ] **B-45** — `engine/argus`, a 53 MB build of the engine, has been committed
-  since #31 (2026-07-16). Untrack it and add it to `.gitignore`; purging it from
-  history would need a force push, which the `main` ruleset forbids.
 - [ ] **B-33** — Flagship artifacts. Done: the report generator
   (`bench report`, `--compare`, `bench run --condition`). Still open: (a) how
   the environment is put into the `degraded` and `remediated` conditions — a
@@ -98,6 +95,9 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-45** (#79) — `engine/argus` (a 53 MB build committed in #31) untracked and
+  git-ignored. It remains in history: purging it needs a force push, which the
+  `main` ruleset forbids.
 - [x] **Local inference removed** (#78) — `deploy/ollama/`, the Ollama probe and
   context guard, `--local-only` and `--min-context`. Reports record the model id
   and endpoint; the judge guard compares model ids.
