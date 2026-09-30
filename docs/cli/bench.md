@@ -274,8 +274,10 @@ argus bench report --compare degraded,remediated runs/    # the comparison
 
 **`--condition` is a label, nothing more.** It records what state *you* put the
 environment's telemetry in (for the flagship experiment: `degraded` before
-applying Argus's remediations, `remediated` after). Argus does not change the
-environment and does not verify the label; every report says so.
+applying Argus's remediations, `remediated` after). `bench run` does not change
+the environment and does not verify the label; every report says so. On the dev
+cluster, `scenarios/conditions/apply.sh` puts the telemetry into each condition
+and proves it took effect (see `scenarios/conditions/README.md`).
 
 **Leaderboard** (no `--compare`): one table per condition, agents × scenarios.
 A cell is `mean ± spread (answered/attempts)`. Agents are ranked by the mean of

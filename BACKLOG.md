@@ -73,10 +73,8 @@ Not defects. Tracked here so nothing is lost between sessions.
   HolmesGPT), and the spend cap. With local inference removed (2026-10-01), every
   real run is a paid API call. Measured: one run is roughly 50k–110k tokens, so
   the floor matrix (48 runs) is about 2.5M–5M tokens per agent.
-- [ ] **B-33** — Flagship artifacts. Done: the report generator
-  (`bench report`, `--compare`, `bench run --condition`). Still open: (a) how
-  the environment is put into the `degraded` and `remediated` conditions — a
-  repeatable script, not a manual step; (b) the plugin leaderboard page and the
+- [ ] **B-33** — Flagship artifacts. Done: the report generator (#74) and the
+  telemetry conditions (#81). Still open: (b) the plugin leaderboard page and the
   engine endpoint behind it; (c) the run-matrix cost projection (§12.4 —
   confirm with the user before the first full run). The harness gaps that
   blocked it are fixed (B-39 to B-43); what remains is choosing the models
@@ -95,6 +93,12 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-33a** (#81) — `scenarios/conditions/apply.sh baseline|degraded|remediated`
+  switches the dev cluster's telemetry with an Alloy pipeline stage and waits
+  until the condition shows in the telemetry. Degraded: broken propagation and
+  logs without trace context (our construction, detected by Argus's rules).
+  Remediated: Argus's `missing-resource-attributes` patch, held to the template
+  by a test. All three verified live.
 - [x] **B-47** (#80) — 7 of the 12 remediation templates the rules named did not
   exist (13 of 18 rules), so `argus remediate` and the plugin's remediation
   panel failed for them — including ARG-RES-002, which fires on 17 of 18

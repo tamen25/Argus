@@ -4,6 +4,8 @@ One YAML file per scenario (`apiVersion: argus/v1alpha1`, `kind: BenchScenario`,
 schema in master plan §3.2). Fault manifests and scripts live in `faults/`.
 `categories.yaml` is the closed list of fault categories every agent is offered;
 a scenario's category must be on it.
+`conditions/` puts the telemetry into the flagship's degraded and remediated
+conditions; see [conditions/README.md](conditions/README.md).
 
 **Before adding one, read [docs/bench/authoring-scenarios.md](../docs/bench/authoring-scenarios.md).**
 Every rule in it is a failure that already happened.
