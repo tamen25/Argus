@@ -51,17 +51,12 @@ type Evidence struct {
 // surface. A citation naming something else is malformed.
 var ValidSignals = []string{"metrics", "logs", "traces", "alerts", "topology"}
 
-// validate checks one evidence item is well-formed.
-func (e Evidence) validate(i int) error {
-	if strings.TrimSpace(e.Observation) == "" {
-		return fmt.Errorf("diagnosis: evidence[%d]: observation is empty", i)
-	}
+// WellFormed reports whether a citation names a known signal and says what was
+// observed. A malformed citation is not an error in the diagnosis — it is simply
+// not a citation, and scoring counts only well-formed ones.
+func (e Evidence) WellFormed() bool {
 	sig := strings.ToLower(strings.TrimSpace(e.Signal))
-	if !slices.Contains(ValidSignals, sig) {
-		return fmt.Errorf("diagnosis: evidence[%d]: signal %q, want one of %s",
-			i, e.Signal, strings.Join(ValidSignals, ", "))
-	}
-	return nil
+	return strings.TrimSpace(e.Observation) != "" && slices.Contains(ValidSignals, sig)
 }
 
 // Validate enforces the same constraints as schema/diagnosis.json in Go, so a
@@ -85,22 +80,33 @@ func (d Diagnosis) Validate() error {
 	if d.Confidence < 0 || d.Confidence > 1 {
 		return fmt.Errorf("diagnosis: confidence %v out of [0,1]", d.Confidence)
 	}
-	// Evidence is optional at the schema level — a scenario decides whether it is
-	// mandatory (ScoringSpec.RequireEvidence) — but anything supplied must be
-	// well-formed, so a malformed citation cannot pass as a real one.
-	for i, e := range d.Evidence {
-		if err := e.validate(i); err != nil {
-			return err
-		}
-	}
+	// Evidence is deliberately NOT validated here. Rejecting the whole diagnosis
+	// over one bad citation made the run a normalization failure, which the
+	// summary excludes from the mean — so an agent that cited garbage dropped out
+	// of its own average instead of scoring zero, and its average went UP. A
+	// malformed citation is now just not counted (see WellFormedEvidence), and a
+	// diagnosis left with none scores zero under requireEvidence like any other
+	// uncited answer.
 	return nil
 }
 
-// CitedSignals returns the distinct, normalized signals the diagnosis cites,
-// sorted. Used by scoring to reward breadth of investigation.
+// WellFormedEvidence returns the citations scoring will count.
+func (d Diagnosis) WellFormedEvidence() []Evidence {
+	var out []Evidence
+	for _, e := range d.Evidence {
+		if e.WellFormed() {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// CitedSignals returns the distinct, normalized signals among the well-formed
+// citations, sorted. A malformed signal name (e.g. "prometheus") is not listed:
+// the report should show what the agent validly consulted.
 func (d Diagnosis) CitedSignals() []string {
 	seen := map[string]bool{}
-	for _, e := range d.Evidence {
+	for _, e := range d.WellFormedEvidence() {
 		sig := strings.ToLower(strings.TrimSpace(e.Signal))
 		if sig != "" {
 			seen[sig] = true

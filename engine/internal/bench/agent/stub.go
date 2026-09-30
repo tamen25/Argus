@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -72,9 +71,22 @@ type StubConfig struct {
 	Profile StubProfile
 	// Namespace is the environment namespace the stub guesses entities in.
 	Namespace string
-	// Obvious is the workload name the "obvious" profile guesses. Defaults to
-	// "checkout" — the busiest service in otel-demo.
+	// Obvious is the workload the entity-naming profiles (obvious, shotgun,
+	// cited) put forward. It is REQUIRED for them and has no default: set it to
+	// the scenario's ground-truth entity. A calibration that guesses the entity
+	// measures the guess, not the rubric — with a wrong default, "cited" scored
+	// 0.5 instead of its true ceiling of 1.0, understating what fabricated
+	// evidence can get away with.
 	Obvious string
+	// Category is the fault classification the "cited" profile claims, and is
+	// required for it: set it to the scenario's ground-truth category so the
+	// profile represents a fully-correct answer. The other profiles always claim
+	// a deliberately wrong category.
+	Category string
+	// Extra names the workloads "shotgun" lists alongside Obvious. Set it to the
+	// scenario's decoys to check the decoy penalty actually bites; left empty it
+	// falls back to a generic spread of otel-demo services.
+	Extra []string
 }
 
 // NewStub builds a calibration stub. An unknown profile is an error: silently
@@ -84,9 +96,10 @@ func NewStub(cfg StubConfig) (*StubAgent, error) {
 	if ns == "" {
 		ns = "otel-demo"
 	}
-	obvious := cfg.Obvious
-	if obvious == "" {
-		obvious = "checkout"
+	obvious := strings.TrimSpace(cfg.Obvious)
+	if obvious == "" && cfg.Profile != StubVague {
+		return nil, fmt.Errorf("stub profile %q needs the entity to name (--stub-obvious): "+
+			"set it to the scenario's ground-truth entity", cfg.Profile)
 	}
 
 	s := &StubAgent{profile: cfg.Profile}
@@ -95,28 +108,43 @@ func NewStub(cfg StubConfig) (*StubAgent, error) {
 		// No entities at all. The diagnosis will fail validation downstream,
 		// which is itself the calibration signal.
 		s.category = "performance-degradation"
-		s.summary = "Elevated latency in the checkout path."
+		s.summary = "Elevated latency somewhere in the request path."
 	case StubObvious:
 		s.entities = []stubEntity{{Kind: "Deployment", Namespace: ns, Name: obvious}}
 		s.category = "performance-degradation"
-		s.summary = "Elevated latency in the checkout path; the checkout deployment looks unhealthy."
+		s.summary = "Elevated latency; the " + obvious + " deployment looks unhealthy."
 	case StubShotgun:
-		// A spread of plausible otel-demo workloads including the obvious one.
-		for _, n := range []string{obvious, "frontend", "cart", "payment", "product-catalog"} {
+		extra := cfg.Extra
+		if len(extra) == 0 {
+			extra = []string{"frontend", "cart", "payment", "product-catalog"}
+		}
+		seen := map[string]bool{}
+		for _, n := range append([]string{obvious}, extra...) {
+			n = strings.TrimSpace(n)
+			if n == "" || seen[n] {
+				continue
+			}
+			seen[n] = true
 			s.entities = append(s.entities, stubEntity{Kind: "Deployment", Namespace: ns, Name: n})
 		}
 		s.category = "performance-degradation"
-		s.summary = "Several services in the checkout path show elevated latency."
+		s.summary = "Several services show elevated latency."
 	case StubCited:
+		if strings.TrimSpace(cfg.Category) == "" {
+			return nil, fmt.Errorf("stub profile %q needs the category to claim (--stub-category): "+
+				"set it to the scenario's ground-truth category", cfg.Profile)
+		}
 		s.entities = []stubEntity{{Kind: "Deployment", Namespace: ns, Name: obvious}}
-		// Deliberately the correct category, to isolate what evidence alone adds.
-		s.category = "cardinality-explosion"
-		s.summary = "Active series for checkout metrics are growing without bound."
-		// Plausible-looking and entirely invented — the stub queried nothing.
+		// Deliberately the scenario's own category, to isolate what evidence adds.
+		s.category = cfg.Category
+		s.summary = "Telemetry for " + obvious + " shows the reported fault signature."
+		// Plausible-looking and entirely invented — the stub queried nothing. It
+		// uses the stack's real service label (job) so it reads like a genuine
+		// citation; the scorer checks citations for form, never for truth.
 		s.evidence = []stubEvidence{{
 			Signal:      "metrics",
-			Query:       `count({__name__=~".+", service_name="checkout"})`,
-			Observation: "active series for checkout climbing steadily over the window",
+			Query:       `count({job="` + obvious + `"})`,
+			Observation: "active series for " + obvious + " climbing steadily over the window",
 		}}
 	default:
 		return nil, fmt.Errorf("unknown stub profile %q (want %s)",
@@ -153,13 +181,6 @@ func (s *StubAgent) Diagnose(_ context.Context, _ Task) (Result, error) {
 		return Result{}, err
 	}
 	return Result{Raw: raw, Usage: Usage{Steps: 1}}, nil
-}
-
-// SortedProfiles is a small helper for stable CLI help text.
-func SortedProfiles() []string {
-	p := StubProfiles()
-	sort.Strings(p)
-	return p
 }
 
 var _ Agent = (*StubAgent)(nil)

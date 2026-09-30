@@ -6,27 +6,27 @@ turned out to be wrong and how it was found.
 
 ## What the validation changed
 
-The scenario originally named **checkout** as ground truth. On a live cluster
-that premise is unachievable:
+The scenario originally named **checkout** as ground truth. It could not work,
+but the reason first recorded here was wrong, and the way it was wrong is the
+more useful lesson.
 
-```
-count by (__name__) ({job="checkout"})
-  go_config_gogc_percent            1
-  go_goroutine_count                1
-  go_memory_*                       6
-  go_processor_limit                1
-  target_info                       1
-                                   --
-                                   10 series
-```
+**First reading (wrong).** On a cluster about ten minutes old, checkout showed
+only Go runtime metrics plus `target_info` — 10 series, no request metrics at
+all — and that was written up as "checkout emits no request metrics".
 
-checkout (Go) emits **only Go runtime metrics plus `target_info`**. It has no
-request-level metrics at all, so no volume of traffic can explode its
-cardinality. The scenario could not have worked, and no amount of care writing
-the fault manifest would have revealed that — only querying the backend did.
+**What is actually true.** Nine hours later the same query returned 226 series,
+including `rpc_server_*` and `rpc_client_*` histograms. Request metrics appear
+once a service has *served traffic*; ten minutes in, checkout had not yet. The
+reading was a cold-cluster artifact. Always check a ground truth against a warm
+cluster.
 
-frontend (Node.js) does emit request metrics, and one of them carries an
-unbounded dimension:
+**Why checkout still cannot be the target.** Its request metrics are bounded.
+The only per-request dimension is `rpc_method`, and it has one value
+(`PlaceOrder`), alongside a service name and a gRPC status code. There is nothing
+unbounded to explode, so no volume of traffic produces a cardinality incident
+there. The retarget to frontend stands; only its stated reason changed.
+
+frontend (Node.js) emits request metrics that carry an unbounded dimension:
 
 ```
 app_frontend_requests_total{job="frontend", method="GET", status="200",

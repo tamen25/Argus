@@ -74,19 +74,37 @@ agents at it:
 
 ```bash
 argus bench run --scenario scenarios/my-scenario.yaml \
-  --agent stub --stub-profile obvious --inject none --repeats 3
+  --agent stub --stub-profile obvious --stub-obvious <ground-truth-name> \
+  --inject none --repeats 3
 ```
 
-| `--stub-profile` | Answers with | Should score |
-|---|---|---|
-| `vague` | prose, no entities | no diagnosis at all |
-| `obvious` | the most conspicuous workload, generic category, no evidence | ~0 |
-| `shotgun` | many plausible entities | ~0 (decoys + dilution) |
-| `cited` | right entity, right category, **fabricated** evidence | high — this is the honest ceiling |
+| `--stub-profile` | Answers with | Needs | Should score |
+|---|---|---|---|
+| `vague` | prose, no entities | — | no diagnosis at all |
+| `obvious` | the named workload, generic category, no evidence | `--stub-obvious` | **0.00** |
+| `shotgun` | the named workload plus others | `--stub-obvious`, optionally `--stub-shotgun` per decoy | **0.00** (decoys + dilution) |
+| `cited` | right entity, right category, **fabricated** evidence | `--stub-obvious`, `--stub-category` | **1.00** — the honest ceiling |
 
-If `obvious` scores respectably, the rubric is too loose. If nothing can pass,
-it is too tight. `cited` scoring well is expected and documents the limit of
-what form-checking evidence can achieve.
+There are no defaults for the entity or category. A calibration that guesses
+them measures the guess, not the rubric: with a wrong default entity, `cited`
+scores 0.5 instead of 1.0 and understates what fabricated evidence gets away
+with. Pass the scenario's own ground truth, and its decoys to `--stub-shotgun`
+so the decoy penalty is actually exercised.
+
+If `obvious` scores above zero, the rubric is too loose. If `cited` cannot reach
+1.00, it is too tight. `cited` scoring 1.00 is expected and documents the limit
+of what form-checking evidence can achieve.
+
+### Repeats start from a clean baseline
+
+Before each repeat injects, `bench run` waits until the scenario's steadyState
+signature is observably **absent**, and fails the repeat with a `baseline`
+error if it never is. A fault's effects can outlive its cleanup — scenario 1's
+frontend keeps exporting every series the fault created, because its OTel SDK
+holds cumulative state — and without this check a later repeat would pass its
+gate on the previous repeat's residue and be scored on stale telemetry. A
+baseline failure means the scenario's reset has to remove the fault's effects,
+not only the fault.
 
 ## Agents
 
@@ -97,16 +115,19 @@ what form-checking evidence can achieve.
 | `shell` | `--shell-command` | Wraps an existing agent (HolmesGPT, K8sGPT) |
 | `stub` | `--stub-profile` | Calibration instrument, not a bench subject |
 
-## Local inference (default) and the context guard
+## Local inference and the context guard
 
-`--local-only` is **on by default**: endpoints must be loopback and API keys are
-refused, so a run cannot quietly bill a paid API. Hostnames other than the
-loopback literals are refused *without resolving them* — a name that resolves to
-`127.0.0.1` today can resolve elsewhere tomorrow. Turning it off is a deliberate
-act, not a typo.
+Any OpenAI-compatible or Anthropic endpoint can be benchmarked. Pass
+**`--local-only`** when a run must be guaranteed never to reach a paid API:
+endpoints must then be loopback and API keys are refused outright, so the
+guarantee is enforced rather than intended. Hostnames other than the loopback
+literals are refused *without resolving them* — a name that resolves to
+`127.0.0.1` today can resolve elsewhere tomorrow.
 
-Before the run, `bench run` asks Ollama what it will actually serve and **aborts
-below `--min-context`** (default 32768):
+For a loopback endpoint, `bench run` asks Ollama what it will actually serve and
+**aborts below `--min-context`** (default 32768). This applies whether or not
+`--local-only` is set — silent truncation is a property of a locally served
+model, not of the billing policy:
 
 ```bash
 ollama create qwen3.6-bench -f deploy/ollama/Modelfile.qwen3.6-bench
@@ -121,9 +142,13 @@ agent fails for reasons unrelated to its diagnostic ability, and the result
 looks like a finding. Reports print served context beside the architectural
 maximum so the flattering number cannot stand alone.
 
-The **judge model must differ from the agent model**, enforced even with
-`--local-only=false`: a model that misreads its own output the same way twice
-launders that error into the score.
+The **judge model must differ from the agent model**, whether or not
+`--local-only` is set: a model that misreads its own output the same way twice
+launders that error into the score. Tags are compared first; for local models the
+**weights** are compared too, because `ollama create` produces a new tag over the
+same weights — `qwen3.6-bench` and the `qwen3.6:35b-a3b-q4_K_M` it was built
+from have different tags and different manifest digests but one weights blob,
+and are refused as a pair.
 
 ### Fitting a model that is bigger than your VRAM
 
@@ -140,8 +165,9 @@ the VRAM limit reports no error at all, it just collapses below CPU speed. Leave
 headroom for whatever else touches the GPU during a long run.
 
 Because model calls are slow under local inference, `--agent-timeout` defaults
-to 10 minutes. Too short a timeout kills a run mid-investigation and records it
-as an agent failure when it was a limit of the machine.
+to 10 minutes and `--judge-timeout` to 5 (judging is one short request). Too
+short a timeout kills a run mid-investigation and records it as an agent failure
+when it was a limit of the machine.
 
 Model tag, quantization, parameter size, served context and endpoint are
 recorded on every report — the same tag at a different quantization or context

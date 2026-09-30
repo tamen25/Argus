@@ -161,3 +161,42 @@ func TestProbeSurfacesUnsetNumCtx(t *testing.T) {
 		t.Fatalf("got %v, want ErrContextTooSmall", err)
 	}
 }
+
+func TestWeightsDigest(t *testing.T) {
+	const hex = "f5ee307a2982106a6eb82b62b2c00b575c9072145a759ae4660378acda8dcf2d"
+	cases := map[string]string{
+		// Real shapes from Ollama's /api/show modelfile, both platforms.
+		"# Modelfile\nFROM " + `C:\Users\u\.ollama\models\blobs\sha256-` + hex + "\nTEMPLATE x": "sha256:" + hex,
+		"FROM /root/.ollama/models/blobs/sha256-" + hex:                                         "sha256:" + hex,
+		"FROM qwen3.6:35b\n":          "", // a tag, not a blob: nothing to compare
+		"PARAMETER num_ctx 32768\n":   "", // no FROM at all
+		"# FROM sha256-" + hex + "\n": "", // a commented-out FROM is not the model
+	}
+	for mf, want := range cases {
+		if got := weightsDigest(mf); got != want {
+			t.Errorf("weightsDigest(%q) = %q, want %q", mf, got, want)
+		}
+	}
+}
+
+// TestEnforceDistinctWeights is the regression guard for B-05: a tag check let
+// qwen3.6-bench judge qwen3.6:35b-a3b-q4_K_M although `ollama create` had built
+// one FROM the other and they share byte-identical weights.
+func TestEnforceDistinctWeights(t *testing.T) {
+	same := "sha256:f5ee307a2982106a6eb82b62b2c00b575c9072145a759ae4660378acda8dcf2d"
+	other := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	agent := ModelInfo{Model: "qwen3.6-bench", WeightsDigest: same}
+
+	err := EnforceDistinctWeights(agent, ModelInfo{Model: "qwen3.6:35b-a3b-q4_K_M", WeightsDigest: same})
+	if !errors.Is(err, ErrJudgeSameModel) {
+		t.Fatalf("same weights under different tags: got %v, want ErrJudgeSameModel", err)
+	}
+	if err := EnforceDistinctWeights(agent, ModelInfo{Model: "llama3.1:8b", WeightsDigest: other}); err != nil {
+		t.Fatalf("different weights must be allowed, got %v", err)
+	}
+	// Unknown digest (a remote API has no modelfile): nothing to compare, so the
+	// weights check stands aside and the tag check is what protects.
+	if err := EnforceDistinctWeights(agent, ModelInfo{Model: "gpt-x"}); err != nil {
+		t.Fatalf("unknown digest must not be treated as a match, got %v", err)
+	}
+}

@@ -67,10 +67,23 @@ func (j *LLMJudge) Method() string { return "llm-judge" }
 
 const judgeSystem = "You convert an SRE agent's free-form incident diagnosis into strict JSON. " +
 	"Extract only what the agent actually claimed — never invent a root cause, and never infer one " +
-	"the agent did not state. Reply with JSON only, no prose and no code fences."
+	"the agent did not state. The same rule applies to evidence: copy only telemetry the agent says it " +
+	"queried or observed, and never supply a citation the agent did not give. " +
+	"Reply with JSON only, no prose and no code fences."
 
+// judgeShape includes evidence because scenarios can require it. Without it, a
+// judge-normalized answer always arrived with zero citations, so every prose
+// agent — HolmesGPT among them — scored 0 on any requireEvidence scenario no
+// matter how well it had actually investigated.
+//
+// The instruction to copy rather than supply citations matters as much as the
+// field itself: a judge that filled in plausible evidence would hand shell
+// agents points that API agents have to earn by calling the tools.
 const judgeShape = `{"root_cause_entities":[{"kind":"Deployment","namespace":"ns","name":"svc"}],` +
-	`"category":"short-fault-category","summary":"one line","confidence":0.0}`
+	`"category":"short-fault-category",` +
+	`"evidence":[{"signal":"metrics|logs|traces|alerts|topology","query":"the query the agent ran",` +
+	`"observation":"what the agent said it saw"}],` +
+	`"summary":"one line","confidence":0.0}`
 
 // Normalize asks the model to extract a Diagnosis from raw agent output, then
 // strictly parses and validates the reply. The scenario name is forced
@@ -78,7 +91,8 @@ const judgeShape = `{"root_cause_entities":[{"kind":"Deployment","namespace":"ns
 func (j *LLMJudge) Normalize(ctx context.Context, raw []byte, scenario string) (bench.Diagnosis, error) {
 	prompt := "Agent output:\n\n" + string(raw) +
 		"\n\nReturn JSON with exactly this shape:\n" + judgeShape +
-		"\n\nOmit summary and confidence if the agent did not state them."
+		"\n\nOmit summary and confidence if the agent did not state them. " +
+		"If the agent cites no telemetry, return \"evidence\": []."
 
 	content, err := j.chat(ctx, prompt)
 	if err != nil {

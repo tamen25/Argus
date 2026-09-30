@@ -17,10 +17,11 @@
 # makes the fault realistic and the ground truth honest.
 #
 # WHY NOT CHECKOUT
-# The original scenario named checkout. On a live cluster checkout (Go) emits
-# only Go runtime metrics plus target_info — 10 series, no request metrics at
-# all — so no amount of traffic can explode its cardinality. That premise was
-# unachievable, not merely unverified. See DECISIONS.md.
+# The original scenario named checkout. checkout's request metrics (rpc_*) are
+# bounded: the only per-request dimension, rpc_method, has a single value
+# (PlaceOrder), so no amount of traffic can explode its cardinality. That premise
+# was unachievable, not merely unverified. (First recorded as "checkout emits no
+# request metrics", which was a cold-cluster artifact — see DECISIONS.md.)
 #
 # WHY ADDITIVE-ONLY
 # The kubectl injector applies this file on inject and runs `kubectl delete -f`

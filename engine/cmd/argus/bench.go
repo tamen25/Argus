@@ -39,6 +39,8 @@ type benchFlags struct {
 	shellArgs    []string
 	stubProfile  string
 	stubObvious  string
+	stubCategory string
+	stubShotgun  []string
 
 	mimirURL string
 	lokiURL  string
@@ -64,6 +66,7 @@ type benchFlags struct {
 	localOnly    bool
 	minContext   int
 	agentTimeout time.Duration
+	judgeTimeout time.Duration
 
 	format string
 	out    string
@@ -95,10 +98,13 @@ Injection modes:
 Each injector rejects step types it cannot execute rather than skipping them,
 so a scenario is never scored against an environment that was never faulted.
 
-Local inference is the default (--local-only). Endpoints must be loopback and
-API keys are refused, so a run cannot quietly bill a paid API; disabling it is a
-deliberate act, not a typo. The served context is probed before the run and the
-run aborts below --min-context: Ollama serves a model at its own small default
+Pass --local-only to guarantee a run never reaches a paid API: endpoints must
+then be loopback and API keys are refused outright, so the guarantee is
+enforced rather than intended. Without it, any OpenAI-compatible or Anthropic
+endpoint may be benchmarked.
+
+A loopback endpoint's served context is probed before the run, and the run
+aborts below --min-context: Ollama serves a model at its own small default
 unless num_ctx is set explicitly, and a result produced under silent truncation
 measures the context window, not the agent. The judge model must differ from the
 agent model regardless of where either is hosted — a model that misreads its own
@@ -119,6 +125,9 @@ output the same way twice would launder that error into the score.`,
 			}
 			model, err := probeModel(cmd.Context(), f)
 			if err != nil {
+				return err
+			}
+			if err := enforceDistinctJudgeWeights(cmd.Context(), f, model); err != nil {
 				return err
 			}
 			tools, err := buildTools(f)
@@ -158,8 +167,14 @@ output the same way twice would launder that error into the score.`,
 	fl.StringVar(&f.stubProfile, "stub-profile", "vague",
 		"calibration stub answer profile: vague | obvious | shotgun | cited (with --agent=stub)")
 	fl.StringVar(&f.stubObvious, "stub-obvious", "",
-		"workload the stub guesses; set it to the scenario's ground-truth entity so calibration "+
-			"measures the rubric rather than a wrong guess")
+		"workload the stub names (required for obvious|shotgun|cited): the scenario's ground-truth "+
+			"entity, so calibration measures the rubric rather than a wrong guess")
+	fl.StringVar(&f.stubCategory, "stub-category", "",
+		"category the 'cited' stub claims (required for cited): the scenario's ground-truth category, "+
+			"so the profile can show a fully-correct answer still reaches 1.00")
+	fl.StringArrayVar(&f.stubShotgun, "stub-shotgun", nil,
+		"extra workload the 'shotgun' stub names (repeatable); pass the scenario's decoys to check "+
+			"the decoy penalty bites")
 
 	fl.StringVar(&f.mimirURL, "mimir-url", "", "Mimir base URL (enables query_prometheus + list_alerts)")
 	fl.StringVar(&f.lokiURL, "loki-url", "", "Loki base URL (enables query_loki)")
@@ -182,8 +197,10 @@ output the same way twice would launder that error into the score.`,
 	fl.StringVar(&f.judgeModel, "judge-model", "", "LLM-judge model id")
 	fl.StringVar(&f.judgeKeyEnv, "judge-api-key-env", "", "environment variable holding the judge API key")
 
-	fl.BoolVar(&f.localOnly, "local-only", true,
-		"require loopback endpoints and refuse API keys; disable deliberately to use a remote API")
+	fl.BoolVar(&f.localOnly, "local-only", false,
+		"guarantee no paid API is touched: require loopback endpoints and refuse API keys")
+	fl.DurationVar(&f.judgeTimeout, "judge-timeout", judge.DefaultJudgeTimeout,
+		"cap on a single LLM-judge call; judging is one short request, so it gets less than an agent turn")
 	fl.DurationVar(&f.agentTimeout, "agent-timeout", agent.DefaultAgentTimeout,
 		"cap on a single model call; local inference on CPU needs minutes, not seconds")
 	fl.IntVar(&f.minContext, "min-context", local.MinContextTokens,
@@ -197,9 +214,11 @@ output the same way twice would launder that error into the score.`,
 }
 
 // enforceLocalPolicy applies the local-inference rules before anything dials
-// out. It is on by default and must be switched off deliberately: the failure it
-// prevents — a benchmark quietly billing a paid API — is silent and expensive,
-// so the safe state is the one you get by typing nothing.
+// out. It is opt-in: benchmarking a remote API is a primary use case, so the
+// product does not forbid it by default. Pass --local-only when a run must be
+// guaranteed never to reach a paid API — the maintainer's own runs do — and
+// then it is enforced, not merely intended: endpoints must be loopback and API
+// keys are refused outright. Decided 2026-09-30 (DECISIONS.md).
 //
 // The judge check applies regardless of the local flag, because one model
 // grading its own output corrupts a score no matter who is hosting it.
@@ -232,15 +251,20 @@ func enforceLocalPolicy(f benchFlags) error {
 }
 
 // probeModel records what will actually serve the run and refuses to proceed
-// under a context too small to hold the tool surface plus telemetry. Only the
-// OpenAI-compatible adapter is probed: it is the local-inference path. Returns
-// nil provenance for adapters where the question does not apply.
+// under a context too small to hold the tool surface plus telemetry.
+//
+// It keys off the ENDPOINT, not --local-only. Silent truncation is a property
+// of a locally served model (Ollama serves at a small default unless num_ctx is
+// set), and the guard against it must not switch off just because the no-paid-
+// API policy is off. A loopback OpenAI-compatible endpoint is probed; a remote
+// API exposes no management API to probe and is skipped. Returns nil provenance
+// where the question does not apply.
 func probeModel(ctx context.Context, f benchFlags) (*local.ModelInfo, error) {
 	// --min-context=0 disables both the probe and the provenance record. It
-	// exists for fakes and for endpoints that do not expose Ollama's management
-	// API; a real run should never use it, and a report produced with it carries
-	// no model provenance, which is itself the tell.
-	if !f.localOnly || f.agentKind != "openai" || f.minContext <= 0 {
+	// exists for fakes and for local endpoints that are not Ollama (a proxy such
+	// as LiteLLM has no /api/show); a real run should never use it, and a report
+	// produced with it carries no model provenance, which is itself the tell.
+	if f.agentKind != "openai" || f.minContext <= 0 || !local.IsLoopback(f.endpoint) {
 		return nil, nil
 	}
 	info, err := local.Probe(ctx, f.endpoint, f.model, nil)
@@ -251,6 +275,22 @@ func probeModel(ctx context.Context, f benchFlags) (*local.ModelInfo, error) {
 		return nil, err
 	}
 	return &info, nil
+}
+
+// enforceDistinctJudgeWeights closes the gap a tag comparison leaves: the judge
+// may be a different tag for the agent's own weights (an `ollama create`
+// variant, or the base it was built from). It needs both models' provenance, so
+// it only applies when both are served locally; for a remote API there is no
+// modelfile to read and the tag check in enforceLocalPolicy is what remains.
+func enforceDistinctJudgeWeights(ctx context.Context, f benchFlags, agentModel *local.ModelInfo) error {
+	if agentModel == nil || f.judgeModel == "" || !local.IsLoopback(f.judgeEndpoint) {
+		return nil
+	}
+	judgeModel, err := local.Probe(ctx, f.judgeEndpoint, f.judgeModel, nil)
+	if err != nil {
+		return fmt.Errorf("probing judge model: %w", err)
+	}
+	return local.EnforceDistinctWeights(*agentModel, judgeModel)
 }
 
 func buildAgent(f benchFlags) (agent.Agent, error) {
@@ -285,6 +325,8 @@ func buildAgent(f benchFlags) (agent.Agent, error) {
 			Profile:   agent.StubProfile(f.stubProfile),
 			Namespace: f.injectNamespace,
 			Obvious:   f.stubObvious,
+			Category:  f.stubCategory,
+			Extra:     f.stubShotgun,
 		})
 	default:
 		return nil, fmt.Errorf("unknown --agent %q (want openai, anthropic, shell or stub)", f.agentKind)
@@ -370,7 +412,7 @@ func buildNormalizers(f benchFlags) []bench.Normalizer {
 			key = os.Getenv(f.judgeKeyEnv)
 		}
 		ns = append(ns, judge.New(judge.Config{
-			Endpoint: f.judgeEndpoint, Model: f.judgeModel, APIKey: key, Timeout: f.agentTimeout,
+			Endpoint: f.judgeEndpoint, Model: f.judgeModel, APIKey: key, Timeout: f.judgeTimeout,
 		}))
 	}
 	return ns

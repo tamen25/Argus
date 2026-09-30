@@ -37,6 +37,10 @@ type Result struct {
 	// can show whether an agent actually investigated.
 	EvidenceCount int      `json:"evidence_count"`
 	CitedSignals  []string `json:"cited_signals,omitempty"`
+	// MalformedEvidence counts citations that were not counted: an unknown
+	// signal or an empty observation. Recorded so a report shows an agent that
+	// tried to cite and got the format wrong, rather than hiding it.
+	MalformedEvidence int `json:"malformed_evidence,omitempty"`
 	// EvidenceMissing is set when the scenario required evidence and none was
 	// cited. The score is zero and the reason is explicit rather than inferred.
 	EvidenceMissing bool `json:"evidence_missing,omitempty"`
@@ -71,14 +75,15 @@ func Score(gt bench.GroundTruth, spec bench.ScoringSpec, d bench.Diagnosis) Resu
 	sortEntities(extra)
 
 	res := Result{
-		Scenario:      d.Scenario,
-		CategoryMatch: strings.EqualFold(strings.TrimSpace(gt.Category), strings.TrimSpace(d.Category)),
-		DecoysNamed:   decoysNamed(gt.Decoys, got),
-		EvidenceCount: len(d.Evidence),
-		CitedSignals:  d.CitedSignals(),
-		Matched:       matched,
-		Missed:        missed,
-		Extra:         extra,
+		Scenario:          d.Scenario,
+		CategoryMatch:     strings.EqualFold(strings.TrimSpace(gt.Category), strings.TrimSpace(d.Category)),
+		DecoysNamed:       decoysNamed(gt.Decoys, got),
+		EvidenceCount:     len(d.WellFormedEvidence()),
+		CitedSignals:      d.CitedSignals(),
+		MalformedEvidence: len(d.Evidence) - len(d.WellFormedEvidence()),
+		Matched:           matched,
+		Missed:            missed,
+		Extra:             extra,
 	}
 
 	match := spec.EntityMatch
@@ -164,10 +169,8 @@ func entitySet(es []bench.Entity) map[string]bench.Entity {
 	return m
 }
 
-func key(e bench.Entity) string {
-	norm := func(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
-	return norm(e.Kind) + "/" + norm(e.Namespace) + "/" + norm(e.Name)
-}
+// key is bench.EntityKey, named locally for brevity at the call sites.
+func key(e bench.Entity) string { return bench.EntityKey(e) }
 
 func sortEntities(es []bench.Entity) {
 	sort.Slice(es, func(i, j int) bool { return key(es[i]) < key(es[j]) })

@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -70,6 +71,13 @@ func EnforceLoopback(what, raw string) error {
 			ErrRemoteEndpoint, what, raw, host)
 	}
 	return nil
+}
+
+// IsLoopback reports whether an endpoint URL names this machine, by the same
+// literal-only rule as EnforceLoopback. It lets callers decide whether local
+// safeguards apply without making that decision an error.
+func IsLoopback(raw string) bool {
+	return EnforceLoopback("endpoint", raw) == nil
 }
 
 func isLoopbackHost(host string) bool {
@@ -127,6 +135,11 @@ type ModelInfo struct {
 	// large value here with a small EffectiveNumCtx is exactly the trap this
 	// package exists to catch.
 	ArchContextLength int `json:"arch_context_length,omitempty"`
+	// WeightsDigest identifies the weights blob the model is built FROM. Two tags
+	// can share it: `ollama create` from a base produces a new manifest (a new
+	// tag digest) over the very same weights. Recorded so a report distinguishes
+	// "a different model" from "the same model, re-tagged".
+	WeightsDigest string `json:"weights_digest,omitempty"`
 }
 
 // RequireContext asserts the served context clears the floor. An unset num_ctx
@@ -179,6 +192,7 @@ func Probe(ctx context.Context, chatEndpoint, model string, hc *http.Client) (Mo
 
 	var show struct {
 		Parameters string `json:"parameters"`
+		Modelfile  string `json:"modelfile"`
 		Details    struct {
 			Family            string `json:"family"`
 			ParameterSize     string `json:"parameter_size"`
@@ -198,6 +212,7 @@ func Probe(ctx context.Context, chatEndpoint, model string, hc *http.Client) (Mo
 		ParameterSize:     show.Details.ParameterSize,
 		EffectiveNumCtx:   parseNumCtx(show.Parameters),
 		ArchContextLength: archContextLength(show.ModelInfo),
+		WeightsDigest:     weightsDigest(show.Modelfile),
 	}, nil
 }
 
@@ -217,6 +232,49 @@ func parseNumCtx(params string) int {
 		}
 	}
 	return 0
+}
+
+// fromBlob matches the weights reference in a modelfile's FROM line. Ollama
+// renders it as a path to the blob store ending in sha256-<hex>, with
+// platform path separators, so only the digest itself is anchored.
+var fromBlob = regexp.MustCompile(`(?m)^FROM\s+\S*sha256[-:]([0-9a-f]{64})`)
+
+// weightsDigest extracts the weights blob digest from a modelfile, or "" when
+// the FROM line names no blob (e.g. a remote reference).
+func weightsDigest(modelfile string) string {
+	m := fromBlob.FindStringSubmatch(modelfile)
+	if m == nil {
+		return ""
+	}
+	return "sha256:" + m[1]
+}
+
+// EnforceDistinctWeights refuses a judge that runs the agent's own weights under
+// a different tag. EnforceDistinctJudge compares tags and catches the obvious
+// case; this catches the one a tag check cannot: qwen3.6-bench, built by
+// `ollama create` FROM qwen3.6:35b-a3b-q4_K_M, has a different tag and a
+// different manifest digest but byte-identical weights.
+//
+// A LoRA adapter on the same base is refused too. It shares the base model's
+// failure modes, which is exactly what an independent judge must not do.
+//
+// When either digest is unknown (a remote API exposes no modelfile) there is
+// nothing to compare, and the tag check is the only protection available.
+func EnforceDistinctWeights(agentModel, judgeModel ModelInfo) error {
+	a, j := agentModel.WeightsDigest, judgeModel.WeightsDigest
+	if a == "" || j == "" || a != j {
+		return nil
+	}
+	return fmt.Errorf("%w: %q and %q are different tags for the same weights (%s). "+
+		"Pull a second, genuinely different model for the judge",
+		ErrJudgeSameModel, agentModel.Model, judgeModel.Model, shortDigest(a))
+}
+
+func shortDigest(d string) string {
+	if len(d) > len("sha256:")+12 {
+		return d[:len("sha256:")+12]
+	}
+	return d
 }
 
 // archContextLength finds the "<family>.context_length" entry, whose key is

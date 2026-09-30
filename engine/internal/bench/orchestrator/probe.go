@@ -17,79 +17,78 @@ type InstantQuerier interface {
 	QueryInstant(ctx context.Context, query string, at time.Time) (json.RawMessage, error)
 }
 
-// PromQLProbe waits until the scenario's telemetry condition holds — the fault
-// is not merely applied but *observable*. Those are different moments: metrics
-// reach a backend a scrape interval or more after the workload changes, and an
-// agent asked in that gap sees a healthy system and is scored on it.
+// PromQLProbe reads the scenario's steady-state query against a metrics
+// backend. It answers one question — does the fault's signature hold RIGHT NOW —
+// and keeps no state between calls.
 //
-// A scenario with no steadyState block is treated as immediately ready, matching
-// the previous behavior, and the report is expected to say so.
+// That statelessness is deliberate. An earlier version tracked the settle window
+// inside the probe, and since one probe serves every repeat of a run, repeat 2
+// inherited repeat 1's timer and skipped its settle window entirely. All timing
+// (settle, baseline wait, deadlines) now lives in the orchestrator, in per-call
+// local state that cannot leak between repeats.
+//
+// A scenario with no steadyState block is treated as immediately ready, and the
+// report is expected to say steady state was not verified.
 type PromQLProbe struct {
 	Q InstantQuerier
-	// Now is injectable for tests.
-	Now func() time.Time
-
-	// firstHeld records when the condition first held, for the settle wait.
-	firstHeld time.Time
 }
 
-// Reached evaluates the scenario's steady-state query.
-func (p *PromQLProbe) Reached(ctx context.Context, sc bench.Scenario) (bool, error) {
+// signature is what one read of the steady-state query found.
+type signature int
+
+const (
+	// unknown: the backend did not answer, so neither "present" nor "absent"
+	// can be claimed. Early in a run this is normal (no scrape has landed yet).
+	unknown signature = iota
+	// absent: the query answered and the fault's condition does not hold.
+	absent
+	// present: the query answered and the fault's condition holds.
+	present
+)
+
+// read evaluates the steady-state query once and classifies the result.
+func (p *PromQLProbe) read(ctx context.Context, sc bench.Scenario) (signature, error) {
 	ss := sc.Spec.SteadyState
-	if ss == nil {
-		return true, nil
-	}
 	if p.Q == nil {
-		return false, fmt.Errorf("scenario %q declares steadyState but no metrics backend is configured "+
+		return unknown, fmt.Errorf("scenario %q declares steadyState but no metrics backend is configured "+
 			"(pass --mimir-url)", sc.Metadata.Name)
 	}
-	now := p.now()
-
-	raw, err := p.Q.QueryInstant(ctx, ss.Query, now)
+	raw, err := p.Q.QueryInstant(ctx, ss.Query, time.Now())
 	if err != nil {
-		// A backend that is not answering yet is a not-yet, not a failure: during
-		// bootstrap the query legitimately fails before the first scrape lands.
-		return false, nil
+		return unknown, nil // backend not answering yet: a not-yet, not a failure
 	}
 	v, ok, err := firstSampleValue(raw)
 	if err != nil {
-		return false, fmt.Errorf("steady-state query %q: %w", ss.Query, err)
+		return unknown, fmt.Errorf("steady-state query %q: %w", ss.Query, err)
 	}
 	if !ok {
-		return false, nil // empty result: the series does not exist yet
+		return absent, nil // empty result: the series does not exist
 	}
-
-	if ss.Min != nil && v < *ss.Min {
-		p.firstHeld = time.Time{}
-		return false, nil
+	if (ss.Min != nil && v < *ss.Min) || (ss.Max != nil && v > *ss.Max) {
+		return absent, nil
 	}
-	if ss.Max != nil && v > *ss.Max {
-		p.firstHeld = time.Time{}
-		return false, nil
-	}
-
-	// Condition holds. Hold it for the settle window before declaring steady, so
-	// a value that has only just crossed the line is not mistaken for an
-	// established state.
-	settle, err := ss.SettleDur()
-	if err != nil {
-		return false, err
-	}
-	if settle <= 0 {
-		return true, nil
-	}
-	if p.firstHeld.IsZero() {
-		p.firstHeld = now
-		return false, nil
-	}
-	return !now.Before(p.firstHeld.Add(settle)), nil
+	return present, nil
 }
 
-func (p *PromQLProbe) now() time.Time {
-	if p.Now != nil {
-		return p.Now()
+// Reached reports whether the fault's signature holds right now. It does not
+// apply the settle window; the orchestrator does.
+func (p *PromQLProbe) Reached(ctx context.Context, sc bench.Scenario) (bool, error) {
+	if sc.Spec.SteadyState == nil {
+		return true, nil
 	}
-	return time.Now()
+	sig, err := p.read(ctx, sc)
+	return sig == present, err
+}
+
+// Clean reports whether the fault's signature is verifiably absent — the state a
+// repeat must start from for its result to be independent of the previous one.
+// An unanswered query is NOT clean: absence has to be observed, not assumed.
+func (p *PromQLProbe) Clean(ctx context.Context, sc bench.Scenario) (bool, error) {
+	if sc.Spec.SteadyState == nil {
+		return true, nil
+	}
+	sig, err := p.read(ctx, sc)
+	return sig == absent, err
 }
 
 // firstSampleValue pulls the first numeric sample out of a Prometheus instant
@@ -152,4 +151,7 @@ func samplePair(pair []any) (float64, bool, error) {
 	}
 }
 
-var _ SteadyStateProbe = (*PromQLProbe)(nil)
+var (
+	_ SteadyStateProbe = (*PromQLProbe)(nil)
+	_ BaselineProbe    = (*PromQLProbe)(nil)
+)

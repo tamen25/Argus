@@ -50,12 +50,13 @@ func RenderReportMarkdown(r Report) string {
 
 	s := r.Summary
 	fmt.Fprintf(&b, "## Summary\n\n")
-	fmt.Fprintf(&b, "| Score (mean ± sd) | Answered | Entity score | Category match | Budget exhausted | Mean tool calls | Mean tokens |\n")
-	fmt.Fprintf(&b, "|---:|---:|---:|---:|---:|---:|---:|\n")
-	fmt.Fprintf(&b, "| **%.2f ± %.2f** | %d/%d (%.0f%%) | %.2f ± %.2f | %.0f%% | %d | %.1f | %.0f |\n\n",
+	fmt.Fprintf(&b, "| Score (mean ± sd) | Answered | Entity score | Category match | Uncited | Budget exhausted | Mean tool calls | Mean tokens |\n")
+	fmt.Fprintf(&b, "|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+	fmt.Fprintf(&b, "| **%.2f ± %.2f** | %d/%d (%.0f%%) | %.2f ± %.2f | %.0f%% | %.0f%% | %d | %.1f | %.0f |\n\n",
 		s.MeanScore, s.StdDevScore,
 		s.Diagnoses, s.Attempts, s.AnswerRate*100,
 		s.MeanEntityScore, s.StdDevEntityScore, s.CategoryMatchRate*100,
+		s.EvidenceMissingRate*100,
 		s.BudgetExhausted, s.MeanToolCalls, s.MeanTokens)
 
 	fmt.Fprintf(&b, "## Runs\n\n")
@@ -68,7 +69,8 @@ func RenderReportMarkdown(r Report) string {
 			ent = fmt.Sprintf("%.2f", run.Score.EntityScore)
 			cat = boolMark(run.Score.CategoryMatch)
 			decoys = fmt.Sprintf("%d", len(run.Score.DecoysNamed))
-			ev = evidenceCell(run.Score.EvidenceCount, run.Score.CitedSignals, run.Score.EvidenceMissing)
+			ev = evidenceCell(run.Score.EvidenceCount, run.Score.CitedSignals, run.Score.EvidenceMissing,
+				run.Score.MalformedEvidence)
 		}
 		fmt.Fprintf(&b, "| %d | %s | %s | %s | %s | %s | %s | %d | %d | %s |\n",
 			run.Repeat, score, ent, cat, decoys, ev, dash(run.Normalization),
@@ -199,17 +201,21 @@ func missedEntities(r Report) []string {
 
 // evidenceCell renders what the agent cited: the count plus which signals, or an
 // explicit marker when the scenario required evidence and got none.
-func evidenceCell(count int, signals []string, missing bool) string {
-	if missing {
-		return "**none**"
+// evidenceCell renders what the agent validly cited, flagging citations that
+// did not count so an agent that tried and got the format wrong is visible
+// rather than indistinguishable from one that never tried.
+func evidenceCell(count int, signals []string, missing bool, malformed int) string {
+	cell := fmt.Sprintf("%d", count)
+	switch {
+	case missing:
+		cell = "**none**"
+	case len(signals) > 0:
+		cell = fmt.Sprintf("%d (%s)", count, strings.Join(signals, ", "))
 	}
-	if count == 0 {
-		return "0"
+	if malformed > 0 {
+		cell += fmt.Sprintf(" +%d malformed", malformed)
 	}
-	if len(signals) == 0 {
-		return fmt.Sprintf("%d", count)
-	}
-	return fmt.Sprintf("%d (%s)", count, strings.Join(signals, ", "))
+	return cell
 }
 
 // decoyTally lists decoys the agent asserted, most frequent first, so a report

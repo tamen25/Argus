@@ -119,45 +119,45 @@ func TestProbeRequiresBackendWhenSteadyStateDeclared(t *testing.T) {
 	}
 }
 
-// TestProbeSettleWindow: a value that has only just crossed the line is not an
-// established state. The condition must hold across the settle window.
-func TestProbeSettleWindow(t *testing.T) {
-	q := &fakeQuerier{raw: vectorJSON("9000")}
-	now := time.Unix(1000, 0)
-	p := &PromQLProbe{Q: q, Now: func() time.Time { return now }}
-	sc := scenarioWithSteadyState(&bench.SteadyState{Query: "count(x)", Min: f64(5000), Settle: "60s"})
-
-	if ok, _ := p.Reached(context.Background(), sc); ok {
-		t.Fatal("first crossing should start the settle window, not end it")
+// TestProbeCleanRequiresObservedAbsence: a baseline is only clean when the
+// query answered and the condition does not hold. An unreachable backend proves
+// nothing, so it must not count as clean.
+func TestProbeCleanRequiresObservedAbsence(t *testing.T) {
+	sc := scenarioWithSteadyState(&bench.SteadyState{Query: "count(x)", Min: f64(300)})
+	cases := []struct {
+		name string
+		q    *fakeQuerier
+		want bool
+	}{
+		{"below threshold", &fakeQuerier{raw: vectorJSON("40")}, true},
+		{"series absent", &fakeQuerier{raw: `{"status":"success","data":{"resultType":"vector","result":[]}}`}, true},
+		{"fault present", &fakeQuerier{raw: vectorJSON("2000")}, false},
+		{"backend down", &fakeQuerier{err: errors.New("connection refused")}, false},
 	}
-	now = now.Add(30 * time.Second)
-	if ok, _ := p.Reached(context.Background(), sc); ok {
-		t.Fatal("30s into a 60s settle window should not be ready")
-	}
-	now = now.Add(31 * time.Second)
-	if ok, _ := p.Reached(context.Background(), sc); !ok {
-		t.Fatal("past the settle window should be ready")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := (&PromQLProbe{Q: tc.q}).Clean(context.Background(), sc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Fatalf("Clean = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
-// TestProbeSettleResetsOnDip: a metric that falls back below the threshold has
-// not held, and the window restarts.
-func TestProbeSettleResetsOnDip(t *testing.T) {
+// TestProbeIsStateless: the probe answers "does it hold now" and nothing else.
+// Settle state kept inside the probe leaked from one repeat into the next.
+func TestProbeIsStateless(t *testing.T) {
 	q := &fakeQuerier{raw: vectorJSON("9000")}
-	now := time.Unix(1000, 0)
-	p := &PromQLProbe{Q: q, Now: func() time.Time { return now }}
+	p := &PromQLProbe{Q: q}
 	sc := scenarioWithSteadyState(&bench.SteadyState{Query: "count(x)", Min: f64(5000), Settle: "60s"})
-
-	_, _ = p.Reached(context.Background(), sc) // starts the window
-	q.raw = vectorJSON("100")                  // dips back below
-	now = now.Add(30 * time.Second)
-	if ok, _ := p.Reached(context.Background(), sc); ok {
-		t.Fatal("a dip below the threshold must not be ready")
-	}
-	q.raw = vectorJSON("9000")
-	now = now.Add(1 * time.Second)
-	if ok, _ := p.Reached(context.Background(), sc); ok {
-		t.Fatal("the settle window must restart after a dip")
+	for i := 0; i < 3; i++ {
+		ok, err := p.Reached(context.Background(), sc)
+		if err != nil || !ok {
+			t.Fatalf("call %d: Reached = (%v, %v), want (true, nil) on every call", i, ok, err)
+		}
 	}
 }
 

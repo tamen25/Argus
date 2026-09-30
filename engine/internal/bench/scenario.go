@@ -253,10 +253,10 @@ func (s Scenario) validate() error {
 	// A decoy that is also ground truth would penalize the correct answer.
 	truth := map[string]bool{}
 	for _, e := range s.Spec.GroundTruth.RootCauseEntities {
-		truth[entityKey(e)] = true
+		truth[EntityKey(e)] = true
 	}
 	for i, e := range s.Spec.GroundTruth.Decoys {
-		if truth[entityKey(e)] {
+		if truth[EntityKey(e)] {
 			return fmt.Errorf("spec.groundTruth.decoys[%d]: %s/%s/%s is also a root-cause entity",
 				i, e.Kind, e.Namespace, e.Name)
 		}
@@ -281,9 +281,12 @@ func (s Scenario) validate() error {
 	return nil
 }
 
-// entityKey normalizes an entity for comparison, matching the scorer's keying so
-// load-time validation and scoring agree on what "the same entity" means.
-func entityKey(e Entity) string {
+// EntityKey normalizes an entity for comparison (case- and
+// whitespace-insensitive kind/namespace/name). It is the single definition:
+// load-time validation (a decoy that is also ground truth) and scoring both
+// call it, so they can never disagree about what "the same entity" means.
+// There used to be two copies kept in sync by a comment.
+func EntityKey(e Entity) string {
 	norm := func(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 	return norm(e.Kind) + "/" + norm(e.Namespace) + "/" + norm(e.Name)
 }
