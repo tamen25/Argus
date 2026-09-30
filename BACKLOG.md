@@ -31,7 +31,8 @@ next starts, so nothing sits unmerged.
    trace propagation, missing `service.name`, deploy regression.
 4. ~~**Release plumbing (B-20, B-37).**~~ Done. goreleaser + plugin zip, with the action
    major-version bumps. Required for the v1.0 exit gate.
-5. **Plugin hygiene (B-21–B-24).** One small PR.
+5. ~~**Plugin hygiene (B-21–B-24).**~~ Done, except what is blocked upstream
+   (B-24, and the rest of B-21).
 6. **v1.0 artifacts (B-31–B-33).** A real scored run, the second (judge) model,
    the flagship `--compare` report and leaderboard. The run-matrix cost
    projection is confirmed with the user before the first full run (master plan
@@ -47,17 +48,20 @@ Anytime: B-17 (deploy argus from `dev-up`). Needs the user: B-35 (catalog submis
 
 ## P2 — Plugin
 
-- [ ] **B-21** — npm audit reports 12 (7 high) with **zero shipped exposure**. Prod
-  `src/` imports none of them, `dist/module.js` contains none, and
-  `@grafana/*`/`react`/`react-router` are externals Grafana supplies. The real
-  fix: `react-router-dom` is used only in a test, so move it to
-  `devDependencies`. **Don't** run `npm audit fix --force`; it bumps the Grafana
-  SDK outside its declared range.
-- [ ] **B-22** — Bump `@grafana/*` from 13.0.2 to the current 13.x patch.
-- [ ] **B-23** — `App.test.tsx` logs React Router v7 future-flag warnings, and its
-  assertion `expect(container).toBeInTheDocument()` cannot fail.
-- [ ] **B-24** — `@stylistic/eslint-plugin-ts` is deprecated; migrate to
-  `@stylistic/eslint-plugin`.
+- [ ] **B-21** — npm audit reports 11 (5 high), down from 13, with **zero shipped
+  exposure**: each sits in or behind a package Grafana supplies at runtime
+  (`@grafana/data|ui|runtime` and `react-router*` are webpack externals), and
+  none of `moment`, `dompurify`, `react-use`, `js-cookie` or `react-router`
+  appears in `dist/`. Clearing them needs `@grafana/*` 13.2 and React Router 7,
+  which moves the SDK two minors past the pinned 13.0 line — a compatibility
+  decision, not hygiene. **Don't** run
+  `npm audit fix --force`; it bumps the Grafana SDK outside its declared range.
+- [ ] **B-24** — `@stylistic/eslint-plugin-ts` is deprecated, but it is a peer
+  dependency of `@grafana/eslint-config` 9, which is what the current
+  create-plugin scaffold (7.11.0) still pins. `@grafana/eslint-config` 10 moves
+  to `@stylistic/eslint-plugin` and drops the `./flat.js` export the scaffolded
+  `.config/eslint.config.mjs` imports. **Blocked upstream**: migrate when
+  create-plugin adopts eslint-config 10, by running its `update`.
 
 ---
 
@@ -86,6 +90,14 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-22, B-23** and the fixable part of **B-21** (#71) — `@grafana/*` 13.0.2 →
+  13.0.10; `react-router-dom` moved to `devDependencies` (only a test imports
+  it); in-range audit fixes applied; `uuid` overridden to the patched 11.1.1 —
+  the one flagged package that does reach the bundle (through
+  `@grafana/scenes`, `v4` only). `App.test.tsx` now mounts the app under
+  `/a/<plugin id>/*` as Grafana does, so the Overview page really renders and the
+  assertions can fail (mutation-tested by breaking the route); the React Router
+  warnings are gone. create-plugin scaffold 7.8.1 → 7.11.0.
 - [x] **B-20** (#70) — `release.yml` + `.goreleaser.yaml`: a `vX.Y.Z` tag builds
   the CLI for six platforms and the plugin zip (signed when
   `GRAFANA_ACCESS_POLICY_TOKEN` is set), with checksums, into a **draft**
