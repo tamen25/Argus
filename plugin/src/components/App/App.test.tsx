@@ -1,7 +1,8 @@
 import React from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AppRootProps, PluginType } from '@grafana/data';
-import { render, waitFor } from '@testing-library/react';
+import { LocationServiceProvider, locationService } from '@grafana/runtime';
+import { render, screen } from '@testing-library/react';
 import App from './App';
 
 const mockGet = jest.fn().mockResolvedValue({
@@ -38,16 +39,29 @@ describe('Components/App', () => {
     } as unknown as AppRootProps;
   });
 
-  test('mounts the scenes app without throwing', async () => {
-    // Route resolution inside SceneApp needs Grafana's router context, which
-    // jsdom doesn't have — page behavior is covered by the content-component
-    // tests and the Playwright smoke. This guards the scenes wiring itself
-    // (e.g. missing browser APIs crashed it before jest-setup stubbed them).
-    const { container } = render(
-      <MemoryRouter initialEntries={['/a/tamen25-argus-app/overview']}>
-        <App {...props} />
+  test('routes the plugin base path to the Overview page', async () => {
+    // Mounted the way Grafana mounts an app plugin: under /a/<plugin id>/*.
+    // Without that parent route the scenes router matches nothing and the app
+    // renders an empty tree, which no assertion on the container can detect.
+    render(
+      <MemoryRouter
+        initialEntries={['/a/tamen25-argus-app/overview']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <LocationServiceProvider service={locationService}>
+          <Routes>
+            <Route path="/a/tamen25-argus-app/*" element={<App {...props} />} />
+          </Routes>
+        </LocationServiceProvider>
       </MemoryRouter>
     );
-    await waitFor(() => expect(container).toBeInTheDocument(), { timeout: 2000 });
+    // The page fetched its data from the plugin backend and rendered it: the
+    // route matched, the scene activated, and the content component mounted.
+    expect(await screen.findByText(/Fleet Instrumentation Score/)).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith('/api/plugins/tamen25-argus-app/resources/scores');
+    expect(screen.getByRole('link', { name: 'Drill into findings' })).toHaveAttribute(
+      'href',
+      '/a/tamen25-argus-app/scores'
+    );
   });
 });
