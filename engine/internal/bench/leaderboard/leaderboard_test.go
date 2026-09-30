@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bench/agent"
-	"github.com/tamen25/Argus/engine/internal/bench/local"
 	"github.com/tamen25/Argus/engine/internal/bench/orchestrator"
 	"github.com/tamen25/Argus/engine/internal/bench/scoring"
 )
@@ -254,22 +253,22 @@ func TestDataCaveats_DiscloseWhatIsNotLikeForLike(t *testing.T) {
 	otherBudget.Budget = agent.Budget{MaxToolCalls: 40, MaxTokens: 100000}
 	judged := report("model-b", "s4-partition", "remediated", 320, 1)
 	judged.Runs[0].Normalization = "llm-judge"
-	q4 := report("model-b", "s1-cardinality", "degraded", 330, 1)
-	q4.Model = &local.ModelInfo{Model: "model-b", Quantization: "Q4_K_M", EffectiveNumCtx: 32768, WeightsDigest: "sha256:1111111111111111"}
-	q8 := report("model-b", "s1-cardinality", "remediated", 340, 1)
-	q8.Model = &local.ModelInfo{Model: "model-b", Quantization: "Q8_0", EffectiveNumCtx: 32768, WeightsDigest: "sha256:2222222222222222"}
+	viaOne := report("model-b", "s1-cardinality", "degraded", 330, 1)
+	viaOne.Model = &orchestrator.ModelInfo{Model: "model-b", Endpoint: "https://one.example/v1"}
+	viaTwo := report("model-b", "s1-cardinality", "remediated", 340, 1)
+	viaTwo.Model = &orchestrator.ModelInfo{Model: "model-b", Endpoint: "https://two.example/v1"}
 
 	otherList := report("model-a", "s2-latency", "remediated", 350, 1)
 	otherList.CategoriesOffered = nil
 
-	c, err := Compare(append(matrix(), changed, otherBudget, judged, q4, q8, otherList), "degraded", "remediated")
+	c, err := Compare(append(matrix(), changed, otherBudget, judged, viaOne, viaTwo, otherList), "degraded", "remediated")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
 		"Scenario `s1-cardinality` was run with 2 different definitions",
 		"Agent `model-a` ran under 2 different budgets",
-		"Agent `model-b` was served by 2 different model builds",
+		"Agent `model-b` was served by 2 different models or endpoints",
 		"1 run(s) were normalized by a non-deterministic method",
 		"Runs were offered 2 different fault category lists (some were offered none)",
 	} {

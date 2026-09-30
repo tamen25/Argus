@@ -1,7 +1,7 @@
 {
   "scenario": "cardinality-explosion-frontend",
   "scenario_hash": "8fb638d665e5",
-  "agent": "qwen3.6-bench",
+  "agent": "example-model",
   "env_digest": "kind-argus-golden",
   "categories_offered": [
     "cardinality-explosion",
@@ -16,12 +16,8 @@
     "MaxTokens": 400000
   },
   "model": {
-    "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
-    "model": "qwen3.6-bench",
-    "quantization": "Q4_K_M",
-    "parameter_size": "36.0B",
-    "effective_num_ctx": 32768,
-    "arch_context_length": 262144
+    "endpoint": "https://api.example/v1/chat/completions",
+    "model": "example-model"
   },
   "runs": [
     {

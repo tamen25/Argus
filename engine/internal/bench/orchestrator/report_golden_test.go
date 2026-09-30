@@ -8,7 +8,6 @@ import (
 
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bench/agent"
-	"github.com/tamen25/Argus/engine/internal/bench/local"
 	"github.com/tamen25/Argus/engine/internal/bench/scoring"
 )
 
@@ -17,8 +16,7 @@ var update = flag.Bool("update", false, "rewrite golden files")
 // goldenReport exercises every branch the bench report renders: a cited
 // diagnosis, a named decoy, a malformed citation, an uncited answer, a
 // budget-exhausted run, an LLM-judge normalization, a tool log with a failed
-// call, a wrong category, and model provenance whose served context differs
-// from the architectural maximum.
+// call, a wrong category, and the model that served it.
 func goldenReport() Report {
 	e := func(name string) bench.Entity {
 		return bench.Entity{Kind: "Deployment", Namespace: "otel-demo", Name: name}
@@ -44,18 +42,14 @@ func goldenReport() Report {
 	r := Report{
 		Scenario:     "cardinality-explosion-frontend",
 		ScenarioHash: "8fb638d665e5",
-		Agent:        "qwen3.6-bench",
+		Agent:        "example-model",
 		EnvDigest:    "kind-argus-golden",
 		CategoriesOffered: []string{
 			"cardinality-explosion", "dependency-latency", "deploy-regression", "network-partition", "oomkill",
 		},
 		Seed:   7,
 		Budget: agent.Budget{MaxToolCalls: 35, MaxTokens: 400000},
-		Model: &local.ModelInfo{
-			Endpoint: "http://127.0.0.1:11434/v1/chat/completions", Model: "qwen3.6-bench",
-			Quantization: "Q4_K_M", ParameterSize: "36.0B",
-			EffectiveNumCtx: 32768, ArchContextLength: 262144,
-		},
+		Model:  &ModelInfo{Endpoint: "https://api.example/v1/chat/completions", Model: "example-model"},
 		Runs: []RunRecord{
 			{Repeat: 0, Score: &cited, Normalization: "json",
 				Usage: agent.Usage{ToolCalls: 3, ToolErrors: 1, Tokens: 14000},

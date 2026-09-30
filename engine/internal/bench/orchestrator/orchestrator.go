@@ -20,7 +20,6 @@ import (
 
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bench/agent"
-	"github.com/tamen25/Argus/engine/internal/bench/local"
 	"github.com/tamen25/Argus/engine/internal/bench/scoring"
 )
 
@@ -92,11 +91,9 @@ type Options struct {
 	// list cannot match it. Empty means none was offered, which the report
 	// states.
 	Categories bench.Categories
-	// Model is the provenance of the inference that served this run — tag,
-	// quantization, served context, endpoint. Without it a leaderboard row
-	// cannot be reproduced: the same tag at a different quantization or context
-	// is a different subject.
-	Model *local.ModelInfo
+	// Model records which model served this run and where. Without it a
+	// leaderboard row cannot be reproduced.
+	Model *ModelInfo
 	// Now is injectable for tests.
 	Now func() time.Time
 }
@@ -154,12 +151,12 @@ type Report struct {
 	EnvDigest    string `json:"env_digest,omitempty"`
 	Condition    string `json:"condition,omitempty"`
 	// CategoriesOffered is the category list the agent chose from, as shown.
-	CategoriesOffered []string         `json:"categories_offered,omitempty"`
-	Seed              int64            `json:"seed"`
-	Budget            agent.Budget     `json:"budget"`
-	Model             *local.ModelInfo `json:"model,omitempty"`
-	Runs              []RunRecord      `json:"runs"`
-	Summary           Summary          `json:"summary"`
+	CategoriesOffered []string     `json:"categories_offered,omitempty"`
+	Seed              int64        `json:"seed"`
+	Budget            agent.Budget `json:"budget"`
+	Model             *ModelInfo   `json:"model,omitempty"`
+	Runs              []RunRecord  `json:"runs"`
+	Summary           Summary      `json:"summary"`
 }
 
 // Run executes the scenario against the agent Repeats times and returns the
@@ -435,6 +432,13 @@ func withDefaults(o Options) Options {
 		o.Normalizers = []bench.Normalizer{bench.JSONNormalizer{}}
 	}
 	return o
+}
+
+// ModelInfo is the model a run was served by: the model id the endpoint was
+// asked for, and the endpoint.
+type ModelInfo struct {
+	Endpoint string `json:"endpoint,omitempty"`
+	Model    string `json:"model"`
 }
 
 // Summarize aggregates run records the same way a Report's own Summary is

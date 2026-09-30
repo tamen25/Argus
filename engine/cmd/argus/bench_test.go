@@ -110,9 +110,6 @@ func TestBenchRun_ScoresAndRendersMarkdown(t *testing.T) {
 		"--inject", "none",
 		"--repeats", "2",
 		"--env-digest", "unit-test",
-		// The fake chat server is not Ollama and has no /api/show; this test is
-		// about scoring and rendering, not the context guard.
-		"--min-context", "0",
 	})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("bench run: %v", err)
@@ -155,7 +152,6 @@ func TestBenchRun_JSONToFile(t *testing.T) {
 		"--mimir-url", mimir.URL,
 		"--inject", "none",
 		"--format", "json", "--out", outPath,
-		"--min-context", "0", // fake chat server, no /api/show
 	})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("bench run: %v", err)

@@ -138,63 +138,23 @@ not only the fault.
 | `shell` | `--shell-command` | Wraps an existing agent (HolmesGPT, K8sGPT) |
 | `stub` | `--stub-profile` | Calibration instrument, not a bench subject |
 
-## Local inference and the context guard
+## Models, the judge, and timeouts
 
-Any OpenAI-compatible or Anthropic endpoint can be benchmarked. Pass
-**`--local-only`** when a run must be guaranteed never to reach a paid API:
-endpoints must then be loopback and API keys are refused outright, so the
-guarantee is enforced rather than intended. Hostnames other than the loopback
-literals are refused *without resolving them* — a name that resolves to
-`127.0.0.1` today can resolve elsewhere tomorrow.
+Any OpenAI-compatible chat-completions endpoint (`--agent openai`) or the
+Anthropic Messages API (`--agent anthropic`) can be benchmarked. Argus does not
+host models.
 
-For a loopback endpoint, `bench run` asks Ollama what it will actually serve and
-**aborts below `--min-context`** (default 32768). This applies whether or not
-`--local-only` is set — silent truncation is a property of a locally served
-model, not of the billing policy:
+The **judge model must differ from the agent model**: a model that misreads its
+own output the same way twice launders that error into the score. The two model
+ids are compared (ignoring case) before anything is dialed.
 
-```bash
-ollama create qwen3.6-bench -f deploy/ollama/Modelfile.qwen3.6-bench
-```
+`--agent-timeout` defaults to 10 minutes, because a reasoning model can spend
+minutes on one turn, and `--judge-timeout` to 5 (judging is one short request).
+Too short a timeout kills a run mid-investigation and records it as an agent
+failure when it was a limit of the endpoint.
 
-This matters more than it looks. `ollama pull qwen3.6:35b-a3b-q4_K_M` yields a
-model whose *architecture* supports 262144 tokens but which carries **no
-`num_ctx` parameter**, so Ollama serves it at its own small default. The MCP
-surface is five tools plus schemas, and each turn appends telemetry to a growing
-transcript; the model then drops the earliest tool output with no error. The
-agent fails for reasons unrelated to its diagnostic ability, and the result
-looks like a finding. Reports print served context beside the architectural
-maximum so the flattering number cannot stand alone.
-
-The **judge model must differ from the agent model**, whether or not
-`--local-only` is set: a model that misreads its own output the same way twice
-launders that error into the score. Tags are compared first; for local models the
-**weights** are compared too, because `ollama create` produces a new tag over the
-same weights — `qwen3.6-bench` and the `qwen3.6:35b-a3b-q4_K_M` it was built
-from have different tags and different manifest digests but one weights blob,
-and are refused as a pair.
-
-### Fitting a model that is bigger than your VRAM
-
-If the model does not fit the card, pin the GPU layer count rather than letting
-Ollama size it. Automatic sizing over-commits and dies with `CUDA error: shared
-object initialization failed`, which reads like a driver incompatibility and is
-not one — an explicit `PARAMETER num_gpu N` works on the same hardware.
-
-Tune N by measurement, **unloading between runs** (a resident runner from a
-previous test makes lower settings look much worse than they are). On a 16.3 GB
-card with the ~22 GiB qwen3.6 at Q4_K_M: CPU-only 2.4 tok/s, 26 layers 46 tok/s,
-28 layers 49 tok/s, 30 layers **6 tok/s**. That last one is the trap — passing
-the VRAM limit reports no error at all, it just collapses below CPU speed. Leave
-headroom for whatever else touches the GPU during a long run.
-
-Because model calls are slow under local inference, `--agent-timeout` defaults
-to 10 minutes and `--judge-timeout` to 5 (judging is one short request). Too
-short a timeout kills a run mid-investigation and records it as an agent failure
-when it was a limit of the machine.
-
-Model tag, quantization, parameter size, served context and endpoint are
-recorded on every report — the same tag at a different quantization or context
-is a different subject, and a leaderboard row without that cannot be reproduced.
+The model id and endpoint are recorded on every report, so a leaderboard row can
+be traced to what served it.
 
 API agents get the identical MCP tool set, so the benchmark compares **agents,
 not tool access**. That set includes the discovery tools (`list_metrics`,

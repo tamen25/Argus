@@ -136,9 +136,6 @@ func TestImportedScenario_FailsUnderScriptInjection(t *testing.T) {
 		// One imported scenario yields a one-category list, which a run refuses;
 		// a full list is supplied, as it would be for a partial import.
 		"--categories", writeTestCategories(t),
-		// This test is about the injection refusal, which must be reached; the
-		// dead endpoint would otherwise fail the context probe first.
-		"--min-context", "0",
 	})
 	if err := run.Execute(); err != nil {
 		t.Fatalf("bench run returned a hard error: %v", err)

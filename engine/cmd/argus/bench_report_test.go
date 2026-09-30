@@ -22,7 +22,6 @@ func runBench(t *testing.T, dir, condition, chatURL, mimirURL string) {
 		"--inject", "none",
 		"--condition", condition,
 		"--format", "json", "--out", filepath.Join(dir, condition+".json"),
-		"--min-context", "0", // fake chat server, no /api/show
 	})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("bench run --condition %s: %v", condition, err)

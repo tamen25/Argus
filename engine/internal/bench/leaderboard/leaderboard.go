@@ -390,8 +390,7 @@ func dataCaveats(reports []orchestrator.Report) []string {
 		add(budgets, r.Agent, budget(r.Budget))
 		lists[strings.Join(r.CategoriesOffered, ", ")] = true
 		if r.Model != nil {
-			add(models, r.Agent, fmt.Sprintf("%s %s ctx %d weights %s",
-				r.Model.Model, r.Model.Quantization, r.Model.EffectiveNumCtx, short(r.Model.WeightsDigest)))
+			add(models, r.Agent, strings.TrimSuffix(r.Model.Model+" at "+r.Model.Endpoint, " at "))
 		}
 		for _, run := range r.Runs {
 			if run.Normalization != "" && run.Normalization != "json" {
@@ -418,7 +417,7 @@ func dataCaveats(reports []orchestrator.Report) []string {
 	for _, a := range sortedKeys(models) {
 		if len(models[a]) > 1 {
 			out = append(out, fmt.Sprintf(
-				"Agent `%s` was served by %d different model builds (%s). Those are different subjects under one name.",
+				"Agent `%s` was served by %d different models or endpoints (%s). Those are different subjects under one name.",
 				a, len(models[a]), strings.Join(sortedKeys(models[a]), "; ")))
 		}
 	}

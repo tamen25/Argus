@@ -22,10 +22,10 @@ type OpenAIConfig struct {
 	Model    string
 	APIKey   string
 	HTTP     *http.Client
-	// Timeout caps a single chat completion when HTTP is nil. Local inference
-	// needs far longer than a hosted API: a thinking model on CPU can spend
-	// minutes on one turn, and too short a timeout kills the run mid-investigation
-	// and records it as an agent failure rather than an environment limit.
+	// Timeout caps a single chat completion when HTTP is nil. A reasoning model
+	// can spend minutes on one turn, and too short a timeout kills the run
+	// mid-investigation and records it as an agent failure rather than a limit
+	// of the endpoint.
 	Timeout time.Duration
 }
 
