@@ -12,7 +12,7 @@ Engine connection: plugin settings `jsonData.engineUrl` (default
 `http://argus-engine.argus.svc:8080`, matching the kind deployment). The
 plugin health check pings the engine's `/healthz` through the proxy.
 
-## Pages (Phase 1)
+## Pages
 
 Built on **@grafana/scenes** with `@grafana/ui` components only — the app
 inherits Grafana theming untouched.
@@ -74,7 +74,32 @@ re-execution (stepped instant queries differ from live ruler evaluation in
 staleness, lookback, and alignment), and verdicts apply only to the covered
 telemetry segments — the coverage ratio is shown up front.
 
-The Bench page arrives with Phase 4 (§3.3).
+### Bench
+
+Answers: *can an AI agent diagnose an incident from this telemetry, and does
+fixing the telemetry change that?* Reads `/resources/bench` (→ engine
+`/api/bench`), which builds its tables from a directory of
+`argus bench run --format json` reports, re-read on every load.
+
+- **Comparison.** When the runs carry both the `degraded` and `remediated`
+  telemetry conditions, the page opens on their comparison: per agent, the mean
+  score under each condition, Δ, how many scenarios the means cover, and the
+  answered rate under each. A scenario missing or unanswered on one side is
+  listed as excluded, never counted as zero. Any two conditions can be picked.
+- **Leaderboard.** One table per condition: agents × scenarios, each cell
+  `mean ± spread (answered/attempts)`.
+- **Caveats** from the reports are shown on the page and never hidden: how the
+  score is computed, that evidence is checked for form and not truth, that a
+  condition is a label the operator attached, and that Δ is not a significance
+  test.
+
+Start the engine with `--bench-reports <dir>`. Without it the page says how to
+configure it; with an empty directory it says there are no runs yet. On the dev
+cluster the directory is the optional ConfigMap `argus-bench-reports` (see
+`deploy/kind/argus-engine.yaml`). The kubelet can take several minutes to
+refresh a mounted ConfigMap; restart the engine deployment to see new reports
+at once. The tables and their rules are the same as
+`argus bench report`: see [argus bench](cli/bench.md).
 
 ## Development
 

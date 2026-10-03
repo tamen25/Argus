@@ -61,6 +61,13 @@
     },
     {
       "type": "page",
+      "name": "Bench",
+      "path": "/a/%PLUGIN_ID%/bench",
+      "addToNav": true,
+      "defaultNav": false
+    },
+    {
+      "type": "page",
       "icon": "cog",
       "name": "Configuration",
       "path": "/plugins/%PLUGIN_ID%",

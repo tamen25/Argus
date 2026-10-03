@@ -42,6 +42,10 @@ func fakeEngine(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"generated_at":"2026-07-16T12:00:00Z","window":"1h0m0s","report":{"currency":"USD","lines":[],"storage":[],"total_monthly":39.34}}`))
 	})
+	mux.HandleFunc("/api/bench", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"reports":2,"conditions":["degraded","remediated"],"compare":"` + r.URL.Query().Get("compare") + `"}`))
+	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -175,5 +179,24 @@ func TestCheckHealth(t *testing.T) {
 	r, err = dead.CheckHealth(context.Background(), nil)
 	if err != nil || r.Status != backend.HealthStatusError {
 		t.Errorf("dead-engine health = %+v err=%v", r, err)
+	}
+}
+
+// /bench proxies the leaderboard, passing the comparison request through.
+func TestBenchResourceProxiesWithQuery(t *testing.T) {
+	app := testApp(t, fakeEngine(t).URL)
+	res := callResource(t, app, "/bench?compare=degraded,remediated")
+	if res.Status != http.StatusOK {
+		t.Fatalf("status = %d body=%s", res.Status, res.Body)
+	}
+	var got struct {
+		Reports int    `json:"reports"`
+		Compare string `json:"compare"`
+	}
+	if err := json.Unmarshal(res.Body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Reports != 2 || got.Compare != "degraded,remediated" {
+		t.Errorf("proxied response = %+v, want the compare query to reach the engine", got)
 	}
 }

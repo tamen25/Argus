@@ -309,6 +309,11 @@ without adding evidence.
 Everything is computed from the run reports by plain arithmetic. No model is
 involved, and the run reports' own caveats are carried into every rendering.
 
+The same tables are in the Grafana app's **Bench** page: start the engine with
+`argus serve --bench-reports <dir>` and it serves them at `/api/bench`
+(`?compare=baseline,treatment` for the comparison), re-reading the directory on
+every request. See [the plugin page](../plugin.md).
+
 ## Importing ITBench scenarios
 
 ```bash
