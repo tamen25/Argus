@@ -8,4 +8,5 @@ export enum ROUTES {
   ServiceGraph = 'service-graph',
   Spend = 'spend',
   Backtest = 'backtest',
+  Bench = 'bench',
 }

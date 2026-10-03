@@ -1,6 +1,6 @@
 import { getBackendSrv } from '@grafana/runtime';
 import pluginJson from '../plugin.json';
-import { BacktestReport, Remediation, Report, ServiceGraph, Showback } from './types';
+import { BacktestReport, BenchResponse, Remediation, Report, ServiceGraph, Showback } from './types';
 
 const base = `/api/plugins/${pluginJson.id}/resources`;
 
@@ -14,6 +14,12 @@ export function fetchCost(): Promise<Showback> {
 
 export function fetchBacktest(): Promise<BacktestReport> {
   return getBackendSrv().get<BacktestReport>(`${base}/backtest`);
+}
+
+// fetchBench returns the leaderboard, plus the comparison of two telemetry
+// conditions when compare is given ("baseline,treatment").
+export function fetchBench(compare?: string): Promise<BenchResponse> {
+  return getBackendSrv().get<BenchResponse>(`${base}/bench`, compare ? { compare } : undefined);
 }
 
 export function fetchServiceGraph(): Promise<ServiceGraph> {
