@@ -168,3 +168,73 @@ export interface BacktestReport {
   rules: BacktestScorecard[];
   caveats: string[];
 }
+
+// Mirrors engine/internal/bench/leaderboard (served by /api/bench).
+export interface BenchCell {
+  scenario: string;
+  attempts: number;
+  diagnoses: number;
+  budget_exhausted: number;
+  answer_rate: number;
+  mean_score: number;
+  stddev_score: number;
+}
+
+export interface BenchRow {
+  agent: string;
+  cells: BenchCell[];
+  scenarios_run: number;
+  scenarios_answered: number;
+  mean_score: number;
+  attempts: number;
+  diagnoses: number;
+  answer_rate: number;
+}
+
+export interface BenchBoard {
+  condition: string;
+  scenarios: string[];
+  rows: BenchRow[];
+}
+
+export interface BenchLeaderboard {
+  boards: BenchBoard[];
+  caveats: string[];
+}
+
+export interface BenchScenarioComparison {
+  scenario: string;
+  baseline?: BenchCell;
+  treatment?: BenchCell;
+  delta?: number;
+}
+
+export interface BenchAgentComparison {
+  agent: string;
+  scenarios: BenchScenarioComparison[];
+  paired: number;
+  baseline_mean: number;
+  treatment_mean: number;
+  delta: number;
+  baseline_attempts: number;
+  baseline_diagnoses: number;
+  baseline_answer_rate: number;
+  treatment_attempts: number;
+  treatment_diagnoses: number;
+  treatment_answer_rate: number;
+  excluded?: string[];
+}
+
+export interface BenchComparison {
+  baseline: string;
+  treatment: string;
+  agents: BenchAgentComparison[];
+  caveats: string[];
+}
+
+export interface BenchResponse {
+  reports: number;
+  conditions: string[];
+  leaderboard?: BenchLeaderboard;
+  comparison?: BenchComparison;
+}

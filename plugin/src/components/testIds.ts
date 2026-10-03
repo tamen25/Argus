@@ -21,4 +21,7 @@ export const testIds = {
   backtest: {
     container: 'data-testid backtest-container',
   },
+  bench: {
+    container: 'data-testid bench-container',
+  },
 };

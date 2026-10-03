@@ -1,12 +1,21 @@
 import React from 'react';
 import { AppRootProps } from '@grafana/data';
-import { EmbeddedScene, SceneApp, SceneAppPage, SceneFlexItem, SceneFlexLayout, SceneReactObject, useSceneApp } from '@grafana/scenes';
+import {
+  EmbeddedScene,
+  SceneApp,
+  SceneAppPage,
+  SceneFlexItem,
+  SceneFlexLayout,
+  SceneReactObject,
+  useSceneApp,
+} from '@grafana/scenes';
 import { PLUGIN_BASE_URL, ROUTES } from '../../constants';
 import { OverviewContent } from '../Overview/OverviewContent';
 import { ScoresContent } from '../Scores/ScoresContent';
 import { ServiceGraphContent } from '../ServiceGraph/ServiceGraphContent';
 import { SpendContent } from '../Spend/SpendContent';
 import { BacktestContent } from '../Backtest/BacktestContent';
+import { BenchContent } from '../Bench/BenchContent';
 
 // Scenes app shell (master plan §8: Scenes for all data-bound pages);
 // page content stays plain @grafana/ui React rendered via SceneReactObject.
@@ -56,10 +65,19 @@ function getSceneApp() {
       }),
       new SceneAppPage({
         title: 'Backtest',
-        subTitle: 'Replay alert rules against history — would-have-fired, time-to-detection, pages/week, scored against the incident registry',
+        subTitle:
+          'Replay alert rules against history — would-have-fired, time-to-detection, pages/week, scored against the incident registry',
         url: `${PLUGIN_BASE_URL}/${ROUTES.Backtest}`,
         routePath: `${ROUTES.Backtest}/*`,
         getScene: reactScene(BacktestContent),
+      }),
+      new SceneAppPage({
+        title: 'Bench',
+        subTitle:
+          'Can an AI agent diagnose incidents from this telemetry? Leaderboard per telemetry condition, and the degraded-vs-remediated comparison',
+        url: `${PLUGIN_BASE_URL}/${ROUTES.Bench}`,
+        routePath: `${ROUTES.Bench}/*`,
+        getScene: reactScene(BenchContent),
       }),
     ],
   });

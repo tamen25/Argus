@@ -110,9 +110,20 @@ spec:
             - --backtest-mimir-tenant=anonymous
             - --backtest-window=6h
             - --backtest-step=2m
+            # Bench leaderboard (Phase 4): run reports from the optional
+            # ConfigMap argus-bench-reports. Load them with
+            #   kubectl -n argus create configmap argus-bench-reports \
+            #     --from-file=<dir of bench run --format json reports> \
+            #     --dry-run=client -o yaml | kubectl apply -f -
+            # /api/bench re-reads on every request, but the kubelet takes up to
+            # several minutes to refresh a mounted ConfigMap (9 minutes was
+            # measured for one created after the pod started). To see new
+            # reports at once: kubectl -n argus rollout restart deploy/argus-engine
+            - --bench-reports=/etc/argus-bench
           volumeMounts:
             - {name: pricing, mountPath: /etc/argus, readOnly: true}
             - {name: backtest, mountPath: /etc/argus-backtest, readOnly: true}
+            - {name: bench, mountPath: /etc/argus-bench, readOnly: true}
           ports:
             - {name: http, containerPort: 8080}
             - {name: otlp-grpc, containerPort: 4317}
@@ -130,6 +141,10 @@ spec:
           configMap: {name: argus-pricing}
         - name: backtest
           configMap: {name: argus-backtest}
+        # optional: the engine starts, and the page says "no runs yet",
+        # before any report has been loaded.
+        - name: bench
+          configMap: {name: argus-bench-reports, optional: true}
 ---
 apiVersion: v1
 kind: Service
