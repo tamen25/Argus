@@ -35,11 +35,10 @@ next starts, so nothing sits unmerged.
    (B-24, and the rest of B-21).
 6. **v1.0 artifacts (B-31–B-33).** Built and verified end to end on kind with the
    stub: the conditions (#81), the report and the Bench page (#74, #82), and the
-   matrix runner (#85). What remains is the real run: choose the hosted models
-   (B-46), confirm the runner's cost projection (master plan §12.4), run
-   `docs/bench/flagship.md`, then tag v1.0.
+   matrix runner (#85). The agent is chosen (B-46). What remains is the real
+   run (`docs/bench/flagship.md`), then the v1.0 tag.
 
-Needs the user: B-46 (flagship models and spend cap), B-35 (catalog submission status).
+Needs the user: B-35 (catalog submission status).
 
 ## P2 — Plugin
 
@@ -66,18 +65,10 @@ Not defects. Tracked here so nothing is lost between sessions.
 
 - [ ] **B-32** — The LLM judge (the fallback normalizer for shell agents) needs a
   model other than the agent's; the guard refuses the same model id.
-- [ ] **B-46** — **Needs a decision.** Which hosted models make up the flagship
-  agents (master plan §2: at least one frontier model, one budget model, and
-  HolmesGPT), and the spend cap. With local inference removed (2026-10-01), every
-  real run is a paid API call. Measured: one run is roughly 50k–110k tokens, so
-  the floor matrix (48 runs) is about 2.5M–5M tokens per agent.
 - [ ] **B-33** — Flagship artifacts. Done: the report generator (#74), the
   telemetry conditions (#81), the plugin Bench page (#82) and the matrix runner
-  with its cost projection (#85). Still open: (c) the user's confirmation of
-  that projection (§12.4 —
-  confirm with the user before the first full run). The harness gaps that
-  blocked it are fixed (B-39 to B-43); what remains is choosing the models
-  (B-46).
+  with its cost projection (#85), and the agent (B-46). Still open: the run
+  itself and its published comparison.
 - [ ] **B-34** — `deploy/terraform/` is a README placeholder. **Cut from v1.0**
   (DECISIONS.md, 2026-10-09): the flagship runs on kind; EKS is post-v1.0.
 - [ ] **B-35** — Plugin catalog submission. §9 says to submit at Phase 4 *start*
@@ -92,6 +83,9 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-46** (#87) — the flagship agent: one open-weights model on a server
+  the maintainer runs, reached through the OpenAI-compatible adapter; no hosted
+  APIs (DECISIONS.md, 2026-10-09).
 - [x] **B-33c, runner** (#85) — `scripts/bench-matrix.sh` runs scenarios ×
   agents × conditions, switching each condition with `apply.sh`, resuming where
   it stopped, restoring baseline at the end, and writing the comparison. Without

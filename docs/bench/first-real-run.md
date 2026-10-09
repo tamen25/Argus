@@ -115,8 +115,9 @@ tokens run low, BACKLOG B-43) is covered by unit and mutation tests but not yet
 by a real run. No leaderboard or degraded-vs-remediated comparison should be
 published until a real run has confirmed it.
 
-These runs used a locally served model. Argus no longer supports local
-inference (2026-10-01, DECISIONS.md); the next runs use hosted API models.
+These runs used a model on a server the maintainer runs, reached through the
+OpenAI-compatible adapter. Argus hosts no model (2026-10-01, DECISIONS.md); the
+flagship uses the same model (2026-10-09).
 
 All runs left the cluster clean: cart's `VALKEY_ADDR` restored, no
 annotations, no fault objects.
