@@ -67,7 +67,7 @@ docs/        Documentation (mkdocs)
 
 ## Development
 
-Dev environment is Linux (WSL2 Ubuntu 24.04 on Windows). Requires: Go ≥1.25, Node 22, Docker,
+Dev environment is Linux (WSL2 Ubuntu 24.04 on Windows). Requires: Go ≥1.26, Node 22, Docker,
 kind, kubectl, helm, make.
 
 ```bash

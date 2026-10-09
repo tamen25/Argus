@@ -10,7 +10,7 @@ against `checksums.txt`. The Grafana plugin zip is attached to the same release
 
 Linux or WSL2 Ubuntu 24.04. Install:
 
-- Go ≥ 1.25 (the `toolchain` line in `engine/go.mod` pins the exact release,
+- Go ≥ 1.26 (the `toolchain` line in `engine/go.mod` pins the exact release,
   and `go` downloads it automatically)
 - Node 22 + npm
 - Docker (or Docker Desktop with WSL2 integration)
