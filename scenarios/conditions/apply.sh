@@ -64,8 +64,24 @@ else
   sed 's/^/      /' "$snippet" >> "$values"
 fi
 
+# The chart is downloaded once and reused. `helm upgrade grafana/alloy` fetches
+# it from GitHub on every call, and one timed-out download aborted a matrix
+# run; a 144-run matrix switches condition several times over many hours.
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/argus/charts"
+chart="$cache/alloy-$chart_version.tgz"
+if [ ! -s "$chart" ]; then
+  mkdir -p "$cache"
+  for attempt in 1 2 3; do
+    if helm pull grafana/alloy --version "$chart_version" --destination "$cache" >/dev/null 2>&1 && [ -s "$chart" ]; then
+      break
+    fi
+    [ "$attempt" = 3 ] && { echo "could not download the alloy $chart_version chart after 3 attempts" >&2; exit 1; }
+    sleep $((attempt * 10))
+  done
+fi
+
 echo "==> alloy: applying the $cond condition (chart $chart_version)"
-helm upgrade alloy grafana/alloy -n lgtm --version "$chart_version" -f "$values" "${helm_ctx[@]}" \
+helm upgrade alloy "$chart" -n lgtm -f "$values" "${helm_ctx[@]}" \
   --wait --timeout 5m >/dev/null
 k -n lgtm rollout status ds/alloy --timeout=5m >/dev/null
 k -n lgtm create configmap argus-bench-condition --from-literal=condition="$cond" \
@@ -82,7 +98,7 @@ k -n lgtm create configmap argus-bench-condition --from-literal=condition="$cond
 query() {
   local enc out
   enc="$(printf '%s' "$1" | sed 's/%/%25/g; s/ /%20/g; s/"/%22/g; s/{/%7B/g; s/}/%7D/g; s/\[/%5B/g; s/\]/%5D/g; s/!/%21/g; s/~/%7E/g; s/=/%3D/g; s/|/%7C/g; s/+/%2B/g; s/>/%3E/g; s/</%3C/g')"
-  out="$(k get --raw --request-timeout=20s \
+  out="$(k get --request-timeout=20s --raw \
     "/api/v1/namespaces/lgtm/services/mimir-gateway:80/proxy/prometheus/api/v1/query?query=$enc" 2>/dev/null)" || return 1
   case "$out" in
     *'"status":"success"'*) ;;
