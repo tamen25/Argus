@@ -39,6 +39,7 @@ func newServeCmd() *cobra.Command {
 		window      time.Duration
 		cost        serveCostConfig
 		bt          serveBacktestConfig
+		bn          serveBenchConfig
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -48,11 +49,11 @@ func newServeCmd() *cobra.Command {
 				addr: addr, otlpAddr: otlpAddr, rulesDir: rulesDir,
 				specVersionFile: specVerFile,
 				interval:        interval, maxPairs: maxPairs, window: window,
-				cost: cost, backtest: bt,
+				cost: cost, backtest: bt, bench: bn,
 			})
 		},
 	}
-	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (/healthz, /metrics, /api/report, /api/aggregates, /api/servicegraph, /api/cost, /api/backtest)")
+	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (/healthz, /metrics, /api/report, /api/aggregates, /api/servicegraph, /api/cost, /api/backtest, /api/bench)")
 	cmd.Flags().StringVar(&specVerFile, "spec-version-file", ".instrumentation-score-version", "file with the pinned Instrumentation Score spec version, echoed in reports")
 	cmd.Flags().StringVar(&otlpAddr, "otlp-grpc", "", "OTLP gRPC listen address (e.g. :4317); empty disables ingest")
 	cmd.Flags().StringVar(&rulesDir, "rules", "", "extra rule YAML directory overriding/extending built-ins")
@@ -92,6 +93,11 @@ func newServeCmd() *cobra.Command {
 	f.StringVar(&bt.probeExpr, "backtest-probe-expr", "count(target_info)", "presence-probe expression for coverage mapping")
 	f.BoolVar(&bt.synthesize, "backtest-synthesize", false, "inline defined recording rules during replay")
 	f.DurationVar(&bt.cacheTTL, "backtest-cache-ttl", 15*time.Minute, "how long /api/backtest caches a report before recomputing")
+
+	// Bench endpoint (Phase 4): serves /api/bench — the leaderboard, and the
+	// condition comparison — from a directory of `bench run --format json`
+	// reports. Unconfigured, /api/bench 404s and the plugin says so.
+	f.StringVar(&bn.reportsDir, "bench-reports", "", "directory of bench run reports (JSON) enabling the /api/bench endpoint")
 	return cmd
 }
 
@@ -112,6 +118,7 @@ type serveConfig struct {
 	window                   time.Duration
 	cost                     serveCostConfig
 	backtest                 serveBacktestConfig
+	bench                    serveBenchConfig
 }
 
 // serve runs the HTTP endpoints (and, when configured, the OTLP receiver and
@@ -141,6 +148,11 @@ func serve(ctx context.Context, cfg serveConfig) error {
 	// Backtest endpoint (independent of OTLP ingest). Configured → cached
 	// rolling-window report; unconfigured → 404 the plugin renders gracefully.
 	if err := registerBacktestEndpoint(mux, cfg.backtest); err != nil {
+		return err
+	}
+
+	// Bench leaderboard endpoint: reads run reports from a directory.
+	if err := registerBenchEndpoint(mux, cfg.bench); err != nil {
 		return err
 	}
 

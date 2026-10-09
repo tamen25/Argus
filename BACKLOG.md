@@ -73,9 +73,9 @@ Not defects. Tracked here so nothing is lost between sessions.
   HolmesGPT), and the spend cap. With local inference removed (2026-10-01), every
   real run is a paid API call. Measured: one run is roughly 50k–110k tokens, so
   the floor matrix (48 runs) is about 2.5M–5M tokens per agent.
-- [ ] **B-33** — Flagship artifacts. Done: the report generator (#74) and the
-  telemetry conditions (#81). Still open: (b) the plugin leaderboard page and the
-  engine endpoint behind it; (c) the run-matrix cost projection (§12.4 —
+- [ ] **B-33** — Flagship artifacts. Done: the report generator (#74), the
+  telemetry conditions (#81) and the plugin Bench page (#82). Still open: (c) the
+  run-matrix cost projection (§12.4 —
   confirm with the user before the first full run). The harness gaps that
   blocked it are fixed (B-39 to B-43); what remains is choosing the models
   (B-46).
@@ -93,6 +93,11 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-33b** (#82) — the plugin's **Bench** page and `argus serve
+  --bench-reports <dir>` (`/api/bench`, `?compare=` for the comparison): the
+  leaderboard per telemetry condition and the degraded-vs-remediated comparison,
+  with the reports' caveats always shown. Verified in the dev cluster's Grafana
+  (12.3.1) against real run reports.
 - [x] **B-33a** (#81) — `scenarios/conditions/apply.sh baseline|degraded|remediated`
   switches the dev cluster's telemetry with an Alloy pipeline stage and waits
   until the condition shows in the telemetry. Degraded: broken propagation and
