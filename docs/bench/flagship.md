@@ -11,9 +11,10 @@ This page is the run book, from an empty cluster to the comparison.
   requests).
 - `argus` built for WSL and on `PATH`:
   `go build -o ~/go/bin/argus ./engine/cmd/argus`.
-- An API key for each hosted agent, exported in the shell that runs the matrix.
-  Argus does not host models: agents are hosted OpenAI-compatible or Anthropic
-  endpoints, or a shell-wrapped agent such as HolmesGPT.
+- An endpoint for each agent. Argus does not host models: an agent is any
+  OpenAI-compatible or Anthropic endpoint (a hosted API, or a server you run
+  yourself), or a shell-wrapped agent such as HolmesGPT. Export each API key in
+  the shell that runs the matrix.
 
 ## 2. Describe the agents
 
@@ -27,6 +28,16 @@ holmesgpt     | --agent shell --shell-command holmes --shell-arg ask
 ```
 
 The plan asks for at least one frontier model, one budget model and HolmesGPT.
+The v1.0 flagship ran one open-weights model on a server the maintainer runs
+(DECISIONS.md, 2026-10-09), for example:
+
+```text
+qwen3.6-bench | --agent openai --endpoint http://<host>:11434/v1/chat/completions --model qwen3.6-bench
+```
+
+From WSL, `<host>` is the Windows host as WSL sees it (the default gateway,
+`ip route | awk '/^default/{print $3}'`), and the server must listen on that
+interface, not only on localhost.
 
 ## 3. Read the projection, then confirm
 
