@@ -33,13 +33,11 @@ next starts, so nothing sits unmerged.
    major-version bumps. Required for the v1.0 exit gate.
 5. ~~**Plugin hygiene (B-21–B-24).**~~ Done, except what is blocked upstream
    (B-24, and the rest of B-21).
-6. **v1.0 artifacts (B-31–B-33).** The first real scored run is done (B-31) and
-   found harness gaps, now fixed (B-39 to B-43). Next: choose the hosted models
-   (B-46) and confirm B-43 on a real run. After it: the
-   flagship `--compare` report and leaderboard (B-33, report generator in
-   progress), and the second (judge) model (B-32). The run-matrix cost
-   projection is confirmed with the user before the first full run (master plan
-   §12.4).
+6. **v1.0 artifacts (B-31–B-33).** Built and verified end to end on kind with the
+   stub: the conditions (#81), the report and the Bench page (#74, #82), and the
+   matrix runner (#85). What remains is the real run: choose the hosted models
+   (B-46), confirm the runner's cost projection (master plan §12.4), run
+   `docs/bench/flagship.md`, then tag v1.0.
 
 Needs the user: B-46 (flagship models and spend cap), B-35 (catalog submission status).
 
@@ -80,8 +78,8 @@ Not defects. Tracked here so nothing is lost between sessions.
   confirm with the user before the first full run). The harness gaps that
   blocked it are fixed (B-39 to B-43); what remains is choosing the models
   (B-46).
-- [ ] **B-34** — `deploy/terraform/` is a README placeholder; the EKS headline
-  environment is unbuilt.
+- [ ] **B-34** — `deploy/terraform/` is a README placeholder. **Cut from v1.0**
+  (DECISIONS.md, 2026-10-09): the flagship runs on kind; EKS is post-v1.0.
 - [ ] **B-35** — Plugin catalog submission. §9 says to submit at Phase 4 *start*
   (2026-07-20); status unknown.
 
