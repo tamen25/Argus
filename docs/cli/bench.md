@@ -151,10 +151,22 @@ ids are compared (ignoring case) before anything is dialed.
 `--agent-timeout` defaults to 10 minutes, because a reasoning model can spend
 minutes on one turn, and `--judge-timeout` to 5 (judging is one short request).
 Too short a timeout kills a run mid-investigation and records it as an agent
-failure when it was a limit of the endpoint.
+failure when it was a limit of the endpoint. The first flagship run hit exactly
+this: on a model partly offloaded to CPU, late turns of a long investigation took
+over 10 minutes, so it ran with `--agent-timeout 30m`.
 
-The model id and endpoint are recorded on every report, so a leaderboard row can
-be traced to what served it.
+The model id, the endpoint and the agent timeout (`agent_timeout`) are recorded
+on every report, so a leaderboard row can be traced to what served it. `bench
+report --compare` says so when an agent's reports ran under different timeouts.
+
+## Interrupting a run
+
+Ctrl-C (SIGINT) or SIGTERM stops `bench run` after the current repeat: the agent
+call is cancelled, the repeat's cleanup still removes the fault (with its own
+10-minute limit), and the command exits with an error and **writes no report**.
+A partial report would look like a finished cell to the matrix runner, which
+resumes by skipping cells that have one. A SIGKILL cannot be caught: after one,
+run the scenario's cleanup hook yourself.
 
 API agents get the identical MCP tool set, so the benchmark compares **agents,
 not tool access**. That set includes the discovery tools (`list_metrics`,

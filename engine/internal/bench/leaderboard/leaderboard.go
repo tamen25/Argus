@@ -380,14 +380,16 @@ func validate(reports []orchestrator.Report) error {
 // dataCaveats are the disclosures that depend on what the reports contain:
 // anything that makes two cells less than like-for-like.
 func dataCaveats(reports []orchestrator.Report) []string {
-	hashes := map[string]map[string]bool{}  // scenario → hashes
-	budgets := map[string]map[string]bool{} // agent → budgets
-	models := map[string]map[string]bool{}  // agent → model provenance
-	lists := map[string]bool{}              // category lists offered
+	hashes := map[string]map[string]bool{}   // scenario → hashes
+	budgets := map[string]map[string]bool{}  // agent → budgets
+	models := map[string]map[string]bool{}   // agent → model provenance
+	timeouts := map[string]map[string]bool{} // agent → per-call timeouts
+	lists := map[string]bool{}               // category lists offered
 	judged := 0
 	for _, r := range reports {
 		add(hashes, r.Scenario, short(r.ScenarioHash))
 		add(budgets, r.Agent, budget(r.Budget))
+		add(timeouts, r.Agent, timeout(r.AgentTimeout))
 		lists[strings.Join(r.CategoriesOffered, ", ")] = true
 		if r.Model != nil {
 			add(models, r.Agent, strings.TrimSuffix(r.Model.Model+" at "+r.Model.Endpoint, " at "))
@@ -412,6 +414,13 @@ func dataCaveats(reports []orchestrator.Report) []string {
 			out = append(out, fmt.Sprintf(
 				"Agent `%s` ran under %d different budgets (%s). A difference between its cells may be a budget effect.",
 				a, len(budgets[a]), strings.Join(sortedKeys(budgets[a]), "; ")))
+		}
+	}
+	for _, a := range sortedKeys(timeouts) {
+		if len(timeouts[a]) > 1 {
+			out = append(out, fmt.Sprintf(
+				"Agent `%s` ran with %d different per-call timeouts (%s). A run a shorter timeout ended has no diagnosis, and might have answered under a longer one.",
+				a, len(timeouts[a]), strings.Join(sortedKeys(timeouts[a]), "; ")))
 		}
 	}
 	for _, a := range sortedKeys(models) {
@@ -485,6 +494,13 @@ func budget(b agent.Budget) string {
 		return "uncapped"
 	}
 	return fmt.Sprintf("%d tool calls / %d tokens", b.MaxToolCalls, b.MaxTokens)
+}
+
+func timeout(d string) string {
+	if d == "" {
+		return "not recorded"
+	}
+	return d
 }
 
 func short(digest string) string {

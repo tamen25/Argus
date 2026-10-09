@@ -94,6 +94,13 @@ type Options struct {
 	// Model records which model served this run and where. Without it a
 	// leaderboard row cannot be reproduced.
 	Model *ModelInfo
+	// AgentTimeout is the cap on a single model call, recorded in the report. It
+	// is not a budget the agent sees, but a run it cuts short has no diagnosis,
+	// so a slow server under a short timeout reads as an agent that broke.
+	AgentTimeout time.Duration
+	// CleanupTimeout caps a repeat's cleanup, which runs even after the run was
+	// interrupted.
+	CleanupTimeout time.Duration
 	// Now is injectable for tests.
 	Now func() time.Time
 }
@@ -155,13 +162,23 @@ type Report struct {
 	Seed              int64        `json:"seed"`
 	Budget            agent.Budget `json:"budget"`
 	Model             *ModelInfo   `json:"model,omitempty"`
-	Runs              []RunRecord  `json:"runs"`
-	Summary           Summary      `json:"summary"`
+	// AgentTimeout is Options.AgentTimeout as a Go duration ("30m0s"); empty
+	// when the adapter's default was not recorded.
+	AgentTimeout string      `json:"agent_timeout,omitempty"`
+	Runs         []RunRecord `json:"runs"`
+	Summary      Summary     `json:"summary"`
 }
+
+// ErrInterrupted is returned, wrapping the context's error, when ctx is
+// cancelled before every repeat has finished. The partial report is returned
+// too, but it must not be saved as a finished cell: a matrix that resumes by
+// skipping existing reports would never complete it.
+var ErrInterrupted = errors.New("bench run interrupted")
 
 // Run executes the scenario against the agent Repeats times and returns the
 // report. Individual run failures are recorded, not fatal: one broken attempt
-// must not discard the rest of the matrix.
+// must not discard the rest of the matrix. Cancelling ctx stops the run after
+// the current repeat's cleanup, and Run returns ErrInterrupted.
 func Run(
 	ctx context.Context,
 	sc bench.Scenario,
@@ -188,6 +205,9 @@ func Run(
 		Budget:            opts.Budget,
 		Model:             opts.Model,
 	}
+	if opts.AgentTimeout > 0 {
+		rep.AgentTimeout = opts.AgentTimeout.String()
+	}
 
 	for i := 0; i < opts.Repeats; i++ {
 		rec := runOnce(ctx, sc, ag, tools, inj, probe, opts, i)
@@ -197,6 +217,9 @@ func Run(
 		}
 	}
 	rep.Summary = summarize(rep.Runs)
+	if err := ctx.Err(); err != nil {
+		return rep, fmt.Errorf("%w after %d of %d repeats: %w", ErrInterrupted, len(rep.Runs), opts.Repeats, err)
+	}
 	return rep, nil
 }
 
@@ -217,8 +240,15 @@ func runOnce(
 	}
 
 	// Cleanup always runs, even when the attempt fails partway: a leaked fault
-	// would poison every later repeat.
-	defer func() { _ = inj.Cleanup(ctx, sc) }()
+	// would poison every later repeat. It also runs when the run was
+	// interrupted, so it gets a context that ctx's cancellation does not reach
+	// (context.WithoutCancel keeps ctx's values but drops its cancellation),
+	// bounded by its own timeout instead.
+	defer func() {
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), opts.CleanupTimeout)
+		defer cancel()
+		_ = inj.Cleanup(cctx, sc)
+	}()
 
 	if err := inj.Reset(ctx, sc); err != nil {
 		rec.Error = fmt.Sprintf("reset: %v", err)
@@ -421,6 +451,11 @@ func withDefaults(o Options) Options {
 	}
 	if o.BaselineTimeout <= 0 {
 		o.BaselineTimeout = 10 * time.Minute
+	}
+	if o.CleanupTimeout <= 0 {
+		// A cleanup can be a rollout restart and its wait (scenario reset
+		// hooks), so this is generous.
+		o.CleanupTimeout = 10 * time.Minute
 	}
 	if o.Brief == nil {
 		o.Brief = DefaultBrief
