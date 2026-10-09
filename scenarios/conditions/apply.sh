@@ -64,8 +64,24 @@ else
   sed 's/^/      /' "$snippet" >> "$values"
 fi
 
+# The chart is downloaded once and reused. `helm upgrade grafana/alloy` fetches
+# it from GitHub on every call, and one timed-out download aborted a matrix
+# run; a 144-run matrix switches condition several times over many hours.
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/argus/charts"
+chart="$cache/alloy-$chart_version.tgz"
+if [ ! -s "$chart" ]; then
+  mkdir -p "$cache"
+  for attempt in 1 2 3; do
+    if helm pull grafana/alloy --version "$chart_version" --destination "$cache" >/dev/null 2>&1 && [ -s "$chart" ]; then
+      break
+    fi
+    [ "$attempt" = 3 ] && { echo "could not download the alloy $chart_version chart after 3 attempts" >&2; exit 1; }
+    sleep $((attempt * 10))
+  done
+fi
+
 echo "==> alloy: applying the $cond condition (chart $chart_version)"
-helm upgrade alloy grafana/alloy -n lgtm --version "$chart_version" -f "$values" "${helm_ctx[@]}" \
+helm upgrade alloy "$chart" -n lgtm -f "$values" "${helm_ctx[@]}" \
   --wait --timeout 5m >/dev/null
 k -n lgtm rollout status ds/alloy --timeout=5m >/dev/null
 k -n lgtm create configmap argus-bench-condition --from-literal=condition="$cond" \
@@ -73,11 +89,22 @@ k -n lgtm create configmap argus-bench-condition --from-literal=condition="$cond
 
 # --- prove it -------------------------------------------------------------
 # Instant queries through the API server's service proxy: no port-forward.
+#
+# query prints the value of a PromQL expression, or nothing for an empty
+# result. It FAILS when Mimir did not answer. Without that, a backend that is
+# down reads as "no service-graph edges", which is exactly what proves the
+# degraded condition; and without the timeout, a backend that never answers
+# hung this script forever.
 query() {
-  local enc
+  local enc out
   enc="$(printf '%s' "$1" | sed 's/%/%25/g; s/ /%20/g; s/"/%22/g; s/{/%7B/g; s/}/%7D/g; s/\[/%5B/g; s/\]/%5D/g; s/!/%21/g; s/~/%7E/g; s/=/%3D/g; s/|/%7C/g; s/+/%2B/g; s/>/%3E/g; s/</%3C/g')"
-  k get --raw "/api/v1/namespaces/lgtm/services/mimir-gateway:80/proxy/prometheus/api/v1/query?query=$enc" 2>/dev/null |
-    sed -n 's/.*"value":\[[^,]*,"\([^"]*\)".*/\1/p'
+  out="$(k get --request-timeout=20s --raw \
+    "/api/v1/namespaces/lgtm/services/mimir-gateway:80/proxy/prometheus/api/v1/query?query=$enc" 2>/dev/null)" || return 1
+  case "$out" in
+    *'"status":"success"'*) ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$out" | sed -n 's/.*"value":\[[^,]*,"\([^"]*\)".*/\1/p'
 }
 
 # Service-to-service edges the degradation removes (every server except
@@ -90,8 +117,8 @@ k8s_ids='count(count_over_time(target_info{k8s_deployment_name!=""}[2m]))'
 
 observed() {
   local e ids
-  e="$(query "$edges")"
-  ids="$(query "$k8s_ids")"
+  e="$(query "$edges")" || return 1
+  ids="$(query "$k8s_ids")" || return 1
   case "$cond" in
     degraded) awk -v e="${e:-0}" 'BEGIN { exit !(e < 0.01) }' ;;
     remediated) [ -n "$ids" ] && awk -v e="${e:-0}" 'BEGIN { exit !(e > 0.01) }' ;;
@@ -102,13 +129,13 @@ observed() {
 echo "==> waiting for the $cond condition to show in the telemetry (up to 8m)"
 for _ in $(seq 1 32); do
   if observed; then
-    e="$(query "$edges")"
-    ids="$(query "$k8s_ids")"
+    e="$(query "$edges" || echo '?')"
+    ids="$(query "$k8s_ids" || echo '?')"
     echo "$cond condition is live: service-to-service edges ${e:-0}/s, services with k8s identity ${ids:-0}"
     exit 0
   fi
   sleep 15
 done
 echo "the $cond condition did not show in the telemetry within 8m" \
-  "(edges=$(query "$edges"), k8s identities=$(query "$k8s_ids"))" >&2
+  "(edges=$(query "$edges" || echo 'Mimir did not answer'), k8s identities=$(query "$k8s_ids" || echo 'Mimir did not answer'))" >&2
 exit 1
