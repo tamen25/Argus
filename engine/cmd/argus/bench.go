@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -134,18 +136,26 @@ own output the same way twice would launder that error into the score.`,
 			}
 
 			opts := orchestrator.Options{
-				Repeats:     f.repeats,
-				Budget:      agent.Budget{MaxToolCalls: f.maxToolCalls, MaxTokens: f.maxTokens},
-				Normalizers: buildNormalizers(f),
-				Seed:        f.seed,
-				EnvDigest:   f.envDigest,
-				Condition:   f.condition,
-				Categories:  categories,
-				Model:       modelInfo(f),
+				Repeats:      f.repeats,
+				Budget:       agent.Budget{MaxToolCalls: f.maxToolCalls, MaxTokens: f.maxTokens},
+				Normalizers:  buildNormalizers(f),
+				Seed:         f.seed,
+				EnvDigest:    f.envDigest,
+				Condition:    f.condition,
+				Categories:   categories,
+				Model:        modelInfo(f),
+				AgentTimeout: f.agentTimeout,
 			}
 
-			rep, err := orchestrator.Run(cmd.Context(), sc, ag, tools, inj, buildProbe(f, sc), opts)
+			// An interrupt (Ctrl-C, or a matrix being stopped) cancels the run,
+			// and the orchestrator still cleans up the fault it injected. Without
+			// this the process died with the fault in place.
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			rep, err := orchestrator.Run(ctx, sc, ag, tools, inj, buildProbe(f, sc), opts)
 			if err != nil {
+				// No report on interruption: a partial one would look like a
+				// finished cell to a matrix that resumes by skipping reports.
 				return err
 			}
 			return writeBenchReport(cmd, f, rep)

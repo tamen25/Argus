@@ -260,8 +260,10 @@ func TestDataCaveats_DiscloseWhatIsNotLikeForLike(t *testing.T) {
 
 	otherList := report("model-a", "s2-latency", "remediated", 350, 1)
 	otherList.CategoriesOffered = nil
+	longerTimeout := report("model-b", "s2-latency", "remediated", 360, 1)
+	longerTimeout.AgentTimeout = "30m0s"
 
-	c, err := Compare(append(matrix(), changed, otherBudget, judged, viaOne, viaTwo, otherList), "degraded", "remediated")
+	c, err := Compare(append(matrix(), changed, otherBudget, judged, viaOne, viaTwo, otherList, longerTimeout), "degraded", "remediated")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,6 +273,7 @@ func TestDataCaveats_DiscloseWhatIsNotLikeForLike(t *testing.T) {
 		"Agent `model-b` was served by 2 different models or endpoints",
 		"1 run(s) were normalized by a non-deterministic method",
 		"Runs were offered 2 different fault category lists (some were offered none)",
+		"Agent `model-b` ran with 2 different per-call timeouts (30m0s; not recorded)",
 	} {
 		if !containsCaveat(c.Caveats, want) {
 			t.Errorf("missing caveat %q in:\n%s", want, strings.Join(c.Caveats, "\n"))

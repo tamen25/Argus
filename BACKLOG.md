@@ -83,6 +83,12 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-48** (#88) — found by the flagship run: an interrupted `bench run`
+  left its fault in the cluster (cleanup was handed the cancelled context), and
+  the report did not record the agent timeout that had ended three runs. Now
+  SIGINT/SIGTERM cancel the run, cleanup runs on a detached context with its own
+  limit, no partial report is written, and `agent_timeout` is recorded and
+  caveated by `--compare` when it differs.
 - [x] **B-46** (#87) — the flagship agent: one open-weights model on a server
   the maintainer runs, reached through the OpenAI-compatible adapter; no hosted
   APIs (DECISIONS.md, 2026-10-09).

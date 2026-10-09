@@ -183,6 +183,78 @@ func TestRun_AgentFailureRecordedNotFatal(t *testing.T) {
 	}
 }
 
+// ctxInjector records whether Cleanup was handed a usable context.
+type ctxInjector struct {
+	fakeInjector
+	cleanupCtxErr error
+	cleanupHasDue bool
+}
+
+func (c *ctxInjector) Cleanup(ctx context.Context, sc bench.Scenario) error {
+	c.cleanupCtxErr = ctx.Err()
+	_, c.cleanupHasDue = ctx.Deadline()
+	return c.fakeInjector.Cleanup(ctx, sc)
+}
+
+// cancellingAgent cancels the run while "thinking", as Ctrl-C or a stopped
+// matrix would.
+type cancellingAgent struct {
+	cancel context.CancelFunc
+	calls  int
+}
+
+func (a *cancellingAgent) Name() string { return "cancelling-agent" }
+
+func (a *cancellingAgent) Diagnose(ctx context.Context, _ agent.Task) (agent.Result, error) {
+	a.calls++
+	a.cancel()
+	return agent.Result{}, ctx.Err()
+}
+
+// An interrupted run must still remove its fault — the old behaviour handed
+// cleanup the cancelled context, so every kubectl in it died at once and the
+// fault stayed in the cluster — and must say it was interrupted, so the caller
+// does not save a partial report as a finished cell.
+func TestRun_InterruptStillCleansUpAndIsReported(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	inj := &ctxInjector{}
+	ag := &cancellingAgent{cancel: cancel}
+
+	rep, err := Run(ctx, testScenario(), ag, nil, inj, okProbe{}, fastOpts(3))
+	if !errors.Is(err, ErrInterrupted) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want ErrInterrupted wrapping context.Canceled", err)
+	}
+	if inj.cleanups != 1 {
+		t.Errorf("cleanups = %d, want 1", inj.cleanups)
+	}
+	if inj.cleanupCtxErr != nil {
+		t.Errorf("cleanup got a dead context (%v); it could not remove the fault", inj.cleanupCtxErr)
+	}
+	if !inj.cleanupHasDue {
+		t.Error("cleanup context has no deadline; a hung cleanup would hang the interrupt")
+	}
+	if ag.calls != 1 || len(rep.Runs) != 1 {
+		t.Errorf("agent calls = %d, runs = %d; want 1 and 1 (no repeat after the interrupt)", ag.calls, len(rep.Runs))
+	}
+}
+
+func TestRun_RecordsAgentTimeout(t *testing.T) {
+	opts := fastOpts(1)
+	opts.AgentTimeout = 30 * time.Minute
+	rep, err := Run(context.Background(), testScenario(), &scriptAgent{answers: []string{perfect}}, nil, &fakeInjector{}, okProbe{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.AgentTimeout != "30m0s" {
+		t.Errorf("agent_timeout = %q, want 30m0s", rep.AgentTimeout)
+	}
+	rep, _ = Run(context.Background(), testScenario(), &scriptAgent{answers: []string{perfect}}, nil, &fakeInjector{}, okProbe{}, fastOpts(1))
+	if rep.AgentTimeout != "" {
+		t.Errorf("agent_timeout = %q with none set, want empty", rep.AgentTimeout)
+	}
+}
+
 func TestRun_CleanupRunsOnFailure(t *testing.T) {
 	inj := &fakeInjector{resetErr: errors.New("cluster unreachable")}
 	ag := &scriptAgent{answers: []string{perfect}}
