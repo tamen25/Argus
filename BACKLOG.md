@@ -74,8 +74,9 @@ Not defects. Tracked here so nothing is lost between sessions.
   real run is a paid API call. Measured: one run is roughly 50k–110k tokens, so
   the floor matrix (48 runs) is about 2.5M–5M tokens per agent.
 - [ ] **B-33** — Flagship artifacts. Done: the report generator (#74), the
-  telemetry conditions (#81) and the plugin Bench page (#82). Still open: (c) the
-  run-matrix cost projection (§12.4 —
+  telemetry conditions (#81), the plugin Bench page (#82) and the matrix runner
+  with its cost projection (#85). Still open: (c) the user's confirmation of
+  that projection (§12.4 —
   confirm with the user before the first full run). The harness gaps that
   blocked it are fixed (B-39 to B-43); what remains is choosing the models
   (B-46).
@@ -93,6 +94,12 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-33c, runner** (#85) — `scripts/bench-matrix.sh` runs scenarios ×
+  agents × conditions, switching each condition with `apply.sh`, resuming where
+  it stopped, restoring baseline at the end, and writing the comparison. Without
+  `--yes` it only prints the plan and the projected cost (§12.4); 144 runs
+  project to about 9–14 hours and 7–15M tokens. Run book:
+  `docs/bench/flagship.md`.
 - [x] **B-33b** (#82) — the plugin's **Bench** page and `argus serve
   --bench-reports <dir>` (`/api/bench`, `?compare=` for the comparison): the
   leaderboard per telemetry condition and the degraded-vs-remediated comparison,
