@@ -73,11 +73,22 @@ k -n lgtm create configmap argus-bench-condition --from-literal=condition="$cond
 
 # --- prove it -------------------------------------------------------------
 # Instant queries through the API server's service proxy: no port-forward.
+#
+# query prints the value of a PromQL expression, or nothing for an empty
+# result. It FAILS when Mimir did not answer. Without that, a backend that is
+# down reads as "no service-graph edges", which is exactly what proves the
+# degraded condition; and without the timeout, a backend that never answers
+# hung this script forever.
 query() {
-  local enc
+  local enc out
   enc="$(printf '%s' "$1" | sed 's/%/%25/g; s/ /%20/g; s/"/%22/g; s/{/%7B/g; s/}/%7D/g; s/\[/%5B/g; s/\]/%5D/g; s/!/%21/g; s/~/%7E/g; s/=/%3D/g; s/|/%7C/g; s/+/%2B/g; s/>/%3E/g; s/</%3C/g')"
-  k get --raw "/api/v1/namespaces/lgtm/services/mimir-gateway:80/proxy/prometheus/api/v1/query?query=$enc" 2>/dev/null |
-    sed -n 's/.*"value":\[[^,]*,"\([^"]*\)".*/\1/p'
+  out="$(k get --raw --request-timeout=20s \
+    "/api/v1/namespaces/lgtm/services/mimir-gateway:80/proxy/prometheus/api/v1/query?query=$enc" 2>/dev/null)" || return 1
+  case "$out" in
+    *'"status":"success"'*) ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$out" | sed -n 's/.*"value":\[[^,]*,"\([^"]*\)".*/\1/p'
 }
 
 # Service-to-service edges the degradation removes (every server except
@@ -90,8 +101,8 @@ k8s_ids='count(count_over_time(target_info{k8s_deployment_name!=""}[2m]))'
 
 observed() {
   local e ids
-  e="$(query "$edges")"
-  ids="$(query "$k8s_ids")"
+  e="$(query "$edges")" || return 1
+  ids="$(query "$k8s_ids")" || return 1
   case "$cond" in
     degraded) awk -v e="${e:-0}" 'BEGIN { exit !(e < 0.01) }' ;;
     remediated) [ -n "$ids" ] && awk -v e="${e:-0}" 'BEGIN { exit !(e > 0.01) }' ;;
@@ -102,13 +113,13 @@ observed() {
 echo "==> waiting for the $cond condition to show in the telemetry (up to 8m)"
 for _ in $(seq 1 32); do
   if observed; then
-    e="$(query "$edges")"
-    ids="$(query "$k8s_ids")"
+    e="$(query "$edges" || echo '?')"
+    ids="$(query "$k8s_ids" || echo '?')"
     echo "$cond condition is live: service-to-service edges ${e:-0}/s, services with k8s identity ${ids:-0}"
     exit 0
   fi
   sleep 15
 done
 echo "the $cond condition did not show in the telemetry within 8m" \
-  "(edges=$(query "$edges"), k8s identities=$(query "$k8s_ids"))" >&2
+  "(edges=$(query "$edges" || echo 'Mimir did not answer'), k8s identities=$(query "$k8s_ids" || echo 'Mimir did not answer'))" >&2
 exit 1
