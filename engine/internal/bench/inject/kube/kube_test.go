@@ -202,6 +202,14 @@ func TestResetSweepsEveryArgusFault(t *testing.T) {
 			t.Errorf("reset did not sweep %s; want a call containing %q", kind, want)
 		}
 	}
+	// kubectl rejects -n beside --all-namespaces whenever an object matches,
+	// which failed a real reset on 2026-10-13. The fake kubectl cannot see the
+	// conflict, so the arguments are checked directly.
+	for line := range strings.SplitSeq(log, "\n") {
+		if strings.Contains(line, "--all-namespaces") && strings.Contains(line, "-n ") {
+			t.Errorf("cluster-wide sweep also passes a namespace: %q", line)
+		}
+	}
 }
 
 // TestSweepToleratesMissingCRDs: a cluster without Chaos Mesh must still be able
