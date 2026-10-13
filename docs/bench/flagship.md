@@ -44,6 +44,29 @@ From WSL, `<host>` is the Windows host as WSL sees it (the default gateway,
 `ip route | awk '/^default/{print $3}'`), and the server must listen on that
 interface, not only on localhost.
 
+### A CLI agent: Codex
+
+An agent that comes as a command-line tool runs through the shell adapter.
+`scripts/agents/codex.sh` wraps OpenAI's Codex CLI (signed in with a ChatGPT
+plan, or an API key):
+
+```text
+codex | --agent shell --shell-command scripts/agents/codex.sh --agent-name codex --model <model> --agent-timeout 20m
+```
+
+- Codex investigates with Argus's own read-only tools (`argus mcp`, from
+  `ARGUS_MCP_ARGS`), in a read-only sandbox without network, and prints the
+  diagnosis as JSON. The script extracts it, so no LLM judge is involved.
+- **Isolation.** A read-only sandbox can still read files, and the scenario
+  files hold the answers. Set `ARGUS_AGENT_USER` to a Unix user that cannot read
+  the checkout. Without it, the script warns that the run is not isolated.
+- **Budgets.** Argus cannot count a shell agent's tokens or tool calls, so its
+  only cap is `--agent-timeout`. The reports state this, and `--model` is
+  recorded as declared, not observed.
+- **Plan limits.** A ChatGPT plan allows a limited amount of Codex use per few
+  hours and per week. A run that hits the limit fails and is recorded, and the
+  matrix resumes later.
+
 ## 3. Read the projection, then confirm
 
 ```bash

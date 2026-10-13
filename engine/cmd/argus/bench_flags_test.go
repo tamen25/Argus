@@ -5,8 +5,10 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bench"
+	"github.com/tamen25/Argus/engine/internal/bench/agent"
 	"github.com/tamen25/Argus/engine/internal/bench/judge"
 	"github.com/tamen25/Argus/engine/internal/bench/orchestrator"
 )
@@ -70,6 +72,33 @@ func TestModelInfoRecordsWhatServedTheRun(t *testing.T) {
 	}
 	if got := modelInfo(benchFlags{agentKind: "stub"}); got != nil {
 		t.Errorf("a stub has no model, got %+v", got)
+	}
+	// A shell agent's model is declared, not observed: recorded with the command.
+	got = modelInfo(benchFlags{agentKind: "shell", model: "gpt-x", shellCommand: "/opt/argus/scripts/agents/codex.sh"})
+	if got == nil || got.Model != "gpt-x" || got.Endpoint != "shell: codex.sh" {
+		t.Errorf("shell model info = %+v", got)
+	}
+	if got := modelInfo(benchFlags{agentKind: "shell", shellCommand: "x"}); got != nil {
+		t.Errorf("a shell agent without --model records none, got %+v", got)
+	}
+}
+
+// A shell agent's only cap is wall clock, so --agent-timeout must reach it, and
+// --agent-name labels it in reports instead of the wrapper's path.
+func TestShellAgentGetsTimeoutAndName(t *testing.T) {
+	ag, err := buildAgent(benchFlags{agentKind: "shell", shellCommand: "codex.sh", agentName: "codex", agentTimeout: 20 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ag.Name() != "codex" {
+		t.Errorf("name = %q, want codex", ag.Name())
+	}
+	sh, ok := ag.(*agent.ShellAgent)
+	if !ok {
+		t.Fatalf("agent is %T, want *agent.ShellAgent", ag)
+	}
+	if got := sh.Timeout(); got != 20*time.Minute {
+		t.Errorf("timeout = %s, want 20m", got)
 	}
 }
 

@@ -135,7 +135,7 @@ not only the fault.
 |---|---|---|
 | `openai` | `--endpoint`, `--model` | Any OpenAI-compatible chat-completions endpoint |
 | `anthropic` | `--model` | Anthropic Messages API (`--endpoint` optional) |
-| `shell` | `--shell-command` | Wraps an existing agent (HolmesGPT, K8sGPT) |
+| `shell` | `--shell-command` | Wraps an existing agent CLI (HolmesGPT, K8sGPT, Codex: `scripts/agents/codex.sh`) |
 | `stub` | `--stub-profile` | Calibration instrument, not a bench subject |
 
 ## Models, the judge, and timeouts
@@ -147,6 +147,10 @@ host models.
 The **judge model must differ from the agent model**: a model that misreads its
 own output the same way twice launders that error into the score. The two model
 ids are compared (ignoring case) before anything is dialed.
+
+`--agent-name` sets the agent's name in reports (default: the model id, or the
+shell command). For a shell agent, `--model` is recorded as declared, since the
+wrapped CLI picks its model itself, and `--agent-timeout` is the run's only cap.
 
 `--agent-timeout` defaults to 10 minutes, because a reasoning model can spend
 minutes on one turn, and `--judge-timeout` to 5 (judging is one short request).

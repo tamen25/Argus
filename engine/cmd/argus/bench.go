@@ -71,6 +71,7 @@ type benchFlags struct {
 
 	agentTimeout  time.Duration
 	maxTurnTokens int
+	agentName     string
 	judgeTimeout  time.Duration
 
 	format string
@@ -168,7 +169,8 @@ own output the same way twice would launder that error into the score.`,
 	fl.StringVar(&f.scenario, "scenario", "", "scenario YAML (argus/v1alpha1 BenchScenario)")
 	fl.StringVar(&f.agentKind, "agent", "openai", "agent adapter: openai | anthropic | shell")
 	fl.StringVar(&f.endpoint, "endpoint", "", "chat endpoint URL (openai: full chat-completions URL)")
-	fl.StringVar(&f.model, "model", "", "model id")
+	fl.StringVar(&f.model, "model", "", "model id (shell: recorded only; the wrapped CLI chooses its model)")
+	fl.StringVar(&f.agentName, "agent-name", "", "the agent's name in reports (default: the model id, or the shell command)")
 	fl.StringVar(&f.apiKeyEnv, "api-key-env", "", "environment variable holding the API key")
 	fl.StringVar(&f.shellCommand, "shell-command", "", "shell agent executable (e.g. holmesgpt)")
 	fl.StringArrayVar(&f.shellArgs, "shell-arg", nil, "argument for the shell agent (repeatable)")
@@ -243,13 +245,19 @@ func enforceDistinctJudge(agentModel, judgeModel string) error {
 	return nil
 }
 
-// modelInfo records which model served the run, for the report. Adapters
-// without a model id (stub, shell) record none.
+// modelInfo records which model served the run, for the report. The stub has
+// none. A shell agent's model is chosen inside the wrapped CLI, so Argus can
+// only record what --model declares, with the command in place of an endpoint.
 func modelInfo(f benchFlags) *orchestrator.ModelInfo {
-	if f.model == "" || (f.agentKind != "openai" && f.agentKind != "anthropic") {
+	switch {
+	case f.model == "":
 		return nil
+	case f.agentKind == "openai" || f.agentKind == "anthropic":
+		return &orchestrator.ModelInfo{Endpoint: f.endpoint, Model: f.model}
+	case f.agentKind == "shell":
+		return &orchestrator.ModelInfo{Endpoint: "shell: " + filepath.Base(f.shellCommand), Model: f.model}
 	}
-	return &orchestrator.ModelInfo{Endpoint: f.endpoint, Model: f.model}
+	return nil
 }
 
 // defaultMaxTurnTokens leaves a reasoning model room to think and call a tool
@@ -276,7 +284,7 @@ func buildAgent(f benchFlags) (agent.Agent, error) {
 			return nil, fmt.Errorf("--agent=openai needs --endpoint and --model")
 		}
 		return agent.NewOpenAI(agent.OpenAIConfig{
-			Endpoint: f.endpoint, Model: f.model, APIKey: key, Timeout: f.agentTimeout,
+			Name: f.agentName, Endpoint: f.endpoint, Model: f.model, APIKey: key, Timeout: f.agentTimeout,
 			MaxTurnTokens: f.maxTurnTokens,
 		}), nil
 	case "anthropic":
@@ -284,14 +292,17 @@ func buildAgent(f benchFlags) (agent.Agent, error) {
 			return nil, fmt.Errorf("--agent=anthropic needs --model")
 		}
 		return agent.NewAnthropic(agent.AnthropicConfig{
-			Endpoint: f.endpoint, Model: f.model, APIKey: key, Timeout: f.agentTimeout,
+			Name: f.agentName, Endpoint: f.endpoint, Model: f.model, APIKey: key, Timeout: f.agentTimeout,
 			MaxTokens: f.maxTurnTokens,
 		}), nil
 	case "shell":
 		if f.shellCommand == "" {
 			return nil, fmt.Errorf("--agent=shell needs --shell-command")
 		}
-		return agent.NewShell(agent.ShellConfig{Command: f.shellCommand, Args: f.shellArgs}), nil
+		// The only cap Argus can put on a shell agent is wall clock.
+		return agent.NewShell(agent.ShellConfig{
+			Name: f.agentName, Command: f.shellCommand, Args: f.shellArgs, Timeout: f.agentTimeout,
+		}), nil
 	case "stub":
 		// Calibration instrument, not a bench subject: it answers without a model
 		// so a scenario's rubric can be probed for discrimination.
