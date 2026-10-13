@@ -68,7 +68,7 @@ func (e *Evidence) UnmarshalJSON(b []byte) error {
 	var p plain
 	if err := json.Unmarshal(b, &p); err != nil {
 		*e = Evidence{}
-		return nil
+		return nil //nolint:nilerr // a malformed citation is not counted, not an error
 	}
 	*e = Evidence(p)
 	return nil

@@ -56,7 +56,7 @@ func (p *PromQLProbe) read(ctx context.Context, sc bench.Scenario) (signature, e
 	}
 	raw, err := p.Q.QueryInstant(ctx, ss.Query, time.Now())
 	if err != nil {
-		return unknown, nil // backend not answering yet: a not-yet, not a failure
+		return unknown, nil //nolint:nilerr // backend not answering yet: a not-yet, not a failure
 	}
 	v, ok, err := firstSampleValue(raw)
 	if err != nil {
