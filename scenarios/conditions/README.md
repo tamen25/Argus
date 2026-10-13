@@ -29,8 +29,14 @@ steady-state gate works, and fails if it never does:
 
 - degraded: no service-to-service edges in the service graph except the two
   the gates need;
-- remediated: edges present and workloads reporting `k8s.deployment.name`;
+- remediated: edges present and at least 90% of the services reporting
+  `target_info` carrying `k8s.deployment.name`. The remediation reaches each
+  service only as its telemetry next passes through the pipeline, and full
+  coverage has taken several minutes. Proving it on the first service let the
+  first flagship runs start with 1 to 10 of 17 services covered;
 - baseline: edges present and no workload reporting it.
+
+It waits up to 15 minutes.
 
 The applied condition is recorded in the ConfigMap `lgtm/argus-bench-condition`.
 

@@ -108,34 +108,45 @@ query() {
 }
 
 # Service-to-service edges the degradation removes (every server except
-# checkout and payment), and resource attributes only the remediation adds,
-# over the last 2 minutes. connection_type="" keeps real service pairs and
-# leaves out Tempo's virtual edges ("user -> X", created for every root span)
-# and database edges, which a broken propagation does not remove.
+# checkout and payment), and the services carrying resource attributes only the
+# remediation adds, against all services reporting, over the last 2 minutes.
+# connection_type="" keeps real service pairs and leaves out Tempo's virtual
+# edges ("user -> X", created for every root span) and database edges, which a
+# broken propagation does not remove.
 edges='sum(rate(traces_service_graph_request_total{connection_type="",server!~"checkout|payment"}[2m]))'
-k8s_ids='count(count_over_time(target_info{k8s_deployment_name!=""}[2m]))'
+k8s_ids='count(count by (job) (count_over_time(target_info{k8s_deployment_name!=""}[2m])))'
+all_ids='count(count by (job) (count_over_time(target_info[2m])))'
 
+# Remediated is proven only once nearly every service carries its identity
+# (90%: one straggler in a demo of ~17 services). One service was once enough,
+# and the first runs of a session started while 1 to 10 of 17 were covered:
+# the remediation reaches a service only as its telemetry next passes through
+# the pipeline.
 observed() {
-  local e ids
+  local e ids all
   e="$(query "$edges")" || return 1
   ids="$(query "$k8s_ids")" || return 1
+  all="$(query "$all_ids")" || return 1
   case "$cond" in
     degraded) awk -v e="${e:-0}" 'BEGIN { exit !(e < 0.01) }' ;;
-    remediated) [ -n "$ids" ] && awk -v e="${e:-0}" 'BEGIN { exit !(e > 0.01) }' ;;
+    remediated) awk -v e="${e:-0}" -v i="${ids:-0}" -v a="${all:-0}" 'BEGIN { exit !(e > 0.01 && a > 0 && i >= 0.9 * a) }' ;;
     baseline) [ -z "$ids" ] && awk -v e="${e:-0}" 'BEGIN { exit !(e > 0.01) }' ;;
   esac
 }
 
-echo "==> waiting for the $cond condition to show in the telemetry (up to 8m)"
-for _ in $(seq 1 32); do
+# Up to 15 minutes: the remediation reaches each service only as its telemetry
+# next passes through the pipeline, and full coverage has taken several minutes.
+echo "==> waiting for the $cond condition to show in the telemetry (up to 15m)"
+for _ in $(seq 1 60); do
   if observed; then
     e="$(query "$edges" || echo '?')"
     ids="$(query "$k8s_ids" || echo '?')"
-    echo "$cond condition is live: service-to-service edges ${e:-0}/s, services with k8s identity ${ids:-0}"
+    all="$(query "$all_ids" || echo '?')"
+    echo "$cond condition is live: service-to-service edges ${e:-0}/s, services with k8s identity ${ids:-0} of ${all:-0}"
     exit 0
   fi
   sleep 15
 done
-echo "the $cond condition did not show in the telemetry within 8m" \
-  "(edges=$(query "$edges" || echo 'Mimir did not answer'), k8s identities=$(query "$k8s_ids" || echo 'Mimir did not answer'))" >&2
+echo "the $cond condition did not show in the telemetry within 15m" \
+  "(edges=$(query "$edges" || echo 'Mimir did not answer'), k8s identities=$(query "$k8s_ids" || echo 'Mimir did not answer') of $(query "$all_ids" || echo '?'))" >&2
 exit 1
