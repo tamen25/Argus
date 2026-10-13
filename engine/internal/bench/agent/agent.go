@@ -262,6 +262,10 @@ const budgetRefusal = `{"error":"tool-call budget spent: this call was not execu
 const (
 	maxLoggedArguments = 512
 	maxLoggedError     = 256
+	// maxLoggedReply bounds the prose kept from a run that ended without a
+	// diagnosis: enough to tell a model that answered in prose from one whose
+	// tool call the endpoint could not parse and returned as text.
+	maxLoggedReply = 400
 )
 
 // truncateMiddle shortens s to about n bytes by cutting out its middle. A

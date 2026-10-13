@@ -113,7 +113,8 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 				msgs = append(msgs, oaMessage{Role: "user", Content: noToolNotice})
 				continue
 			}
-			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s", a.cfg.Name, submitToolName)
+			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s (last reply: %q)",
+				a.cfg.Name, submitToolName, truncateMiddle(msg.Content, maxLoggedReply))
 		}
 
 		// A diagnosis ends the run wherever it appears in the turn — even on a

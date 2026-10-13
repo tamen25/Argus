@@ -164,6 +164,11 @@ func TestOpenAI_FinishWithoutSubmit(t *testing.T) {
 	if res.Usage.Nudges != 1 {
 		t.Errorf("nudges = %d, want 1", res.Usage.Nudges)
 	}
+	// The last reply is kept in the error: it tells prose apart from a tool
+	// call the endpoint could not parse and returned as text.
+	if !strings.Contains(err.Error(), `last reply: "Checkout."`) {
+		t.Errorf("err = %v, want the last reply quoted", err)
+	}
 }
 
 // Prose, then a diagnosis after the reminder: the run is answered, and the
