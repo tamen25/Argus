@@ -235,16 +235,21 @@ func budgetBrief(b Budget) string {
 // budgetSpentNotice is sent once, when the last permitted tool call has been
 // used. The agent then gets exactly one more turn, in which only
 // submit_diagnosis is accepted.
-const budgetSpentNotice = "The tool-call budget is now spent: no further tool calls will be executed. " +
-	"Call " + submitToolName + " now with the diagnosis your evidence best supports."
+//
+// It names submit_diagnosis as the one tool still accepted. "No further tool
+// calls" alone reads as a ban on submit_diagnosis too, since it is a tool, and
+// the first gpt-oss runs answered that wording with a prose diagnosis.
+const budgetSpentNotice = "The tool-call budget is now spent: no investigation tool will be executed. " +
+	"Call " + submitToolName + " now (it is still accepted) with the diagnosis your evidence best supports. " +
+	"Do not answer in prose: only a " + submitToolName + " call counts as a diagnosis."
 
 // tokenLowNotice is sent once, when the tokens left would not cover another
 // turn like the last one. Every turn re-sends the whole conversation, so the
 // count grows faster than an agent can track: the fourth real run was cut off at
 // 109404 of 100000 tokens with three tool calls to spare and no warning.
-const tokenLowNotice = "The token budget is nearly spent (%d of %d used): another round of tool calls would " +
-	"exceed it. Call " + submitToolName + " now with the diagnosis your evidence best supports; a tool call " +
-	"now ends the run without an answer."
+const tokenLowNotice = "The token budget is nearly spent (%d of %d used): another round of investigation " +
+	"would exceed it. Call " + submitToolName + " now with the diagnosis your evidence best supports; any other " +
+	"tool call now ends the run without an answer, and so does an answer in prose."
 
 // noToolNotice answers a turn that called no tool, once per run. The first
 // flagship pass lost 7 of 16 runs to models that wrote their diagnosis as prose
@@ -262,6 +267,10 @@ const budgetRefusal = `{"error":"tool-call budget spent: this call was not execu
 const (
 	maxLoggedArguments = 512
 	maxLoggedError     = 256
+	// maxLoggedReply bounds the prose kept from a run that ended without a
+	// diagnosis: enough to tell a model that answered in prose from one whose
+	// tool call the endpoint could not parse and returned as text.
+	maxLoggedReply = 400
 )
 
 // truncateMiddle shortens s to about n bytes by cutting out its middle. A

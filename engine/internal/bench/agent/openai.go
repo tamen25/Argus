@@ -104,11 +104,17 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 			// once; after that there is no structured diagnosis, and the run is
 			// failed rather than silently empty.
 			if s.nudge() {
-				msgs = append(msgs, oaMessage{Role: "assistant", Content: msg.Content},
-					oaMessage{Role: "user", Content: noToolNotice})
+				// An assistant message needs content or tool calls: Ollama answers
+				// one with neither (a reasoning model whose visible reply was
+				// empty) with HTTP 400, so an empty reply is not echoed.
+				if msg.Content != "" {
+					msgs = append(msgs, oaMessage{Role: "assistant", Content: msg.Content})
+				}
+				msgs = append(msgs, oaMessage{Role: "user", Content: noToolNotice})
 				continue
 			}
-			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s", a.cfg.Name, submitToolName)
+			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s (last reply: %q)",
+				a.cfg.Name, submitToolName, truncateMiddle(msg.Content, maxLoggedReply))
 		}
 
 		// A diagnosis ends the run wherever it appears in the turn — even on a

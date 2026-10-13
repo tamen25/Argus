@@ -164,6 +164,11 @@ func TestOpenAI_FinishWithoutSubmit(t *testing.T) {
 	if res.Usage.Nudges != 1 {
 		t.Errorf("nudges = %d, want 1", res.Usage.Nudges)
 	}
+	// The last reply is kept in the error: it tells prose apart from a tool
+	// call the endpoint could not parse and returned as text.
+	if !strings.Contains(err.Error(), `last reply: "Checkout."`) {
+		t.Errorf("err = %v, want the last reply quoted", err)
+	}
 }
 
 // Prose, then a diagnosis after the reminder: the run is answered, and the
@@ -192,6 +197,38 @@ func TestOpenAI_NudgedThenSubmits(t *testing.T) {
 	}
 	if last != noToolNotice {
 		t.Errorf("last message before the answer = %q, want the reminder", last)
+	}
+}
+
+// A reasoning model's visible reply can be empty. Echoing it back as an
+// assistant message with neither content nor tool calls made Ollama answer
+// HTTP 400 and ended the first gpt-oss run; the fake rejects it the same way.
+func TestOpenAI_NudgeAfterEmptyReply(t *testing.T) {
+	step := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req oaRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		for _, m := range req.Messages {
+			if m.Role == "assistant" && m.Content == "" && len(m.ToolCalls) == 0 {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":{"message":"invalid message content type: <nil>"}}`))
+				return
+			}
+		}
+		if step == 0 {
+			_, _ = w.Write([]byte(contentResp("")))
+		} else {
+			_, _ = w.Write([]byte(toolCallResp("c1", submitToolName, diagArgs, 50)))
+		}
+		step++
+	}))
+	defer srv.Close()
+	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	if err != nil {
+		t.Fatalf("Diagnose: %v", err)
+	}
+	if string(res.Raw) != diagArgs || res.Usage.Nudges != 1 {
+		t.Errorf("raw = %s, nudges = %d; want the diagnosis after one reminder", res.Raw, res.Usage.Nudges)
 	}
 }
 
