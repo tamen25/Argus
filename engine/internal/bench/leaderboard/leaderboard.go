@@ -385,7 +385,7 @@ func dataCaveats(reports []orchestrator.Report) []string {
 	models := map[string]map[string]bool{}   // agent → model provenance
 	timeouts := map[string]map[string]bool{} // agent → per-call timeouts
 	lists := map[string]bool{}               // category lists offered
-	judged, nudged := 0, 0
+	judged, nudged, retried := 0, 0, 0
 	for _, r := range reports {
 		add(hashes, r.Scenario, short(r.ScenarioHash))
 		add(budgets, r.Agent, budget(r.Budget))
@@ -400,6 +400,9 @@ func dataCaveats(reports []orchestrator.Report) []string {
 			}
 			if run.Usage.Nudges > 0 && run.Score != nil {
 				nudged++
+			}
+			if run.Usage.Retries > 0 {
+				retried++
 			}
 		}
 	}
@@ -446,6 +449,10 @@ func dataCaveats(reports []orchestrator.Report) []string {
 	if judged > 0 {
 		out = append(out, fmt.Sprintf(
 			"%d run(s) were normalized by a non-deterministic method (an LLM judge), not parsed as JSON. See the run reports.", judged))
+	}
+	if retried > 0 {
+		out = append(out, fmt.Sprintf(
+			"%d run(s) repeated a model call after the endpoint failed with a 5xx (at most 2 per run). The failed calls' tokens are not counted. See `retries` in the run reports.", retried))
 	}
 	if nudged > 0 {
 		out = append(out, fmt.Sprintf(

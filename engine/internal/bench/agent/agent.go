@@ -96,6 +96,10 @@ type Usage struct {
 	// Nudges is how many times the agent was reminded to call a tool after a
 	// turn that called none (at most once per run).
 	Nudges int `json:"nudges,omitempty"`
+	// Retries is how many model calls were repeated after the endpoint failed
+	// with a 5xx (at most maxRetries per run). A failed call reports no usage,
+	// so its tokens are not in Tokens.
+	Retries int `json:"retries,omitempty"`
 }
 
 // ToolCall records one tool call an agent made: what it asked, and whether it
@@ -347,6 +351,34 @@ func (s *session) nudge() bool {
 	}
 	s.usage.Nudges++
 	return true
+}
+
+// maxRetries bounds the 5xx retries in one run. The first gpt-oss runs lost
+// whole runs to one 500 each: the endpoint could not parse a tool call the
+// model wrote, and a model server that crashed on load answered 500 too. A new
+// sample usually succeeds; a server that is really down still fails the run.
+const maxRetries = 2
+
+// retry reports whether a call the endpoint failed with err may be repeated:
+// a 5xx, while retries remain.
+func (s *session) retry(err error) bool {
+	var he *httpStatusError
+	if !errors.As(err, &he) || he.Status < 500 || s.usage.Retries >= maxRetries {
+		return false
+	}
+	s.usage.Retries++
+	return true
+}
+
+// httpStatusError is a non-200 answer from a model endpoint.
+type httpStatusError struct {
+	Agent  string
+	Status int
+	Body   string
+}
+
+func (e *httpStatusError) Error() string {
+	return fmt.Sprintf("agent %s: HTTP %d: %s", e.Agent, e.Status, e.Body)
 }
 
 // exhausted is the error for a run the budget ended, naming the cap.

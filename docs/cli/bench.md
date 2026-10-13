@@ -155,6 +155,11 @@ failure when it was a limit of the endpoint. The first flagship run hit exactly
 this: on a model partly offloaded to CPU, late turns of a long investigation took
 over 10 minutes, so it ran with `--agent-timeout 30m`.
 
+A model call the endpoint fails with a 5xx is repeated, at most twice per run
+(`retries` in the usage; the failed calls report no tokens). The first flagship
+runs lost whole runs to single 500s: a tool call the model server could not
+parse, and a server that crashed loading the model. A 4xx is never retried.
+
 `--max-turn-tokens` (default 8192) caps the output of a single turn. The run's
 token budget is checked between turns, so without a per-turn cap a model that
 loops in its reasoning holds one turn open until `--agent-timeout`: the first

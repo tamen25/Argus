@@ -270,6 +270,51 @@ func TestOpenAI_TurnCap(t *testing.T) {
 	}
 }
 
+// statusThen answers the first n calls with status, then serves responses.
+func statusThen(t *testing.T, status, n int, responses ...string) (*httptest.Server, *int) {
+	t.Helper()
+	calls := 0
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls <= n {
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":{"message":"error parsing tool call"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(responses[calls-n-1]))
+	})), &calls
+}
+
+// A 5xx is retried, at most twice per run, and the retry is not a step.
+func TestOpenAI_Retries5xx(t *testing.T) {
+	srv, calls := statusThen(t, http.StatusInternalServerError, 1, toolCallResp("c1", submitToolName, diagArgs, 50))
+	defer srv.Close()
+	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	if err != nil {
+		t.Fatalf("Diagnose: %v", err)
+	}
+	if *calls != 2 || res.Usage.Retries != 1 || res.Usage.Steps != 1 {
+		t.Errorf("calls = %d, retries = %d, steps = %d; want 2, 1, 1", *calls, res.Usage.Retries, res.Usage.Steps)
+	}
+
+	srv2, calls2 := statusThen(t, http.StatusInternalServerError, 5)
+	defer srv2.Close()
+	res, err = newAgent(t, srv2).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	if err == nil || !strings.Contains(err.Error(), "HTTP 500") || *calls2 != 3 || res.Usage.Retries != 2 {
+		t.Errorf("err = %v, calls = %d, retries = %d; want the 500 after 3 calls and 2 retries", err, *calls2, res.Usage.Retries)
+	}
+}
+
+// A 4xx is the request's fault, not a transient one: never retried.
+func TestOpenAI_NoRetryOn4xx(t *testing.T) {
+	srv, calls := statusThen(t, http.StatusBadRequest, 5)
+	defer srv.Close()
+	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	if err == nil || *calls != 1 || res.Usage.Retries != 0 {
+		t.Errorf("err = %v, calls = %d, retries = %d; want one call and no retry", err, *calls, res.Usage.Retries)
+	}
+}
+
 func TestOpenAI_HTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
