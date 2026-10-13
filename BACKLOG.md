@@ -83,6 +83,13 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-53** (#95) — found by the second flagship session: `ParseDiagnosis`
+  decoded evidence strictly, so a citation in the agent's own shape failed the
+  whole diagnosis, which then dropped out of the agent's average (the outcome
+  `Validate` documents as ruled out). Evidence items now decode leniently and
+  are filtered by `WellFormed`; the rest of the diagnosis stays strict. Also
+  (#93): failed runs keep the last reply or the rejected submission, and the
+  budget notices no longer read as forbidding `submit_diagnosis`.
 - [x] **B-52** (#94) — found by the second flagship session: a scenario's reset
   sweep ran `kubectl -n <ns> delete <kind> --all-namespaces`, which kubectl
   rejects whenever an object matches, so a leftover fault failed the next
