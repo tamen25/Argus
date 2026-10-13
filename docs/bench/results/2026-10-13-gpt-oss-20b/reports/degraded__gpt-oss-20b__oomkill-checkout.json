@@ -1,0 +1,181 @@
+{
+  "scenario": "oomkill-checkout",
+  "scenario_hash": "b1bba7ef7237be599e58776bc5e879643603b14ca101a25c2e163bd367756484",
+  "agent": "gpt-oss:20b",
+  "env_digest": "kind-2026-10-13",
+  "condition": "degraded",
+  "categories_offered": [
+    "alert-storm",
+    "broken-trace-propagation",
+    "cardinality-explosion",
+    "certificate-expiry",
+    "dependency-latency",
+    "deploy-regression",
+    "disk-pressure",
+    "missing-service-name",
+    "network-partition",
+    "oomkill",
+    "storage-throttling"
+  ],
+  "seed": 0,
+  "budget": {
+    "MaxToolCalls": 20,
+    "MaxTokens": 100000
+  },
+  "model": {
+    "endpoint": "http://172.29.192.1:11434/v1/chat/completions",
+    "model": "gpt-oss:20b"
+  },
+  "agent_timeout": "30m0s",
+  "max_turn_tokens": 8192,
+  "runs": [
+    {
+      "repeat": 0,
+      "started": "2026-10-13T17:36:47.715405127Z",
+      "finished": "2026-10-13T17:39:52.87967055Z",
+      "usage": {
+        "tool_calls": 17,
+        "tool_errors": 4,
+        "tokens": 100988,
+        "steps": 18
+      },
+      "tool_log": [
+        {
+          "tool": "get_k8s_topology",
+          "arguments": "{\"namespace\":\"otel-demo\"}",
+          "result_bytes": 2271
+        },
+        {
+          "tool": "list_alerts",
+          "arguments": "{\"state\":\"firing\"}",
+          "result_bytes": 3265
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":5,\"match\":\"\",\"selector\":\"{}\"}",
+          "error": "backend http://127.0.0.1:18080/prometheus/api/v1/label/__name__/values?end=2026-10-13…%3A31Z\u0026match%5B%5D=%7B%7D\u0026start=2026-10-13T17%3A24%3A31Z: HTTP 400: {\"status\":\"error\",\"errorType\":\"bad_data\",\"error\":\"match[] must contain at least one non-empty matcher\"}",
+          "result_bytes": 288
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"__name__\",\"limit\":100,\"match\":\"\",\"selector\":\"{__name__=~\\\".+\\\"}\"}",
+          "result_bytes": 3906
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"{service.name=\\\"frontend-proxy\\\" \\u0026\\u0026 span.kind=SERVER}\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=20\u0026q=%7Bservice.name%3D%22frontend-proxy%22+%26%26+span.kind%3DSERVER%7D: HTTP 400: invalid TraceQL query: parse error at line 1, col 2: syntax error: unexpected IDENTIFIER",
+          "result_bytes": 232
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"{resource.service.name=\\\"frontend-proxy\\\" \\u0026\\u0026 span.kind=\\\"SERVER\\\"}\"}",
+          "result_bytes": 84
+        },
+        {
+          "tool": "list_trace_tags",
+          "arguments": "{\"tag\":\"\",\"limit\":20}",
+          "result_bytes": 597
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"start\":\"2026-10-13T17:20:00Z\",\"end\":\"2026-10-13T17:40:00Z\",\"limit\":100,\"query\":\"{namespace=\\\"otel-demo\\\",app=\\\"frontend-proxy\\\"} |= \\\"error\\\"\"}",
+          "result_bytes": 3479
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"{resource.service.name=\\\"recommendation\\\" \\u0026\\u0026 event.exception.type}\"}",
+          "result_bytes": 83
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":100,\"match\":\"error\",\"selector\":\"{__name__=~\\\".+\\\"}\"}",
+          "result_bytes": 118
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"start\":\"2026-10-13T17:20:00Z\",\"end\":\"2026-10-13T17:30:00Z\",\"step\":\"1m\",\"query\":\"service:span_errors:ratio_rate5m{service=\\\"frontend-proxy\\\"}\"}",
+          "result_bytes": 478
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"app_frontend_add_item_latency_seconds_bucket\",\"limit\":10,\"match\":\"\",\"selector\":\"{__name__=~\\\".*frontend.*\\\"}\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"\",\"limit\":100,\"match\":\"latency\",\"selector\":\"{__name__}\"}",
+          "error": "backend http://127.0.0.1:18080/prometheus/api/v1/labels?end=2026-10-13T17%3A39%3A46Z\u0026…-10-13T17%3A24%3A46Z: HTTP 400: {\"status\":\"error\",\"errorType\":\"bad_data\",\"error\":\"1:10: parse error: unexpected \\\"}\\\" in label matching, expected label matching operator\"}",
+          "result_bytes": 321
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"\",\"limit\":20,\"match\":\"postgres\",\"selector\":\"{__name__}\"}",
+          "error": "backend http://127.0.0.1:18080/prometheus/api/v1/labels?end=2026-10-13T17%3A39%3A47Z\u0026…-10-13T17%3A24%3A47Z: HTTP 400: {\"status\":\"error\",\"errorType\":\"bad_data\",\"error\":\"1:10: parse error: unexpected \\\"}\\\" in label matching, expected label matching operator\"}",
+          "result_bytes": 321
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-10-13T17:45:00Z\",\"query\":\"system_network_errors_total\",\"start\":\"2026-10-13T17:00:00Z\",\"step\":\"5m\"}",
+          "result_bytes": 3205
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"__name__\",\"limit\":10,\"match\":\"app_.*frontend\",\"selector\":\"{__name__=~\\\".+\\\"}\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":20,\"match\":\"app_\",\"selector\":\"{__name__=~\\\".+\\\"}\"}",
+          "result_bytes": 613
+        }
+      ],
+      "normalization": "json",
+      "score": {
+        "scenario": "oomkill-checkout",
+        "score": 0,
+        "entity_score": 0,
+        "category_match": false,
+        "category": "alert-storm",
+        "evidence_count": 0,
+        "malformed_evidence": 1,
+        "evidence_missing": true,
+        "matched": null,
+        "missed": [
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "checkout"
+          }
+        ],
+        "extra": [
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "frontend-proxy"
+          },
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "load-generator"
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "attempts": 1,
+    "diagnoses": 1,
+    "failures": 0,
+    "budget_exhausted": 0,
+    "answer_rate": 1,
+    "mean_score": 0,
+    "stddev_score": 0,
+    "mean_entity_score": 0,
+    "stddev_entity_score": 0,
+    "category_match_rate": 0,
+    "evidence_missing_rate": 1,
+    "mean_tool_calls": 17,
+    "mean_tokens": 100988
+  }
+}

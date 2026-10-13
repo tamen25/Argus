@@ -1,0 +1,176 @@
+{
+  "scenario": "network-partition-product-catalog",
+  "scenario_hash": "0d390814206a7cc3c2a22ded4229c64becfbbc55c81c40fa0a3fadc84fabd172",
+  "agent": "gpt-oss:20b",
+  "env_digest": "kind-2026-10-13",
+  "condition": "remediated",
+  "categories_offered": [
+    "alert-storm",
+    "broken-trace-propagation",
+    "cardinality-explosion",
+    "certificate-expiry",
+    "dependency-latency",
+    "deploy-regression",
+    "disk-pressure",
+    "missing-service-name",
+    "network-partition",
+    "oomkill",
+    "storage-throttling"
+  ],
+  "seed": 0,
+  "budget": {
+    "MaxToolCalls": 20,
+    "MaxTokens": 100000
+  },
+  "model": {
+    "endpoint": "http://172.29.192.1:11434/v1/chat/completions",
+    "model": "gpt-oss:20b"
+  },
+  "agent_timeout": "30m0s",
+  "max_turn_tokens": 8192,
+  "runs": [
+    {
+      "repeat": 0,
+      "started": "2026-10-13T18:02:36.507994712Z",
+      "finished": "2026-10-13T18:05:29.135756994Z",
+      "usage": {
+        "tool_calls": 15,
+        "tool_errors": 9,
+        "tokens": 101702,
+        "steps": 16
+      },
+      "tool_log": [
+        {
+          "tool": "get_k8s_topology",
+          "arguments": "{\"namespace\":\"otel-demo\"}",
+          "result_bytes": 2979
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":10,\"match\":\"checkout\",\"selector\":\"{__name__}\"}",
+          "error": "backend http://127.0.0.1:18080/prometheus/api/v1/label/__name__/values?end=2026-10-13…-10-13T17%3A50%3A12Z: HTTP 400: {\"status\":\"error\",\"errorType\":\"bad_data\",\"error\":\"1:10: parse error: unexpected \\\"}\\\" in label matching, expected label matching operator\"}",
+          "result_bytes": 336
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":20,\"match\":\"\",\"selector\":\"{}\"}",
+          "error": "backend http://127.0.0.1:18080/prometheus/api/v1/label/__name__/values?end=2026-10-13…%3A12Z\u0026match%5B%5D=%7B%7D\u0026start=2026-10-13T17%3A50%3A12Z: HTTP 400: {\"status\":\"error\",\"errorType\":\"bad_data\",\"error\":\"match[] must contain at least one non-empty matcher\"}",
+          "result_bytes": 288
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":100,\"match\":\"http\",\"selector\":\"{job=\\\"otel-demo\\\"}\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"__name__\",\"limit\":500}",
+          "result_bytes": 12786
+        },
+        {
+          "tool": "list_alerts",
+          "arguments": "{\"state\":\"firing\"}",
+          "result_bytes": 3200
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"start\":\"2026-10-13T17:50:00Z\",\"end\":\"2026-10-13T18:20:00Z\",\"limit\":20,\"query\":\"{namespace=\\\"otel-demo\\\", pod=~\\\"checkout.*\\\"} |~ \\\"flagd\\\"\"}",
+          "result_bytes": 3478
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"service.name=\\\"checkout\\\" \\u0026\\u0026 status=\\\"error\\\"\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=20\u0026q=service.name%3D%22checkout%22+%26%26+status%3D%22error%22: HTTP 400: invalid TraceQL query: parse error at line 1, col 1: syntax error: unexpected IDENTIFIER",
+          "result_bytes": 222
+        },
+        {
+          "tool": "list_trace_tags",
+          "arguments": "{\"tag\":\"service.name\"}",
+          "error": "list_trace_tags: backend http://127.0.0.1:13200/api/v2/search/tag/service.name/values: HTTP 400: please provide a valid tagName: tag name is not valid intrinsic or scoped attribute: service.name",
+          "result_bytes": 206
+        },
+        {
+          "tool": "list_trace_tags",
+          "arguments": "{\"limit\":20,\"match\":\"service\"}",
+          "result_bytes": 212
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"resource.service.name=\\\"checkout\\\" \\u0026\\u0026 status=error\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=20\u0026q=resource.service.name%3D%22checkout%22+%26%26+status%3Derror: HTTP 400: invalid TraceQL query: parse error at line 0, col 1: syntax error: unexpected resource.",
+          "result_bytes": 224
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"resource.service.name=\\\"checkout\\\" \\u0026\\u0026 status=\\\"error\\\"\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=20\u0026q=resource.service.name%3D%22checkout%22+%26%26+status%3D%22error%22: HTTP 400: invalid TraceQL query: parse error at line 0, col 1: syntax error: unexpected resource.",
+          "result_bytes": 230
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"resource.service.name==\\\"checkout\\\" \\u0026\\u0026 status==\\\"error\\\"\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=20\u0026q=resource.service.name%3D%3D%22checkout%22+%26%26+status%3D%3D%22error%22: HTTP 400: invalid TraceQL query: parse error at line 0, col 1: syntax error: unexpected resource.",
+          "result_bytes": 236
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"`resource.service.name`==\\\"checkout\\\" \\u0026\\u0026 status==\\\"error\\\"\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=20\u0026q=%60resource.service.name%60%3D%3D%22checkout%22+%26%26+status%3D%3D%22error%22: HTTP 400: invalid TraceQL query: parse error at line 1, col 1: syntax error: unexpected STRING",
+          "result_bytes": 239
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":100,\"match\":\"checkout\",\"selector\":\"{__name__}\"}",
+          "error": "backend http://127.0.0.1:18080/prometheus/api/v1/label/__name__/values?end=2026-10-13…-10-13T17%3A50%3A27Z: HTTP 400: {\"status\":\"error\",\"errorType\":\"bad_data\",\"error\":\"1:10: parse error: unexpected \\\"}\\\" in label matching, expected label matching operator\"}",
+          "result_bytes": 336
+        }
+      ],
+      "normalization": "json",
+      "score": {
+        "scenario": "network-partition-product-catalog",
+        "score": 0,
+        "entity_score": 0,
+        "category_match": false,
+        "category": "broken-trace-propagation",
+        "evidence_count": 0,
+        "malformed_evidence": 1,
+        "evidence_missing": true,
+        "matched": null,
+        "missed": [
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "product-catalog"
+          }
+        ],
+        "extra": [
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "checkout"
+          },
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "nodejs-service-unknown"
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "attempts": 1,
+    "diagnoses": 1,
+    "failures": 0,
+    "budget_exhausted": 0,
+    "answer_rate": 1,
+    "mean_score": 0,
+    "stddev_score": 0,
+    "mean_entity_score": 0,
+    "stddev_entity_score": 0,
+    "category_match_rate": 0,
+    "evidence_missing_rate": 1,
+    "mean_tool_calls": 15,
+    "mean_tokens": 101702
+  }
+}

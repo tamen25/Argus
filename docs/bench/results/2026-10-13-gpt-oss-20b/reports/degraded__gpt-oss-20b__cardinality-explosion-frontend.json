@@ -1,0 +1,177 @@
+{
+  "scenario": "cardinality-explosion-frontend",
+  "scenario_hash": "158a1ed2c10c76c77d805481da95576516396f258ad1f4737c2c7400f165f62f",
+  "agent": "gpt-oss:20b",
+  "env_digest": "kind-2026-10-13",
+  "condition": "degraded",
+  "categories_offered": [
+    "alert-storm",
+    "broken-trace-propagation",
+    "cardinality-explosion",
+    "certificate-expiry",
+    "dependency-latency",
+    "deploy-regression",
+    "disk-pressure",
+    "missing-service-name",
+    "network-partition",
+    "oomkill",
+    "storage-throttling"
+  ],
+  "seed": 0,
+  "budget": {
+    "MaxToolCalls": 20,
+    "MaxTokens": 100000
+  },
+  "model": {
+    "endpoint": "http://172.29.192.1:11434/v1/chat/completions",
+    "model": "gpt-oss:20b"
+  },
+  "agent_timeout": "30m0s",
+  "max_turn_tokens": 8192,
+  "runs": [
+    {
+      "repeat": 0,
+      "started": "2026-10-13T17:16:37.461501823Z",
+      "finished": "2026-10-13T17:22:48.563498136Z",
+      "usage": {
+        "tool_calls": 16,
+        "tool_errors": 6,
+        "tokens": 90013,
+        "steps": 19,
+        "nudges": 1,
+        "submit_rejections": 1
+      },
+      "tool_log": [
+        {
+          "tool": "get_k8s_topology",
+          "arguments": "{\"namespace\":\"otel-demo\"}",
+          "result_bytes": 2990
+        },
+        {
+          "tool": "list_alerts",
+          "arguments": "{\"state\":\"\"}",
+          "result_bytes": 67
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"service.name\",\"limit\":100,\"match\":\"\",\"selector\":\"\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":100,\"match\":\"http\",\"selector\":\"{__name__=~\\\".*http.*\\\"}\"}",
+          "result_bytes": 1566
+        },
+        {
+          "tool": "list_log_labels",
+          "arguments": "{\"label\":\"\",\"limit\":20}",
+          "result_bytes": 104
+        },
+        {
+          "tool": "list_trace_tags",
+          "arguments": "{\"limit\":100,\"match\":\"error\",\"tag\":\"status.code\"}",
+          "error": "list_trace_tags: backend http://127.0.0.1:13200/api/v2/search/tag/status.code/values: HTTP 400: please provide a valid tagName: tag name is not valid intrinsic or scoped attribute: status.code",
+          "result_bytes": 204
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"start\":\"2024-10-13T00:00:00Z\",\"end\":\"2024-10-14T00:00:00Z\",\"limit\":100,\"query\":\"{job=\\\"otel-demo\\\"}\"}",
+          "result_bytes": 3508
+        },
+        {
+          "tool": "list_trace_tags",
+          "arguments": "{\"limit\":100,\"match\":\"\",\"tag\":\"\"}",
+          "result_bytes": 2727
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"instance\",\"limit\":100,\"match\":\"\",\"selector\":\"{__name__=~\\\"http.*\\\"}\"}",
+          "result_bytes": 248
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"start\":\"2024-10-13T12:00:00Z\",\"end\":\"2024-10-13T13:00:00Z\",\"step\":\"60s\",\"query\":\"http_server_request_duration_seconds_sum{service_name=\\\"checkout\\\"}\"}",
+          "result_bytes": 64
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"{ resource.service.name = \\\"checkout\\\" \\u0026\\u0026 span.kind = CLIENT }\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=20\u0026q=%7B+resource.service.name+%3D+%22checkout%22+%26%26+span.kind+%3D+CLIENT+%7D: HTTP 400: invalid TraceQL query: parse error at line 1, col 53: syntax error: unexpected IDENTIFIER",
+          "result_bytes": 242
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"{ resource.service.name = /checkout/ }\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=20\u0026q=%7B+resource.service.name+%3D+%2Fcheckout%2F+%7D: HTTP 400: invalid TraceQL query: parse error at line 1, col 27: syntax error: unexpected /",
+          "result_bytes": 205
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2024-10-13T13:00:00Z\",\"query\":\"http_server_active_requests{service_name=\\\"checkout\\\"}\",\"start\":\"2024-10-13T12:59:00Z\",\"step\":\"60s\"}",
+          "result_bytes": 64
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2024-10-13T13:00:00Z\",\"query\":\"label_values(http_server_request_duration_seconds_bucket, job)\",\"start\":\"2024-10-13T12:59:00Z\",\"step\":\"60s\"}",
+          "error": "backend http://127.0.0.1:18080/prometheus/api/v1/query_range?end=2024-10-13T13%3A00%3…A59%3A00Z\u0026step=60: HTTP 400: {\"status\":\"error\",\"errorType\":\"bad_data\",\"error\":\"invalid parameter \\\"query\\\": 1:1: parse error: unknown function with name \\\"label_values\\\"\"}",
+          "result_bytes": 389
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2024-10-13T13:00:00Z\",\"query\":\"label_names() = \\\"instance\\\"?\",\"start\":\"2024-10-13T12:59:00Z\",\"step\":\"60s\"}",
+          "error": "backend http://127.0.0.1:18080/prometheus/api/v1/query_range?end=2024-10-13T13%3A00%3…3A59%3A00Z\u0026step=60: HTTP 400: {\"status\":\"error\",\"errorType\":\"bad_data\",\"error\":\"invalid parameter \\\"query\\\": 1:1: parse error: unknown function with name \\\"label_names\\\"\"}",
+          "result_bytes": 359
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2024-10-13T14:00:00Z\",\"query\":\"label_values(http_server_request_duration_seconds, service_name)\",\"start\":\"2024-10-13T13:59:00Z\",\"step\":\"60s\"}",
+          "error": "backend http://127.0.0.1:18080/prometheus/api/v1/query_range?end=2024-10-13T14%3A00%3…A59%3A00Z\u0026step=60: HTTP 400: {\"status\":\"error\",\"errorType\":\"bad_data\",\"error\":\"invalid parameter \\\"query\\\": 1:1: parse error: unknown function with name \\\"label_values\\\"\"}",
+          "result_bytes": 391
+        }
+      ],
+      "normalization": "json",
+      "score": {
+        "scenario": "cardinality-explosion-frontend",
+        "score": 0,
+        "entity_score": 0,
+        "category_match": false,
+        "category": "missing-service-name",
+        "evidence_count": 1,
+        "cited_signals": [
+          "topology"
+        ],
+        "malformed_evidence": 1,
+        "matched": null,
+        "missed": [
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "frontend"
+          }
+        ],
+        "extra": [
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "all"
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "attempts": 1,
+    "diagnoses": 1,
+    "failures": 0,
+    "budget_exhausted": 0,
+    "answer_rate": 1,
+    "mean_score": 0,
+    "stddev_score": 0,
+    "mean_entity_score": 0,
+    "stddev_entity_score": 0,
+    "category_match_rate": 0,
+    "evidence_missing_rate": 0,
+    "mean_tool_calls": 16,
+    "mean_tokens": 90013
+  }
+}

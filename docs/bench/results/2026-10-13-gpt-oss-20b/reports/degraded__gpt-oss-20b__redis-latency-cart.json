@@ -1,0 +1,152 @@
+{
+  "scenario": "redis-latency-cart",
+  "scenario_hash": "3756373203511eb2dd1b19002ddf531b8e9fa8e6a98545f616da11b1fda11b65",
+  "agent": "gpt-oss:20b",
+  "env_digest": "kind-2026-10-13",
+  "condition": "degraded",
+  "categories_offered": [
+    "alert-storm",
+    "broken-trace-propagation",
+    "cardinality-explosion",
+    "certificate-expiry",
+    "dependency-latency",
+    "deploy-regression",
+    "disk-pressure",
+    "missing-service-name",
+    "network-partition",
+    "oomkill",
+    "storage-throttling"
+  ],
+  "seed": 0,
+  "budget": {
+    "MaxToolCalls": 20,
+    "MaxTokens": 100000
+  },
+  "model": {
+    "endpoint": "http://172.29.192.1:11434/v1/chat/completions",
+    "model": "gpt-oss:20b"
+  },
+  "agent_timeout": "30m0s",
+  "max_turn_tokens": 8192,
+  "runs": [
+    {
+      "repeat": 0,
+      "started": "2026-10-13T17:39:56.610566704Z",
+      "finished": "2026-10-13T17:41:48.945246527Z",
+      "usage": {
+        "tool_calls": 17,
+        "tool_errors": 4,
+        "tokens": 104298,
+        "steps": 18,
+        "retries": 1
+      },
+      "tool_log": [
+        {
+          "tool": "list_alerts",
+          "arguments": "{\"state\":\"firing\"}",
+          "result_bytes": 2360
+        },
+        {
+          "tool": "get_k8s_topology",
+          "arguments": "{\"namespace\":\"otel-demo\"}",
+          "result_bytes": 2271
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"start\":\"2026-10-13T17:20:00Z\",\"end\":\"2026-10-13T17:40:00Z\",\"limit\":20,\"query\":\"{namespace=\\\"otel-demo\\\", pod=~\\\"frontend-proxy.*\\\"} |~ \\\"Error\\\"\"}",
+          "result_bytes": 3481
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":100,\"match\":\"error\",\"selector\":\"\"}",
+          "result_bytes": 118
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"start\":\"2026-10-13T17:20:00Z\",\"end\":\"2026-10-13T17:40:00Z\",\"step\":\"1m\",\"query\":\"service:span_errors:ratio_rate5m{namespace=\\\"otel-demo\\\"}\"}",
+          "result_bytes": 64
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"service.name\",\"limit\":10,\"selector\":\"{__name__=\\\"service:span_errors:ratio_rate5m\\\"}\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"end\":\"2026-10-13T17:40:00Z\",\"limit\":20,\"query\":\"{namespace=\\\"otel-demo\\\"} |~ \\\"Failed to connect to backend\\\"\",\"start\":\"2026-10-13T17:30:0.0Z\"}",
+          "error": "start: parsing time \"2026-10-13T17:30:0.0Z\" as \"2006-01-02T15:04:05Z07:00\": cannot parse \"0.0Z\" as \"05\"",
+          "result_bytes": 123
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"end\":\"2026-10-13T17:40:00Z\",\"limit\":20,\"query\":\"{namespace=\\\"otel-demo\\\", pod=~\\\"frontend-proxy.*\\\"} |~ \\\"Failed to connect\\\"\",\"start\":\"2026-10-13T17:30:00Z\"}",
+          "result_bytes": 3478
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"end\":\"2026-10-13T17:40:00Z\",\"limit\":20,\"query\":\"{namespace=\\\"otel-demo\\\", pod=~\\\"frontend-proxy.*\\\"} | json | line_format \\\"{{ .statusCode }}\\\" | label_replace(namespace, __error, statusCode, \\\"500\\\", \\\"$1\\\") | count_over_time({__error=\\\"\\\"}[5m])\",\"start\":\"2026-10-13T17:20:00Z\"}",
+          "error": "backend http://127.0.0.1:13100/loki/api/v1/query_range?end=2026-10-13T17%3A40%3A00Z\u0026l…%29+%7C+count_over_time%28%7B__error%3D%22%22%7D%5B5m%5D%29\u0026start=2026-10-13T17%3A20%3A00Z: HTTP 400: parse error at line 1, col 93: syntax error: unexpected label_replace",
+          "result_bytes": 489
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"end\":\"2026-10-13T17:40:00Z\",\"limit\":20,\"query\":\"{namespace=\\\\\\\"otel-demo\\\\\\\", pod=~\\\\\\\"frontend-proxy.*\\\\\\\"} | json | line_format \\\"{{ .statusCode }}\\\" | count_over_time({app=\\\"frontend-proxy\\\"}[5m])\",\"start\":\"2026-10-13T17:20:00Z\"}",
+          "error": "backend http://127.0.0.1:13100/loki/api/v1/query_range?end=2026-10-13T17%3A40%3A00Z\u0026l…8%7Bapp%3D%22frontend-proxy%22%7D%5B5m%5D%29\u0026start=2026-10-13T17%3A20%3A00Z: HTTP 400: parse error at line 1, col 12: syntax error: unexpected IDENTIFIER, expecting STRING",
+          "result_bytes": 441
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"end\":\"2026-10-13T17:40:00Z\",\"limit\":20,\"query\":\"{namespace=\\\"otel-demo\\\", pod=~\\\"frontend-proxy.*\\\"} |~ \\\"500\\\" | line_format \\\"{{ .msg }}\\\"\",\"start\":\"2026-10-13T17:30:00Z\"}",
+          "result_bytes": 3479
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":200,\"match\":\"http\",\"selector\":\"\"}",
+          "result_bytes": 1566
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-10-13T17:40:00Z\",\"query\":\"http_server_request_duration_seconds{namespace=\\\"otel-demo\\\", service=\\\"frontend-proxy\\\"} \\u003e 0.5\",\"start\":\"2026-10-13T16:40:00Z\",\"step\":\"1m\"}",
+          "result_bytes": 64
+        },
+        {
+          "tool": "list_log_labels",
+          "arguments": "{\"label\":\"pod\",\"limit\":10}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "list_trace_tags",
+          "arguments": "{\"limit\":100,\"match\":\"resource\",\"tag\":\"resource.service.name\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":10,\"query\":\"{resource.service.name=\\\"frontend-proxy\\\"} \\u0026\\u0026 span.status.code = 2\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=10\u0026q=%7Bresource.service.name%3D%22frontend-proxy%22%7D+%26%26+span.status.code+%3D+2: HTTP 400: invalid TraceQL query: parse error at line 0, col 45: syntax error: unexpected span., expecting { or (",
+          "result_bytes": 259
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":10,\"query\":\"{resource.service.name = \\\"frontend-proxy\\\"} \\u0026\\u0026 {span.status.code = 2}\"}",
+          "result_bytes": 84
+        }
+      ],
+      "error": "normalize: parsing diagnosis: json: unknown field \"confiden\" (submitted: {\"category\":\"dependency-latency\",\"confiden\":0.8,\"evidence\":[{\"alert\":\"HighSpanErrorRatio\",\"service\":\"load-generator\"},{\"alert\":\"HighSpanErrorRatio\",\"service\":\"frontend-proxy\"},{\"alert\":\"HighSpanErrorRatio\",\"service\":\"recommendation\"}],\"root_cause_entities\":[{\"kind\":\"Deployment\",\"name\":\"frontend-proxy\",\"namespace\":\"otel-demo\"}],\"summary\":\"Frequent 500 responses from the frontend‑proxy cause downstream services to hit timeouts and a high span error ratio on several workloads.\"})"
+    }
+  ],
+  "summary": {
+    "attempts": 1,
+    "diagnoses": 0,
+    "failures": 1,
+    "budget_exhausted": 0,
+    "answer_rate": 0,
+    "mean_score": 0,
+    "stddev_score": 0,
+    "mean_entity_score": 0,
+    "stddev_entity_score": 0,
+    "category_match_rate": 0,
+    "evidence_missing_rate": 0,
+    "mean_tool_calls": 17,
+    "mean_tokens": 104298
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "scenario": "missing-service-name-payment",
+  "scenario_hash": "745045b4d5bfce201fdcaca1efbf0055bed140a6a159ed2df20ba5be2f74e376",
+  "agent": "gpt-oss:20b",
+  "env_digest": "kind-2026-10-13",
+  "condition": "degraded",
+  "categories_offered": [
+    "alert-storm",
+    "broken-trace-propagation",
+    "cardinality-explosion",
+    "certificate-expiry",
+    "dependency-latency",
+    "deploy-regression",
+    "disk-pressure",
+    "missing-service-name",
+    "network-partition",
+    "oomkill",
+    "storage-throttling"
+  ],
+  "seed": 0,
+  "budget": {
+    "MaxToolCalls": 20,
+    "MaxTokens": 100000
+  },
+  "model": {
+    "endpoint": "http://172.29.192.1:11434/v1/chat/completions",
+    "model": "gpt-oss:20b"
+  },
+  "agent_timeout": "30m0s",
+  "max_turn_tokens": 8192,
+  "runs": [
+    {
+      "repeat": 0,
+      "started": "2026-10-13T17:31:51.521523604Z",
+      "finished": "2026-10-13T17:33:44.422241807Z",
+      "usage": {
+        "tool_calls": 7,
+        "tool_errors": 3,
+        "tokens": 29198,
+        "steps": 9,
+        "nudges": 1
+      },
+      "tool_log": [
+        {
+          "tool": "get_k8s_topology",
+          "arguments": "{\"namespace\":\"otel-demo\"}",
+          "result_bytes": 2309
+        },
+        {
+          "tool": "list_alerts",
+          "arguments": "{\"state\":\"\"}",
+          "result_bytes": 1782
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"{service.name=~\\\"load-generator\\\" \\u0026\\u0026 status=error}\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=20\u0026q=%7Bservice.name%3D~%22load-generator%22+%26%26+status%3Derror%7D: HTTP 400: invalid TraceQL query: parse error at line 1, col 2: syntax error: unexpected IDENTIFIER",
+          "result_bytes": 229
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"{service.name=\\\"load-generator\\\" \\u0026\\u0026 status=error}\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=20\u0026q=%7Bservice.name%3D%22load-generator%22+%26%26+status%3Derror%7D: HTTP 400: invalid TraceQL query: parse error at line 1, col 2: syntax error: unexpected IDENTIFIER",
+          "result_bytes": 228
+        },
+        {
+          "tool": "list_trace_tags",
+          "arguments": "{\"limit\":10,\"tag\":\"\"}",
+          "result_bytes": 324
+        },
+        {
+          "tool": "list_log_labels",
+          "arguments": "{\"label\":\"\"}",
+          "result_bytes": 104
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"{service.name=\\\\\\\"frontend-proxy\\\\\\\" \\u0026\\u0026 status!=ok}\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=20\u0026q=%7Bservice.name%3D%5C%22frontend-proxy%5C%22+%26%26+status%21%3Dok%7D: HTTP 400: invalid TraceQL query: parse error at line 1, col 2: syntax error: unexpected IDENTIFIER",
+          "result_bytes": 234
+        }
+      ],
+      "error": "agent gpt-oss:20b: finished without calling submit_diagnosis (last reply: \"\")"
+    }
+  ],
+  "summary": {
+    "attempts": 1,
+    "diagnoses": 0,
+    "failures": 1,
+    "budget_exhausted": 0,
+    "answer_rate": 0,
+    "mean_score": 0,
+    "stddev_score": 0,
+    "mean_entity_score": 0,
+    "stddev_entity_score": 0,
+    "category_match_rate": 0,
+    "evidence_missing_rate": 0,
+    "mean_tool_calls": 7,
+    "mean_tokens": 29198
+  }
+}

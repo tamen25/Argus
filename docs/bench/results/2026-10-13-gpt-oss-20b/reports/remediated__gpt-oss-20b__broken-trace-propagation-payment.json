@@ -1,0 +1,185 @@
+{
+  "scenario": "broken-trace-propagation-payment",
+  "scenario_hash": "c121ade992f9763633fa4b1a4310b97c8193d0e8212f22e2a7dd05031cc0442b",
+  "agent": "gpt-oss:20b",
+  "env_digest": "kind-2026-10-13",
+  "condition": "remediated",
+  "categories_offered": [
+    "alert-storm",
+    "broken-trace-propagation",
+    "cardinality-explosion",
+    "certificate-expiry",
+    "dependency-latency",
+    "deploy-regression",
+    "disk-pressure",
+    "missing-service-name",
+    "network-partition",
+    "oomkill",
+    "storage-throttling"
+  ],
+  "seed": 0,
+  "budget": {
+    "MaxToolCalls": 20,
+    "MaxTokens": 100000
+  },
+  "model": {
+    "endpoint": "http://172.29.192.1:11434/v1/chat/completions",
+    "model": "gpt-oss:20b"
+  },
+  "agent_timeout": "30m0s",
+  "max_turn_tokens": 8192,
+  "runs": [
+    {
+      "repeat": 0,
+      "started": "2026-10-13T17:43:08.866560496Z",
+      "finished": "2026-10-13T17:46:04.91169588Z",
+      "usage": {
+        "tool_calls": 18,
+        "tool_errors": 4,
+        "tokens": 91522,
+        "steps": 21,
+        "nudges": 1,
+        "submit_rejections": 1
+      },
+      "tool_log": [
+        {
+          "tool": "list_alerts",
+          "arguments": "{\"state\":\"firing\"}",
+          "result_bytes": 2621
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":10,\"match\":\"\",\"selector\":\"{__name__=~\\\".*_span_error_ratio.*\\\"}\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "get_k8s_topology",
+          "arguments": "{\"namespace\":\"oteldemo\"}",
+          "result_bytes": 1753
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":20,\"match\":\"error\",\"selector\":\"\"}",
+          "result_bytes": 118
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"start\":\"2026-10-13T17:20:00Z\",\"end\":\"2026-10-13T17:30:00Z\",\"step\":\"30s\",\"query\":\"service_span_errors_ratio_rate5m{service=\\\"frontend\\\"}\",\"time\":\"\"}",
+          "result_bytes": 64
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"service\"}",
+          "result_bytes": 298
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-10-13T17:30:00Z\",\"query\":\"system_network_errors_total{service=\\\"frontend-proxy\\\"}\",\"start\":\"2026-10-13T17:20:00Z\",\"step\":\"60s\",\"time\":\"\"}",
+          "result_bytes": 64
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":50,\"match\":\"\",\"selector\":\"{__name__=~\\\".*_errors*\\\"}\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":10,\"query\":\"{ resource.service.name = \\\"frontend\\\" \\u0026\\u0026 status=\\\"error\\\" }\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=10\u0026q=%7B+resource.service.name+%3D+%22frontend%22+%26%26+status%3D%22error%22+%7D: HTTP 400: invalid TraceQL query: binary operations must operate on the same type: status = `error`",
+          "result_bytes": 241
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":10,\"query\":\"{ resource.service.name \\\"frontend\\\" \\u0026\\u0026 status=\\\"error\\\" }\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=10\u0026q=%7B+resource.service.name+%22frontend%22+%26%26+status%3D%22error%22+%7D: HTTP 400: invalid TraceQL query: parse error at line 1, col 25: syntax error: unexpected STRING",
+          "result_bytes": 234
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":10,\"query\":\"{ resource.service.name = \\\"frontend\\\" \\u0026\\u0026 span.kind=\\\"client\\\" \\u0026\\u0026 status=true }\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=10\u0026q=%7B+resource.service.name+%3D+%22frontend%22+%26%26+span.kind%3D%22client%22+%26%26+status%3Dtrue+%7D: HTTP 400: invalid TraceQL query: binary operations must operate on the same type: status = true",
+          "result_bytes": 263
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":10,\"query\":\"{ resource.service.name = \\\"frontend\\\" \\u0026\\u0026 span.kind=\\\"client\\\" \\u0026\\u0026 status=\\\"unknown\\\" }\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=10\u0026q=%7B+resource.service.name+%3D+%2…%22+%26%26+span.kind%3D%22client%22+%26%26+status%3D%22unknown%22+%7D: HTTP 400: invalid TraceQL query: binary operations must operate on the same type: status = `unknown`",
+          "result_bytes": 277
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":10,\"query\":\"{ resource.service.name = \\\"frontend\\\" \\u0026\\u0026 span.kind=\\\"client\\\" }\"}",
+          "result_bytes": 84
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"end\":\"2026-10-13T17:30:00Z\",\"limit\":100,\"query\":\"{job=\\\"otel-demo\\\"} |= \\\"error\\\"\",\"start\":\"2026-10-13T17:20:00Z\"}",
+          "result_bytes": 3482
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-10-13T17:30:00Z\",\"query\":\"service_span_errors_ratio_rate5m{service=\\\"frontend\\\"}\",\"start\":\"2026-10-13T17:20:00Z\",\"step\":\"1m\"}",
+          "result_bytes": 64
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"service_name\"}",
+          "result_bytes": 61
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":2000,\"match\":\"error\",\"selector\":\"{__name__=~\\\".*errors.*\\\"}\"}",
+          "result_bytes": 118
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-10-13T17:30:00Z\",\"query\":\"service:span_errors{service=\\\"frontend\\\"}\",\"start\":\"2026-10-13T17:20:00Z\",\"step\":\"1m\"}",
+          "result_bytes": 64
+        }
+      ],
+      "normalization": "json",
+      "score": {
+        "scenario": "broken-trace-propagation-payment",
+        "score": 0.5,
+        "entity_score": 0,
+        "category_match": true,
+        "category": "broken-trace-propagation",
+        "evidence_count": 1,
+        "cited_signals": [
+          "topology"
+        ],
+        "malformed_evidence": 2,
+        "matched": null,
+        "missed": [
+          {
+            "kind": "Deployment",
+            "namespace": "otel-demo",
+            "name": "payment"
+          }
+        ],
+        "extra": [
+          {
+            "kind": "Deployment",
+            "namespace": "oteldemo",
+            "name": "frontend-proxy"
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "attempts": 1,
+    "diagnoses": 1,
+    "failures": 0,
+    "budget_exhausted": 0,
+    "answer_rate": 1,
+    "mean_score": 0.5,
+    "stddev_score": 0,
+    "mean_entity_score": 0,
+    "stddev_entity_score": 0,
+    "category_match_rate": 1,
+    "evidence_missing_rate": 0,
+    "mean_tool_calls": 18,
+    "mean_tokens": 91522
+  }
+}

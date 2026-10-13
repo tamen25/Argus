@@ -1,0 +1,134 @@
+{
+  "scenario": "redis-latency-cart",
+  "scenario_hash": "3756373203511eb2dd1b19002ddf531b8e9fa8e6a98545f616da11b1fda11b65",
+  "agent": "gpt-oss:20b",
+  "env_digest": "kind-2026-10-13",
+  "condition": "remediated",
+  "categories_offered": [
+    "alert-storm",
+    "broken-trace-propagation",
+    "cardinality-explosion",
+    "certificate-expiry",
+    "dependency-latency",
+    "deploy-regression",
+    "disk-pressure",
+    "missing-service-name",
+    "network-partition",
+    "oomkill",
+    "storage-throttling"
+  ],
+  "seed": 0,
+  "budget": {
+    "MaxToolCalls": 20,
+    "MaxTokens": 100000
+  },
+  "model": {
+    "endpoint": "http://172.29.192.1:11434/v1/chat/completions",
+    "model": "gpt-oss:20b"
+  },
+  "agent_timeout": "30m0s",
+  "max_turn_tokens": 8192,
+  "runs": [
+    {
+      "repeat": 0,
+      "started": "2026-10-13T18:08:28.734748317Z",
+      "finished": "2026-10-13T18:10:27.875555389Z",
+      "usage": {
+        "tool_calls": 14,
+        "tool_errors": 2,
+        "tokens": 105663,
+        "steps": 15
+      },
+      "tool_log": [
+        {
+          "tool": "get_k8s_topology",
+          "arguments": "{\"namespace\":\"otel-demo\"}",
+          "result_bytes": 2935
+        },
+        {
+          "tool": "list_alerts",
+          "arguments": "{\"state\":\"\"}",
+          "result_bytes": 5194
+        },
+        {
+          "tool": "list_trace_tags",
+          "arguments": "{\"tag\":\"resource.service.name\",\"limit\":10}",
+          "result_bytes": 163
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":100,\"match\":\"span\",\"selector\":\"\"}",
+          "result_bytes": 396
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"start\":\"2026-10-13T18:00:00Z\",\"end\":\"2026-10-13T19:00:00Z\",\"step\":\"1m\",\"query\":\"service:span_errors:ratio_rate5m\"}",
+          "result_bytes": 5447
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"end\":\"2026-10-13T19:00:00Z\",\"limit\":100,\"query\":\"{service=\\\"frontend\\\"} |= \\\"level=error\\\"\",\"start\":\"2026-10-13T18:00:00Z\"}",
+          "result_bytes": 3479
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":30,\"query\":\"{ resource.service.name = \\\"frontend\\\" \\u0026\\u0026 status=\\\"error\\\" } \"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=30\u0026q=%7B+resource.service.name+%3D+%22frontend%22+%26%26+status%3D%22error%22+%7D+: HTTP 400: invalid TraceQL query: binary operations must operate on the same type: status = `error`",
+          "result_bytes": 242
+        },
+        {
+          "tool": "list_trace_tags",
+          "arguments": "{\"limit\":20,\"tag\":\"status\"}",
+          "result_bytes": 74
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":30,\"query\":\"{ status = \\\"error\\\" }\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=30\u0026q=%7B+status+%3D+%22error%22+%7D: HTTP 400: invalid TraceQL query: binary operations must operate on the same type: status = `error`",
+          "result_bytes": 195
+        },
+        {
+          "tool": "list_trace_tags",
+          "arguments": "{\"limit\":20,\"tag\":\"span.\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"end\":\"2026-10-13T19:00:00Z\",\"limit\":20,\"query\":\"{service=\\\"checkout\\\"} |= \\\"error\\\"\"}",
+          "result_bytes": 3481
+        },
+        {
+          "tool": "list_trace_tags",
+          "arguments": "{\"limit\":100,\"tag\":\"\"}",
+          "result_bytes": 2759
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-10-13T19:00:00Z\",\"query\":\"service:span_errors:ratio_rate5m{service=\\\"frontend\\\"} \\u003e 0.05\",\"start\":\"2026-10-13T18:00:00Z\",\"step\":\"1m\"}",
+          "result_bytes": 643
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-10-13T19:00:00Z\",\"query\":\"service:span_errors:ratio_rate5m{service=\\\"checkout\\\"} \\u003e 0.05\",\"start\":\"2026-10-13T18:00:00Z\",\"step\":\"1m\"}",
+          "result_bytes": 189
+        }
+      ],
+      "error": "agent gpt-oss:20b: finished without calling submit_diagnosis (last reply: \"**Diagnosis**\\n\\n- **Root‑cause entities**:  \\n  - `otel-demo/frontend` Deployment (Kubernetes) – service “frontend” shows susta…rontend* depends on, leading to a spike in span errors from the *frontend* and *frontend‑proxy* workloads. The fault is a **dependency-latency** issue rather than mis‑propagated traces (traces are present), missing service.name, certificates, or other categories.\")"
+    }
+  ],
+  "summary": {
+    "attempts": 1,
+    "diagnoses": 0,
+    "failures": 1,
+    "budget_exhausted": 0,
+    "answer_rate": 0,
+    "mean_score": 0,
+    "stddev_score": 0,
+    "mean_entity_score": 0,
+    "stddev_entity_score": 0,
+    "category_match_rate": 0,
+    "evidence_missing_rate": 0,
+    "mean_tool_calls": 14,
+    "mean_tokens": 105663
+  }
+}

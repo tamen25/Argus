@@ -29,10 +29,11 @@ holmesgpt     | --agent shell --shell-command holmes --shell-arg ask
 
 The plan asks for at least one frontier model, one budget model and HolmesGPT.
 The v1.0 flagship ran one open-weights model on a server the maintainer runs
-(DECISIONS.md, 2026-10-09 and 2026-10-13):
+(DECISIONS.md, 2026-10-09 and 2026-10-13); its result is in
+[Flagship result (v1.0)](flagship-results.md):
 
 ```text
-qwen3-14b | --agent openai --endpoint http://<host>:11434/v1/chat/completions --model qwen3:14b --agent-timeout 30m
+gpt-oss-20b | --agent openai --endpoint http://<host>:11434/v1/chat/completions --model gpt-oss:20b --agent-timeout 30m
 ```
 
 Serve the model entirely from GPU memory if you can. A model partly offloaded to
