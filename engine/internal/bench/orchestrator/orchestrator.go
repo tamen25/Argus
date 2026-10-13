@@ -297,7 +297,10 @@ func runOnce(
 	d, method, err := normalize(ctx, opts.Normalizers, res.Raw, sc.Metadata.Name)
 	rec.Normalization = method
 	if err != nil {
-		rec.Error = fmt.Sprintf("normalize: %v", err)
+		// The submission is kept (truncated) so a rejected answer can be told
+		// apart from an absent one: the first gpt-oss runs submitted arguments
+		// with a field the schema does not have.
+		rec.Error = fmt.Sprintf("normalize: %v (submitted: %s)", err, truncateSubmission(res.Raw))
 		return finish()
 	}
 
@@ -554,4 +557,14 @@ func stddev(xs []float64, m float64) float64 {
 		return 0
 	}
 	return sd
+}
+
+// maxKeptSubmission bounds the raw submission kept in a failed run's error.
+const maxKeptSubmission = 600
+
+func truncateSubmission(raw json.RawMessage) string {
+	if len(raw) <= maxKeptSubmission {
+		return string(raw)
+	}
+	return string(raw[:maxKeptSubmission]) + "…"
 }

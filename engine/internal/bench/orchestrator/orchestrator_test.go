@@ -239,6 +239,21 @@ func TestRun_InterruptStillCleansUpAndIsReported(t *testing.T) {
 	}
 }
 
+// A submission the normalizer rejects is kept in the error, so a wrong-shape
+// answer can be told apart from no answer.
+func TestRun_RejectedSubmissionIsKept(t *testing.T) {
+	ag := &scriptAgent{answers: []string{`{"results":{"category":"x"}}`}}
+	opts := fastOpts(1)
+	opts.Normalizers = []bench.Normalizer{bench.JSONNormalizer{}}
+	rep, err := Run(context.Background(), testScenario(), ag, nil, &fakeInjector{}, okProbe{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rep.Runs[0].Error; !strings.Contains(got, `submitted: {"results":{"category":"x"}}`) {
+		t.Errorf("error = %q, want the rejected submission kept", got)
+	}
+}
+
 func TestRun_RecordsAgentTimeout(t *testing.T) {
 	opts := fastOpts(1)
 	opts.AgentTimeout = 30 * time.Minute
