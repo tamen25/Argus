@@ -83,6 +83,12 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-49** (#90) — found by the first flagship session: the OpenAI adapter sent
+  no per-turn output cap, and the token budget is only checked between turns, so
+  a model looping in its reasoning held one turn open for the full 30-minute
+  timeout. `--max-turn-tokens` (default 8192) now caps every turn for both API
+  adapters, a turn cut off at the cap ends the run saying so, and the cap is
+  recorded (`max_turn_tokens`) and caveated by `--compare` when it differs.
 - [x] **B-48** (#88) — found by the flagship run: an interrupted `bench run`
   left its fault in the cluster (cleanup was handed the cancelled context), and
   the report did not record the agent timeout that had ended three runs. Now

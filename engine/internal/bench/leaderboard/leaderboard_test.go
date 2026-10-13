@@ -273,7 +273,7 @@ func TestDataCaveats_DiscloseWhatIsNotLikeForLike(t *testing.T) {
 		"Agent `model-b` was served by 2 different models or endpoints",
 		"1 run(s) were normalized by a non-deterministic method",
 		"Runs were offered 2 different fault category lists (some were offered none)",
-		"Agent `model-b` ran with 2 different per-call timeouts (30m0s; not recorded)",
+		"Agent `model-b` ran with 2 different per-call limits (timeout, output cap per turn: 30m0s, no turn cap; not recorded, no turn cap)",
 	} {
 		if !containsCaveat(c.Caveats, want) {
 			t.Errorf("missing caveat %q in:\n%s", want, strings.Join(c.Caveats, "\n"))

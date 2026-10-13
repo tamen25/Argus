@@ -98,6 +98,9 @@ type Options struct {
 	// is not a budget the agent sees, but a run it cuts short has no diagnosis,
 	// so a slow server under a short timeout reads as an agent that broke.
 	AgentTimeout time.Duration
+	// MaxTurnTokens is the cap on one turn's output the agent ran with, recorded
+	// in the report; zero when none was sent.
+	MaxTurnTokens int
 	// CleanupTimeout caps a repeat's cleanup, which runs even after the run was
 	// interrupted.
 	CleanupTimeout time.Duration
@@ -164,9 +167,11 @@ type Report struct {
 	Model             *ModelInfo   `json:"model,omitempty"`
 	// AgentTimeout is Options.AgentTimeout as a Go duration ("30m0s"); empty
 	// when the adapter's default was not recorded.
-	AgentTimeout string      `json:"agent_timeout,omitempty"`
-	Runs         []RunRecord `json:"runs"`
-	Summary      Summary     `json:"summary"`
+	AgentTimeout string `json:"agent_timeout,omitempty"`
+	// MaxTurnTokens is Options.MaxTurnTokens; omitted when no cap was sent.
+	MaxTurnTokens int         `json:"max_turn_tokens,omitempty"`
+	Runs          []RunRecord `json:"runs"`
+	Summary       Summary     `json:"summary"`
 }
 
 // ErrInterrupted is returned, wrapping the context's error, when ctx is
@@ -208,6 +213,7 @@ func Run(
 	if opts.AgentTimeout > 0 {
 		rep.AgentTimeout = opts.AgentTimeout.String()
 	}
+	rep.MaxTurnTokens = opts.MaxTurnTokens
 
 	for i := 0; i < opts.Repeats; i++ {
 		rec := runOnce(ctx, sc, ag, tools, inj, probe, opts, i)

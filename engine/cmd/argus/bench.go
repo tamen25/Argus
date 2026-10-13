@@ -69,8 +69,9 @@ type benchFlags struct {
 	judgeModel    string
 	judgeKeyEnv   string
 
-	agentTimeout time.Duration
-	judgeTimeout time.Duration
+	agentTimeout  time.Duration
+	maxTurnTokens int
+	judgeTimeout  time.Duration
 
 	format string
 	out    string
@@ -136,15 +137,16 @@ own output the same way twice would launder that error into the score.`,
 			}
 
 			opts := orchestrator.Options{
-				Repeats:      f.repeats,
-				Budget:       agent.Budget{MaxToolCalls: f.maxToolCalls, MaxTokens: f.maxTokens},
-				Normalizers:  buildNormalizers(f),
-				Seed:         f.seed,
-				EnvDigest:    f.envDigest,
-				Condition:    f.condition,
-				Categories:   categories,
-				Model:        modelInfo(f),
-				AgentTimeout: f.agentTimeout,
+				Repeats:       f.repeats,
+				Budget:        agent.Budget{MaxToolCalls: f.maxToolCalls, MaxTokens: f.maxTokens},
+				Normalizers:   buildNormalizers(f),
+				Seed:          f.seed,
+				EnvDigest:     f.envDigest,
+				Condition:     f.condition,
+				Categories:    categories,
+				Model:         modelInfo(f),
+				AgentTimeout:  f.agentTimeout,
+				MaxTurnTokens: turnCap(f),
 			}
 
 			// An interrupt (Ctrl-C, or a matrix being stopped) cancels the run,
@@ -214,6 +216,9 @@ own output the same way twice would launder that error into the score.`,
 		"cap on a single LLM-judge call; judging is one short request, so it gets less than an agent turn")
 	fl.DurationVar(&f.agentTimeout, "agent-timeout", agent.DefaultAgentTimeout,
 		"cap on a single model call; a reasoning model can spend minutes on one turn")
+	fl.IntVar(&f.maxTurnTokens, "max-turn-tokens", defaultMaxTurnTokens,
+		"cap on one turn's output (openai, anthropic); 0 sends none to openai. Without one, a model that "+
+			"loops in its reasoning holds a turn open until --agent-timeout")
 
 	fl.StringVar(&f.format, "format", "md", "output format: md | json")
 	fl.StringVar(&f.out, "out", "", "write the report to this file instead of stdout")
@@ -247,6 +252,19 @@ func modelInfo(f benchFlags) *orchestrator.ModelInfo {
 	return &orchestrator.ModelInfo{Endpoint: f.endpoint, Model: f.model}
 }
 
+// defaultMaxTurnTokens leaves a reasoning model room to think and call a tool
+// in one turn, while ending a turn that loops within minutes.
+const defaultMaxTurnTokens = 8192
+
+// turnCap is the per-turn output cap the run actually sent, for the report:
+// only the API adapters send one.
+func turnCap(f benchFlags) int {
+	if f.agentKind != "openai" && f.agentKind != "anthropic" {
+		return 0
+	}
+	return f.maxTurnTokens
+}
+
 func buildAgent(f benchFlags) (agent.Agent, error) {
 	key := ""
 	if f.apiKeyEnv != "" {
@@ -259,6 +277,7 @@ func buildAgent(f benchFlags) (agent.Agent, error) {
 		}
 		return agent.NewOpenAI(agent.OpenAIConfig{
 			Endpoint: f.endpoint, Model: f.model, APIKey: key, Timeout: f.agentTimeout,
+			MaxTurnTokens: f.maxTurnTokens,
 		}), nil
 	case "anthropic":
 		if f.model == "" {
@@ -266,6 +285,7 @@ func buildAgent(f benchFlags) (agent.Agent, error) {
 		}
 		return agent.NewAnthropic(agent.AnthropicConfig{
 			Endpoint: f.endpoint, Model: f.model, APIKey: key, Timeout: f.agentTimeout,
+			MaxTokens: f.maxTurnTokens,
 		}), nil
 	case "shell":
 		if f.shellCommand == "" {
