@@ -1,0 +1,54 @@
+#!/bin/bash
+# First boot of the Argus bench VM: tools, the checkout, the kind cluster.
+# Rendered by Terraform (templatefile), so shell variables are written $${...}.
+# Progress: /var/log/argus-setup.log. Done when /var/lib/argus-setup-done exists.
+set -euxo pipefail
+exec > /var/log/argus-setup.log 2>&1
+export DEBIAN_FRONTEND=noninteractive HOME=/root
+
+apt-get update
+apt-get install -y docker.io git make python3 curl jq ca-certificates
+systemctl enable --now docker
+snap install aws-cli --classic
+
+# kind runs a whole cluster in one container; the defaults run out of inotify.
+cat > /etc/sysctl.d/90-kind.conf <<'EOF'
+fs.inotify.max_user_watches = 524288
+fs.inotify.max_user_instances = 512
+EOF
+sysctl --system
+
+# Same tool versions as the dev environment.
+curl -fsSLo /usr/local/bin/kind "https://kind.sigs.k8s.io/dl/${kind_version}/kind-linux-amd64"
+curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${kubectl_version}/bin/linux/amd64/kubectl"
+chmod +x /usr/local/bin/kind /usr/local/bin/kubectl
+curl -fsSL "https://get.helm.sh/helm-${helm_version}-linux-amd64.tar.gz" | tar -xz -C /tmp
+install /tmp/linux-amd64/helm /usr/local/bin/helm
+curl -fsSL "https://go.dev/dl/go${go_version}.linux-amd64.tar.gz" | tar -xz -C /usr/local
+export PATH="$PATH:/usr/local/go/bin"
+
+# Codex CLI (needs a current Node.js).
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt-get install -y nodejs
+npm install -g "@openai/codex@${codex_version}"
+
+# The agent's user. It cannot read root's home, where the checkout and its
+# scenario ground truth live; Codex runs as this user (scripts/agents/codex.sh,
+# ARGUS_AGENT_USER).
+useradd --create-home --shell /bin/bash argusagent
+install -d -m 700 -o argusagent -g argusagent /home/argusagent/.codex /home/argusagent/.kube
+chmod 700 /root
+
+# The checkout, the engine, the cluster.
+git clone "${repo_url}" /root/argus
+git -C /root/argus checkout "${git_ref}"
+git -C /root/argus rev-parse HEAD > /var/lib/argus-snapshot
+(cd /root/argus/engine && go build -o /usr/local/bin/argus ./cmd/argus)
+(cd /root/argus && make dev-up)
+
+# The agent's MCP server lists workloads with kubectl: a kubeconfig of its own.
+kind get kubeconfig --name argus > /home/argusagent/.kube/config
+chown argusagent:argusagent /home/argusagent/.kube/config
+chmod 600 /home/argusagent/.kube/config
+
+date -Is > /var/lib/argus-setup-done

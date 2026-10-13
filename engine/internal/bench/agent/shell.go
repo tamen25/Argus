@@ -53,6 +53,9 @@ func NewShell(cfg ShellConfig) *ShellAgent {
 // Name identifies the agent in the run record.
 func (s *ShellAgent) Name() string { return s.cfg.Name }
 
+// Timeout is the wall-clock cap on one run, the only cap a shell agent has.
+func (s *ShellAgent) Timeout() time.Duration { return s.cfg.Timeout }
+
 // Diagnose runs the external agent. The incident brief is delivered both on
 // stdin and via ARGUS_BRIEF/ARGUS_SCENARIO, so wrappers can consume whichever
 // suits the tool. Stdout is returned verbatim as the raw diagnosis.

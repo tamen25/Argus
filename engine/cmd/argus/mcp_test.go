@@ -57,3 +57,11 @@ func TestMCPCommand_ToolsListOverStdio(t *testing.T) {
 		t.Error("query_loki should be absent without --loki-url")
 	}
 }
+
+// Both entry points to get_k8s_topology hide the bench's fault objects; `argus
+// mcp` once listed them, which an external agent would have read as the answer.
+func TestTopologyHidesBenchFaults(t *testing.T) {
+	if hideBenchFaults != "app.kubernetes.io/managed-by!=argus-bench" {
+		t.Errorf("selector = %q, want the bench label negated", hideBenchFaults)
+	}
+}
