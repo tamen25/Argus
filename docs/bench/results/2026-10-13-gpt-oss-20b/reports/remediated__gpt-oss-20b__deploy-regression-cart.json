@@ -1,0 +1,149 @@
+{
+  "scenario": "deploy-regression-cart",
+  "scenario_hash": "1f93bb0389c4ee109aa07c6ca9fb4e7ade43eba8ba14ce08ca96049b7e1a2b39",
+  "agent": "gpt-oss:20b",
+  "env_digest": "kind-2026-10-13",
+  "condition": "remediated",
+  "categories_offered": [
+    "alert-storm",
+    "broken-trace-propagation",
+    "cardinality-explosion",
+    "certificate-expiry",
+    "dependency-latency",
+    "deploy-regression",
+    "disk-pressure",
+    "missing-service-name",
+    "network-partition",
+    "oomkill",
+    "storage-throttling"
+  ],
+  "seed": 0,
+  "budget": {
+    "MaxToolCalls": 20,
+    "MaxTokens": 100000
+  },
+  "model": {
+    "endpoint": "http://172.29.192.1:11434/v1/chat/completions",
+    "model": "gpt-oss:20b"
+  },
+  "agent_timeout": "30m0s",
+  "max_turn_tokens": 8192,
+  "runs": [
+    {
+      "repeat": 0,
+      "started": "2026-10-13T17:52:27.174742066Z",
+      "finished": "2026-10-13T17:55:22.48423458Z",
+      "usage": {
+        "tool_calls": 17,
+        "tool_errors": 2,
+        "tokens": 116277,
+        "steps": 18
+      },
+      "tool_log": [
+        {
+          "tool": "get_k8s_topology",
+          "arguments": "{\"namespace\":\"otel-demo\"}",
+          "result_bytes": 3125
+        },
+        {
+          "tool": "list_alerts",
+          "arguments": "{\"state\":\"firing\"}",
+          "result_bytes": 334
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":100,\"match\":\"\",\"selector\":\"{__name__=\\\"opentelemetry_sdk_observed_spans_errors_total\\\"}\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"service\",\"limit\":100,\"match\":\"\",\"selector\":\"{__name__=\\\"opentelemetry_sdk_observed_spans_errors_total\\\"}\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"start\":\"2026-10-13T17:00:00Z\",\"end\":\"2026-10-13T18:00:00Z\",\"step\":\"60s\",\"query\":\"rate(opentelemetry_sdk_observed_spans_errors{service=\\\"checkout\\\"}[1m])\"}",
+          "result_bytes": 64
+        },
+        {
+          "tool": "list_alerts",
+          "arguments": "{\"state\":\"firing\"}",
+          "result_bytes": 334
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":100,\"match\":\"error\",\"selector\":\"\"}",
+          "result_bytes": 118
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-10-12T18:00:00Z\",\"query\":\"sum(rate(service:span_errors:ratio_rate5m{service=\\\"checkout\\\"}[5m])) by (service)\",\"start\":\"2020-07-1?????\"}",
+          "error": "start: parsing time \"2020-07-1?????\" as \"2006-01-02T15:04:05Z07:00\": cannot parse \"1?????\" as \"02\"",
+          "result_bytes": 118
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":200,\"match\":\"span\",\"selector\":\"\"}",
+          "result_bytes": 396
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-10-13T18:00:00Z\",\"query\":\"sum(rate(service:span_errors:ratio_rate5m{service=\\\"checkout\\\"}[5m])) by (service)\",\"start\":\"2026-10-13T17:00:00Z\",\"step\":\"60s\"}",
+          "result_bytes": 1367
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"__name__\",\"limit\":100,\"match\":\"\",\"selector\":\"{service=\\\"checkout\\\"}\"}",
+          "result_bytes": 285
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":10,\"query\":\"{resource.service.name = \\\"checkout\\\"}\"}",
+          "result_bytes": 14377
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-10-13T18:00:00Z\",\"query\":\"sum(rate(traces_spanmetrics_calls_total{service=\\\"checkout\\\"}[5m])) by (service)\",\"start\":\"2026-10-13T17:55:00Z\",\"step\":\"60s\"}",
+          "result_bytes": 282
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":10,\"query\":\"{resource.service.name = \\\"checkout\\\", status = error}\"}",
+          "error": "backend http://127.0.0.1:13200/api/search?limit=10\u0026q=%7Bresource.service.name+%3D+%22checkout%22%2C+status+%3D+error%7D: HTTP 400: invalid TraceQL query: parse error at line 1, col 36: syntax error: unexpected ,",
+          "result_bytes": 223
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":10,\"query\":\"{resource.service.name = \\\"checkout\\\" \\u0026\\u0026 status = error}\"}",
+          "result_bytes": 10651
+        },
+        {
+          "tool": "search_traces",
+          "arguments": "{\"limit\":20,\"query\":\"{status=error}\"}",
+          "result_bytes": 20460
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":200,\"match\":\"postgres\",\"selector\":\"\"}",
+          "result_bytes": 54
+        }
+      ],
+      "error": "normalize: diagnosis: confidence 95 out of [0,1] (submitted: {\"category\":\"dependency-latency\",\"confidence\":95,\"evidence\":[{\"description\":\"Many checkout spans have status=error and long duration (~150ms) with service flagd, email, cart, etc.\",\"tool\":\"search_traces\"},{\"description\":\"service:span_errors:ratio_rate5m for checkout spikes to 0.033\",\"tool\":\"query_prometheus\"},{\"description\":\"checkout is defined as a Deployment in otel-demo namespace\",\"tool\":\"get_k8s_topology\"}],\"root_cause_entities\":[{\"kind\":\"Deployment\",\"name\":\"checkout\",\"namespace\":\"otel-demo\"}],\"summary\":\"Checkout service’s calls to downstream services (email, flagd, cart) are returning e…)"
+    }
+  ],
+  "summary": {
+    "attempts": 1,
+    "diagnoses": 0,
+    "failures": 1,
+    "budget_exhausted": 0,
+    "answer_rate": 0,
+    "mean_score": 0,
+    "stddev_score": 0,
+    "mean_entity_score": 0,
+    "stddev_entity_score": 0,
+    "category_match_rate": 0,
+    "evidence_missing_rate": 0,
+    "mean_tool_calls": 17,
+    "mean_tokens": 116277
+  }
+}

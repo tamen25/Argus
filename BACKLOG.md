@@ -33,10 +33,9 @@ next starts, so nothing sits unmerged.
    major-version bumps. Required for the v1.0 exit gate.
 5. ~~**Plugin hygiene (B-21–B-24).**~~ Done, except what is blocked upstream
    (B-24, and the rest of B-21).
-6. **v1.0 artifacts (B-31–B-33).** Built and verified end to end on kind with the
-   stub: the conditions (#81), the report and the Bench page (#74, #82), and the
-   matrix runner (#85). The agent is chosen (B-46). What remains is the real
-   run (`docs/bench/flagship.md`), then the v1.0 tag.
+6. ~~**v1.0 artifacts (B-31–B-33).**~~ Done. The flagship ran and is published as
+   inconclusive (`docs/bench/flagship-results.md`). Next, post-v1.0: a conclusive
+   flagship (B-56).
 
 Needs the user: B-35 (catalog submission status).
 
@@ -65,10 +64,10 @@ Not defects. Tracked here so nothing is lost between sessions.
 
 - [ ] **B-32** — The LLM judge (the fallback normalizer for shell agents) needs a
   model other than the agent's; the guard refuses the same model id.
-- [ ] **B-33** — Flagship artifacts. Done: the report generator (#74), the
-  telemetry conditions (#81), the plugin Bench page (#82) and the matrix runner
-  with its cost projection (#85), and the agent (B-46). Still open: the run
-  itself and its published comparison.
+- [ ] **B-56** — A conclusive flagship. v1.0's agent scored at the floor under
+  both conditions (`docs/bench/flagship-results.md`). Needs an agent that
+  diagnoses some of these incidents, more passes (`--pass N`), and likely a
+  larger token budget: 7 of 8 unanswered runs ended at the 100k cap.
 - [ ] **B-34** — `deploy/terraform/` is a README placeholder. **Cut from v1.0**
   (DECISIONS.md, 2026-10-09): the flagship runs on kind; EKS is post-v1.0.
 - [ ] **B-35** — Plugin catalog submission. §9 says to submit at Phase 4 *start*
@@ -83,6 +82,10 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-33** (#98) — the flagship: report generator (#74), conditions (#81),
+  Bench page (#82), matrix runner (#85, #89), and the v1.0 run, published as
+  inconclusive in `docs/bench/flagship-results.md` (one pass, `gpt-oss:20b`,
+  Δ +0.17 over 3 paired scenarios at the score floor).
 - [x] **B-55** (#97) — found by the second flagship pass: every answered run
   scored 0 because no citation was in the schema's shape, so the evidence rule
   zeroed runs that named the right workload and category. `submit_diagnosis`

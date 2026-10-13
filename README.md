@@ -4,9 +4,11 @@
 history, and proves — with an AI-agent benchmark — whether your observability can actually
 diagnose an incident.
 
-> Status: **Phase 4 — Prove, in progress toward v1.0.** Released: v0.1 (Score — 18 rules:
-> 10 spec + 8 argus extensions), v0.2 (Spend), v0.3 (Backtest). The bench harness and its
-> eight live-validated fault scenarios are on `main`; the flagship benchmark run is next.
+> Status: **v1.0.** Released: v0.1 (Score — 18 rules: 10 spec + 8 argus extensions),
+> v0.2 (Spend), v0.3 (Backtest), v1.0 (Prove: the agent bench, eight live-validated fault
+> scenarios, and the flagship run). The v1.0 flagship result is **inconclusive** — an
+> open-weights 20B agent scored near zero under both telemetry conditions; see
+> [the result and why](docs/bench/flagship-results.md).
 > Roadmap and full specification: [docs/argus-master-build-plan.md](docs/argus-master-build-plan.md).
 
 ## What Argus will do
