@@ -211,7 +211,7 @@ func startScoring(ctx context.Context, cfg serveConfig, mux *http.ServeMux, reg 
 	export.RegisterItemStats(reg, pipe.ItemsConsumed)
 	registerAPI(mux, col, pipe, rs, readSpecVersion(cfg.specVersionFile), cfg.window)
 
-	lis, err := net.Listen("tcp", cfg.otlpAddr)
+	lis, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.otlpAddr)
 	if err != nil {
 		return nil, err
 	}

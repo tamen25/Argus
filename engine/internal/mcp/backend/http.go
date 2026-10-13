@@ -116,7 +116,7 @@ func filterAlertsByState(raw json.RawMessage, state string) (json.RawMessage, er
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil || doc.Status != "success" {
-		return raw, nil
+		return raw, nil //nolint:nilerr // an unexpected shape is passed through, not emptied
 	}
 	kept := make([]json.RawMessage, 0, len(doc.Data.Alerts))
 	for _, a := range doc.Data.Alerts {
@@ -124,7 +124,7 @@ func filterAlertsByState(raw json.RawMessage, state string) (json.RawMessage, er
 			State string `json:"state"`
 		}
 		if err := json.Unmarshal(a, &meta); err != nil {
-			return raw, nil
+			return raw, nil //nolint:nilerr // same: an unexpected shape is passed through
 		}
 		if meta.State == state {
 			kept = append(kept, a)

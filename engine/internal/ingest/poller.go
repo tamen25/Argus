@@ -88,15 +88,15 @@ func (p *Poller) verifyServicePresence(ctx context.Context, col *rules.Collector
 // verifyCardinality re-checks flagged (metric, attribute) pairs against the
 // Mimir cardinality API, which sees the unsampled stream.
 func (p *Poller) verifyCardinality(ctx context.Context, col *rules.Collector, r *rules.Rule, services []string) error {
-	max := int64(10000)
+	limit := int64(10000)
 	if v, ok := r.Params["max_cardinality"]; ok {
 		switch x := v.(type) {
 		case int:
-			max = int64(x)
+			limit = int64(x)
 		case int64:
-			max = x
+			limit = x
 		case float64:
-			max = int64(x)
+			limit = int64(x)
 		}
 	}
 
@@ -131,7 +131,7 @@ func (p *Poller) verifyCardinality(ctx context.Context, col *rules.Collector, r 
 					continue
 				}
 				col.RecordPollerResult(rules.PollerResult{
-					Service: svc, RuleID: r.ID, Passed: n < max,
+					Service: svc, RuleID: r.ID, Passed: n < limit,
 					Details: map[string]any{
 						"check": "mimir_label_cardinality", "metric": metric,
 						"attribute": attr, "series": n,

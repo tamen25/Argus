@@ -109,7 +109,7 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 	// Stream path: receive the sampled OTLP mirror for the window.
 	lis := opts.listener
 	if lis == nil && opts.listenOTLP != "" {
-		lis, err = net.Listen("tcp", opts.listenOTLP)
+		lis, err = new(net.ListenConfig).Listen(ctx, "tcp", opts.listenOTLP)
 		if err != nil {
 			return nil, err
 		}

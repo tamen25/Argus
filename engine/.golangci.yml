@@ -7,9 +7,13 @@ version: "2"
 linters:
   default: standard
   enable:
+    - bodyclose # an unclosed HTTP body leaks the connection
     - depguard
+    - errorlint # wrapped errors compared with errors.Is/As, never ==
     - gosec
     - misspell
+    - nilerr # returning nil while holding an error: intentional cases say so with //nolint
+    - noctx # outbound calls and listeners take a context, so they can be cancelled
     - unconvert
     - unparam
   settings:
@@ -41,7 +45,7 @@ linters:
     rules:
       # Tests build URLs, files and fixtures from variables by design.
       - path: _test\.go
-        linters: [gosec]
+        linters: [gosec, noctx]
 
 formatters:
   enable:
