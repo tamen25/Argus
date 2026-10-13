@@ -126,22 +126,33 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 		// A diagnosis ends the run wherever it appears in the turn — even on a
 		// turn that crossed the token cap: those tokens were spent producing it,
 		// and the agent was warned when the budget ran low.
+		// A submission with a problem reviewSubmission names is answered with that
+		// problem instead, and the run goes on.
+		rejected := map[string]string{}
 		for _, tc := range msg.ToolCalls {
 			if tc.Function.Name == submitToolName {
-				return s.result(json.RawMessage(tc.Function.Arguments)), nil
+				raw := json.RawMessage(tc.Function.Arguments)
+				problem := s.reviewSubmission(raw, task.Categories)
+				if problem == "" {
+					return s.result(raw), nil
+				}
+				rejected[tc.ID] = problem
 			}
 		}
 		// Past a cap, or told the budget is spent and asking for a tool anyway:
 		// the run ends. Nothing more is executed, so nothing more is counted — a
-		// run capped at 12 tool calls must never report 13.
-		if s.overTokens() || s.warned {
+		// run capped at 12 tool calls must never report 13. A rejected submission
+		// is the exception: the agent gets to correct it.
+		if (s.overTokens() || s.warned) && len(rejected) == 0 {
 			return s.result(nil), s.exhausted()
 		}
 
 		msgs = append(msgs, msg) // assistant turn carrying the tool_calls
 		for _, tc := range msg.ToolCalls {
 			content := budgetRefusal
-			if !s.spent() {
+			if problem, ok := rejected[tc.ID]; ok {
+				content = submitRejection(problem)
+			} else if !s.spent() && !s.warned {
 				content = s.call(ctx, task.Tools, tc.Function.Name, json.RawMessage(tc.Function.Arguments))
 			}
 			// Every tool_call id needs an answer, so a call made past the cap

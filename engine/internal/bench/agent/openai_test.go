@@ -58,7 +58,10 @@ func contentResp(text string) string {
 	return fmt.Sprintf(`{"choices":[{"message":{"role":"assistant","content":%q},"finish_reason":"stop"}],"usage":{"total_tokens":30}}`, text)
 }
 
-const diagArgs = `{"root_cause_entities":[{"kind":"Deployment","namespace":"otel-demo","name":"checkout"}],"category":"cardinality-explosion"}`
+// diagArgs is a submission reviewSubmission accepts: well-formed evidence
+// included, and no category list in the tests' tasks to check against.
+const diagArgs = `{"root_cause_entities":[{"kind":"Deployment","namespace":"otel-demo","name":"checkout"}],"category":"cardinality-explosion",` +
+	`"evidence":[{"signal":"metrics","query":"count({job=\"checkout\"})","observation":"series up 40x"}]}`
 
 func newAgent(t *testing.T, srv *httptest.Server) *OpenAIAgent {
 	t.Helper()
@@ -302,6 +305,63 @@ func TestOpenAI_Retries5xx(t *testing.T) {
 	res, err = newAgent(t, srv2).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
 	if err == nil || !strings.Contains(err.Error(), "HTTP 500") || *calls2 != 3 || res.Usage.Retries != 2 {
 		t.Errorf("err = %v, calls = %d, retries = %d; want the 500 after 3 calls and 2 retries", err, *calls2, res.Usage.Retries)
+	}
+}
+
+// The second flagship pass's citations: the model's own shape, not the schema's.
+const badEvidenceArgs = `{"root_cause_entities":[{"kind":"Deployment","namespace":"otel-demo","name":"checkout"}],` +
+	`"category":"cardinality-explosion","evidence":[{"type":"alert","id":"HighSpanErrorRatio"}]}`
+
+// A submission with no well-formed citation is answered with what is wrong,
+// and the corrected one ends the run. The rejection is not a tool call.
+func TestOpenAI_SubmissionIsCheckedAndCanBeCorrected(t *testing.T) {
+	var bodies []string
+	srv := recording(t, &bodies,
+		toolCallResp("c1", submitToolName, badEvidenceArgs, 50),
+		toolCallResp("c2", submitToolName, diagArgs, 50))
+	defer srv.Close()
+	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	if err != nil {
+		t.Fatalf("Diagnose: %v", err)
+	}
+	if string(res.Raw) != diagArgs || res.Usage.SubmitRejections != 1 || res.Usage.ToolCalls != 0 {
+		t.Errorf("raw = %s, rejections = %d, tool calls = %d; want the corrected diagnosis, 1, 0",
+			res.Raw, res.Usage.SubmitRejections, res.Usage.ToolCalls)
+	}
+	if len(bodies) != 2 || !strings.Contains(bodies[1], "submit_diagnosis rejected: no evidence item is in the required shape") {
+		t.Errorf("the second request should carry the rejection:\n%s", bodies[len(bodies)-1])
+	}
+}
+
+// At most two rejections: the third submission is accepted as it is, so a run
+// cannot loop and is scored rather than dropped.
+func TestOpenAI_SubmissionRejectedAtMostTwice(t *testing.T) {
+	srv := scripted(t,
+		toolCallResp("c1", submitToolName, badEvidenceArgs, 50),
+		toolCallResp("c2", submitToolName, badEvidenceArgs, 50),
+		toolCallResp("c3", submitToolName, badEvidenceArgs, 50))
+	defer srv.Close()
+	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	if err != nil {
+		t.Fatalf("Diagnose: %v", err)
+	}
+	if string(res.Raw) != badEvidenceArgs || res.Usage.SubmitRejections != 2 {
+		t.Errorf("raw = %s, rejections = %d; want the third submission accepted after 2", res.Raw, res.Usage.SubmitRejections)
+	}
+}
+
+// Category outside the offered list, and unparseable arguments, are rejected
+// too; a right-or-wrong diagnosis never is.
+func TestSubmissionProblem(t *testing.T) {
+	cats := []bench.Category{{Name: "oomkill"}}
+	if p := submissionProblem(json.RawMessage(diagArgs), cats); !strings.Contains(p, `category "cardinality-explosion" is not one of the offered`) {
+		t.Errorf("unoffered category: %q", p)
+	}
+	if p := submissionProblem(json.RawMessage(`{"category":`), nil); p == "" {
+		t.Error("unparseable arguments accepted")
+	}
+	if p := submissionProblem(json.RawMessage(diagArgs), nil); p != "" {
+		t.Errorf("a well-formed submission was rejected: %q", p)
 	}
 }
 

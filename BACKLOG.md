@@ -83,6 +83,12 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-55** (#97) — found by the second flagship pass: every answered run
+  scored 0 because no citation was in the schema's shape, so the evidence rule
+  zeroed runs that named the right workload and category. `submit_diagnosis`
+  now checks its arguments (parse, fields, offered category, one well-formed
+  citation) and answers a problem with a tool error, at most twice per run;
+  counted (`submit_rejections`) and disclosed. The rubric is unchanged.
 - [x] **B-54** (#96) — found by the second flagship session: a single HTTP 500
   from the model endpoint (a tool call the server could not parse) ended the
   run. Model calls are now retried on a 5xx, at most twice per run; counted
