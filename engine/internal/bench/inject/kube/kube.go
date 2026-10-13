@@ -159,7 +159,9 @@ func (i *Injector) runIn(ctx context.Context, ns string, args ...string) error {
 	}
 	full = append(full, args...)
 
-	cmd := exec.CommandContext(ctx, bin, full...)
+	// kubectl with arguments built here and manifest paths from the scenario,
+	// which is operator-authored like any test fixture.
+	cmd := exec.CommandContext(ctx, bin, full...) //nolint:gosec // operator-authored scenario
 	// stdout is left nil (discarded to the null device); only stderr is captured,
 	// and only to enrich the error — kubectl's "deployment.apps/x configured"
 	// chatter is noise the orchestrator has no use for.

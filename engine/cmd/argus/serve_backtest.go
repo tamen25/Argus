@@ -32,7 +32,7 @@ type serveBacktestConfig struct {
 // endpoint serves a cached rolling-window report.
 func registerBacktestEndpoint(mux *http.ServeMux, cfg serveBacktestConfig) error {
 	if len(cfg.rulePaths) == 0 || cfg.mimirURL == "" {
-		mux.HandleFunc("/api/backtest", notConfiguredBacktestHandler)
+		mux.HandleFunc("GET /api/backtest", notConfiguredBacktestHandler)
 		return nil
 	}
 	// fail fast: the rule and incident files must parse at startup
@@ -40,7 +40,7 @@ func registerBacktestEndpoint(mux *http.ServeMux, cfg serveBacktestConfig) error
 		return fmt.Errorf("backtest config: %w", err)
 	}
 	ep := &backtestEndpoint{cfg: cfg, now: time.Now}
-	mux.HandleFunc("/api/backtest", ep.handler())
+	mux.HandleFunc("GET /api/backtest", ep.handler())
 	return nil
 }
 

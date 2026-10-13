@@ -167,6 +167,30 @@ func TestResourceEngineUnreachable(t *testing.T) {
 	if res.Status != http.StatusBadGateway {
 		t.Errorf("status = %d, want 502", res.Status)
 	}
+	// Any viewer sees this body: it must not carry the engine's address.
+	if strings.Contains(string(res.Body), "127.0.0.1") {
+		t.Errorf("body leaks the engine address: %s", res.Body)
+	}
+}
+
+// The engine URL is checked once, when the app is configured, instead of
+// failing on every request.
+func TestNormalizeEngineURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                          defaultEngineURL,
+		"http://engine:8080":        "http://engine:8080",
+		"https://engine.example/":   "https://engine.example",
+		"  http://10.0.0.1:8080/  ": "http://10.0.0.1:8080",
+	} {
+		if got, err := normalizeEngineURL(in); err != nil || got != want {
+			t.Errorf("normalizeEngineURL(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{"engine:8080", "ftp://engine", "http://", "file:///etc/passwd"} {
+		if _, err := normalizeEngineURL(bad); err == nil {
+			t.Errorf("normalizeEngineURL(%q) accepted", bad)
+		}
+	}
 }
 
 func TestCheckHealth(t *testing.T) {
@@ -198,5 +222,65 @@ func TestBenchResourceProxiesWithQuery(t *testing.T) {
 	}
 	if got.Reports != 2 || got.Compare != "degraded,remediated" {
 		t.Errorf("proxied response = %+v, want the compare query to reach the engine", got)
+	}
+}
+
+// tokenEngine requires the bearer token on /api/, as the engine does when
+// ARGUS_API_TOKEN is set.
+func tokenEngine(t *testing.T, token string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			_, _ = w.Write([]byte("ok\n"))
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			http.Error(w, "missing or wrong API token", http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path == "/api/report" {
+			_, _ = w.Write([]byte(`{"snapshot":{}}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func tokenApp(t *testing.T, engineURL, token string) *App {
+	t.Helper()
+	inst, err := NewApp(context.Background(), backend.AppInstanceSettings{
+		JSONData:                []byte(`{"engineUrl":"` + engineURL + `"}`),
+		DecryptedSecureJSONData: map[string]string{apiTokenKey: token},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return inst.(*App)
+}
+
+// The secure token setting reaches the engine on every proxied call.
+func TestProxySendsTheAPIToken(t *testing.T) {
+	engine := tokenEngine(t, "s3cret")
+	if res := callResource(t, tokenApp(t, engine.URL, "s3cret"), "/scores"); res.Status != http.StatusOK {
+		t.Errorf("with the token: status = %d, want 200", res.Status)
+	}
+	if res := callResource(t, testApp(t, engine.URL), "/scores"); res.Status != http.StatusUnauthorized {
+		t.Errorf("without the token: status = %d, want the engine's 401 passed through", res.Status)
+	}
+}
+
+// The health check says plainly when the engine rejects the token, instead of
+// reporting a healthy engine that fails on every page.
+func TestCheckHealthReportsARejectedToken(t *testing.T) {
+	engine := tokenEngine(t, "s3cret")
+	r, err := tokenApp(t, engine.URL, "s3cret").CheckHealth(context.Background(), nil)
+	if err != nil || r.Status != backend.HealthStatusOk {
+		t.Errorf("right token: health = %+v err=%v", r, err)
+	}
+	r, err = tokenApp(t, engine.URL, "wrong").CheckHealth(context.Background(), nil)
+	if err != nil || r.Status != backend.HealthStatusError || !strings.Contains(r.Message, "rejected the API token") {
+		t.Errorf("wrong token: health = %+v err=%v", r, err)
 	}
 }

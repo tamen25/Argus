@@ -129,6 +129,14 @@ Not defects. Tracked here so nothing is lost between sessions.
   SIGINT/SIGTERM cancel the run, cleanup runs on a detached context with its own
   limit, no partial report is written, and `agent_timeout` is recorded and
   caveated by `--compare` when it differs.
+- [x] **B-57** (#100) — security review. Found: the engine never checked the
+  API token the Helm chart generates and §5.3 requires, so a "token-protected"
+  API was open to anything that could reach it. Now `/api/` requires
+  `ARGUS_API_TOKEN` as a bearer token and the plugin sends it from an
+  encrypted setting. Hardening: GET-only routes, server timeouts, a JSON writer
+  that cannot send half a 200, MCP label/tag and namespace names validated, the
+  rules loader confined to its directory with `os.Root`, plugin engine URL
+  validated and 502s that do not leak it, gosec as a lint gate.
 - [x] **B-46** (#87) — the flagship agent: one open-weights model on a server
   the maintainer runs, reached through the OpenAI-compatible adapter; no hosted
   APIs (DECISIONS.md, 2026-10-09).

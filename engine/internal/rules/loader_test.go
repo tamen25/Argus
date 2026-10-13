@@ -1,6 +1,8 @@
 package rules
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -249,4 +251,41 @@ evaluation:
 	if byID["CUSTOM-001"] == nil {
 		t.Error("extension rule missing after merge")
 	}
+}
+
+// A rules directory is a boundary: a symlink pointing out of it is not
+// followed, so a planted link cannot make the loader read another file.
+func TestLoadDirStaysInsideTheDirectory(t *testing.T) {
+	outside := t.TempDir()
+	// A valid rule: loading it would succeed, so only the boundary refuses it.
+	valid, err := os.ReadFile(filepath.Join("builtin", "spec", firstYAML(t, filepath.Join("builtin", "spec"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(outside, "outside.yaml")
+	if err := os.WriteFile(secret, valid, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(secret, filepath.Join(dir, "link.yaml")); err != nil {
+		t.Skipf("symlinks unavailable here: %v", err)
+	}
+	if _, err := LoadDir(dir); err == nil || !strings.Contains(err.Error(), "link.yaml") {
+		t.Errorf("err = %v, want the escaping link refused", err)
+	}
+}
+
+func firstYAML(t *testing.T, dir string) string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".yaml") {
+			return e.Name()
+		}
+	}
+	t.Fatalf("no rule in %s", dir)
+	return ""
 }

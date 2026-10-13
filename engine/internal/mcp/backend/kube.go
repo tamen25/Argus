@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -69,6 +70,9 @@ type topologyAnswer struct {
 // Topology lists workloads in namespace (all namespaces when empty) and the
 // service graph.
 func (k *KubeTopology) Topology(ctx context.Context, namespace string) (json.RawMessage, error) {
+	if namespace != "" && !validNamespace.MatchString(namespace) {
+		return nil, fmt.Errorf("invalid namespace %q: want a Kubernetes namespace name", namespace)
+	}
 	args := []string{"get", workloadKinds, "-o", "json"}
 	if namespace == "" {
 		args = append(args, "--all-namespaces")
@@ -170,7 +174,9 @@ func (k *KubeTopology) kubectl(ctx context.Context, args ...string) ([]byte, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "kubectl", args...)
+	// Arguments are a list, not a shell line, and the only agent-supplied one
+	// (the namespace) is checked against validNamespace first.
+	cmd := exec.CommandContext(ctx, "kubectl", args...) //nolint:gosec // see above
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
@@ -178,3 +184,8 @@ func (k *KubeTopology) kubectl(ctx context.Context, args ...string) ([]byte, err
 	}
 	return stdout.Bytes(), nil
 }
+
+// validNamespace is a Kubernetes namespace name (an RFC 1123 label). The
+// namespace is the one kubectl argument an agent chooses; checking it keeps
+// anything else, such as a value that looks like a flag, out of the command.
+var validNamespace = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)

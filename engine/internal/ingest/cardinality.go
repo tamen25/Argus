@@ -176,7 +176,7 @@ func (t *SketchTracker) Rows() []rules.AggregateRow {
 				fields[name] = a.dims[i]
 			}
 		}
-		fields["cardinality"] = int64(a.est)
+		fields["cardinality"] = int64(a.est) //nolint:gosec // an estimate never nears 2^63
 		rows = append(rows, rules.AggregateRow{Service: k.service, Aggregate: t.aggregate, Fields: fields})
 	}
 	sort.Slice(rows, func(i, j int) bool {

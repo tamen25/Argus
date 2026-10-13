@@ -136,3 +136,21 @@ func TestLokiAndTempo_Paths(t *testing.T) {
 		t.Errorf("tempo path = %s", tempoPath)
 	}
 }
+
+// An agent-supplied name is one path segment, never a way to another endpoint.
+func TestPathSegment(t *testing.T) {
+	for _, bad := range []string{"", ".", ".."} {
+		if _, err := pathSegment(bad); err == nil {
+			t.Errorf("pathSegment(%q) accepted", bad)
+		}
+	}
+	for in, want := range map[string]string{
+		"job":                   "job",
+		"resource.service.name": "resource.service.name",
+		"../x":                  "..%2Fx", // the slash is escaped: still one segment
+	} {
+		if got, err := pathSegment(in); err != nil || got != want {
+			t.Errorf("pathSegment(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+}

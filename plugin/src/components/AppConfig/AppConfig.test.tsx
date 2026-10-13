@@ -1,8 +1,15 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { PluginType } from '@grafana/data';
+import { of } from 'rxjs';
 import AppConfig, { AppConfigProps } from './AppConfig';
 import { testIds } from 'components/testIds';
+
+const fetchMock = jest.fn();
+jest.mock('@grafana/runtime', () => ({
+  ...jest.requireActual('@grafana/runtime'),
+  getBackendSrv: () => ({ fetch: fetchMock }),
+}));
 
 describe('Components/AppConfig', () => {
   let props: AppConfigProps;
@@ -42,5 +49,30 @@ describe('Components/AppConfig', () => {
     // @ts-ignore
     render(<AppConfig plugin={plugin} query={props.query} />);
     expect(screen.getByTestId(testIds.appConfig.engineUrl)).toHaveValue('http://elsewhere:8080');
+  });
+
+  test('shows a stored API token as configured, without its value', () => {
+    const plugin = { meta: { ...props.plugin.meta, secureJsonFields: { apiToken: true } } };
+    // @ts-ignore
+    render(<AppConfig plugin={plugin} query={props.query} />);
+    expect(screen.getByRole('button', { name: /reset/i })).toBeInTheDocument();
+  });
+
+  test('saves a new API token as secure data, never as plain settings', async () => {
+    fetchMock.mockReturnValue(of({}));
+    const reload = jest.fn();
+    Object.defineProperty(window, 'location', { value: { reload }, writable: true });
+    // @ts-ignore
+    render(<AppConfig plugin={props.plugin} query={props.query} />);
+
+    fireEvent.change(screen.getByTestId(testIds.appConfig.engineUrl), { target: { value: 'http://engine:8080' } });
+    fireEvent.change(screen.getByTestId(testIds.appConfig.apiToken), { target: { value: 's3cret' } });
+    fireEvent.click(screen.getByRole('button', { name: /save engine settings/i }));
+
+    await screen.findByTestId(testIds.appConfig.apiToken);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const { data } = fetchMock.mock.calls[0][0];
+    expect(data.jsonData).toEqual({ engineUrl: 'http://engine:8080' });
+    expect(data.secureJsonData).toEqual({ apiToken: 's3cret' });
   });
 });

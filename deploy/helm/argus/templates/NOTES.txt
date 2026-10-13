@@ -3,7 +3,9 @@ Argus {{ .Chart.AppVersion }} installed as {{ .Release.Name }} in {{ .Release.Na
 Engine API (in-cluster):
   http://{{ include "argus.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
 
-API token:
+Every /api/ call needs this bearer token (/healthz and /metrics do not):
   kubectl -n {{ .Release.Namespace }} get secret {{ include "argus.fullname" . }} -o jsonpath='{.data.api-token}' | base64 -d
 
-NOTE: Phase 0 skeleton — the engine currently serves /healthz only.
+Put the engine URL and the token on the Argus app's configuration page in
+Grafana (Administration > Plugins > Argus). The plugin's health check says
+whether the engine accepts the token.

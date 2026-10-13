@@ -11,34 +11,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadDir loads every *.yaml/*.yml rule file under dir (recursively),
-// skipping the vendored upstream/ markdown tree.
+// LoadDir loads every *.yaml/*.yml rule file under each dir, recursively.
+//
+// Each dir is opened as an os.Root, so every read stays inside it: a symlink,
+// or a file swapped for one while the walk runs, cannot make the loader read
+// anything outside the directory it was given.
 func LoadDir(dirs ...string) ([]*Rule, error) {
 	var blobs [][]byte
 	var names []string
 	for _, dir := range dirs {
-		err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				return nil
-			}
-			ext := strings.ToLower(filepath.Ext(path))
-			if ext != ".yaml" && ext != ".yml" {
-				return nil
-			}
-			b, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			blobs = append(blobs, b)
-			names = append(names, path)
-			return nil
-		})
+		b, n, err := readDirRules(dir)
 		if err != nil {
 			return nil, fmt.Errorf("loading rules from %s: %w", dir, err)
 		}
+		blobs = append(blobs, b...)
+		names = append(names, n...)
 	}
 	rs, err := LoadBytes(blobs...)
 	if err != nil {
@@ -47,25 +34,47 @@ func LoadDir(dirs ...string) ([]*Rule, error) {
 	return rs, nil
 }
 
-// LoadFS loads every *.yaml rule in an fs.FS (used for the embedded built-in
-// rules).
+func readDirRules(dir string) (blobs [][]byte, names []string, err error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = root.Close() }()
+	blobs, paths, err := readRuleFiles(root.FS())
+	for _, p := range paths {
+		names = append(names, filepath.Join(dir, p))
+	}
+	return blobs, names, err
+}
+
+// LoadFS loads every rule file in an fs.FS (the embedded built-in rules).
 func LoadFS(fsys fs.FS) ([]*Rule, error) {
-	var blobs [][]byte
-	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".yaml") {
+	blobs, _, err := readRuleFiles(fsys)
+	if err != nil {
+		return nil, err
+	}
+	return LoadBytes(blobs...)
+}
+
+// readRuleFiles reads every *.yaml/*.yml file in fsys, in walk (lexical)
+// order, and returns their contents and paths.
+func readRuleFiles(fsys fs.FS) (blobs [][]byte, paths []string, err error) {
+	err = fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
 			return err
+		}
+		if ext := strings.ToLower(filepath.Ext(path)); ext != ".yaml" && ext != ".yml" {
+			return nil
 		}
 		b, err := fs.ReadFile(fsys, path)
 		if err != nil {
 			return err
 		}
 		blobs = append(blobs, b)
+		paths = append(paths, path)
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return LoadBytes(blobs...)
+	return blobs, paths, err
 }
 
 // Merge overlays rules onto a base set: an override with the same ID replaces

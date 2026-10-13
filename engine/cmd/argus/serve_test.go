@@ -215,3 +215,73 @@ func TestAPIAggregates(t *testing.T) {
 		t.Errorf("span_name_cardinality row missing: %+v", rows)
 	}
 }
+
+// The API is read-only: anything but GET (and HEAD, which GET patterns admit)
+// is refused by the mux before a handler runs.
+func TestAPIRefusesWrites(t *testing.T) {
+	mux, _ := testAPIState(t)
+	for _, path := range []string{"/api/report", "/api/aggregates", "/api/servicegraph", "/api/remediation"} {
+		for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Errorf("%s %s = %d, want 405", method, path, rec.Code)
+			}
+		}
+	}
+}
+
+// A value that cannot be encoded is a clean 500: nothing of a 200 was written
+// first.
+func TestWriteJSONFailsCleanly(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeJSON(rec, map[string]any{"bad": make(chan int)})
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); strings.HasPrefix(ct, "application/json") {
+		t.Errorf("content type = %q: a JSON header was set before the failure", ct)
+	}
+}
+
+// With a token configured, every /api/ route needs it; probes and the
+// Prometheus scrape do not.
+func TestRequireAPIToken(t *testing.T) {
+	mux := http.NewServeMux()
+	ok := func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }
+	mux.HandleFunc("GET /api/report", ok)
+	mux.HandleFunc("GET /healthz", ok)
+	mux.HandleFunc("GET /metrics", ok)
+	h := requireAPIToken(mux, "s3cret")
+
+	cases := []struct {
+		path, auth string
+		want       int
+	}{
+		{"/api/report", "", http.StatusUnauthorized},
+		{"/api/report", "Bearer wrong", http.StatusUnauthorized},
+		{"/api/report", "s3cret", http.StatusUnauthorized}, // the scheme is part of it
+		{"/api/report", "Bearer s3cret", http.StatusOK},
+		{"/api/nope", "", http.StatusUnauthorized}, // unknown /api paths are guarded too
+		{"/healthz", "", http.StatusOK},
+		{"/metrics", "", http.StatusOK},
+	}
+	for _, c := range cases {
+		req := httptest.NewRequest(http.MethodGet, c.path, nil)
+		if c.auth != "" {
+			req.Header.Set("Authorization", c.auth)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != c.want {
+			t.Errorf("GET %s with %q = %d, want %d", c.path, c.auth, rec.Code, c.want)
+		}
+	}
+
+	// No token configured: the API is open (and the engine warns at startup).
+	rec := httptest.NewRecorder()
+	requireAPIToken(mux, "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/report", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf("open API = %d, want 200", rec.Code)
+	}
+}

@@ -17,7 +17,7 @@ import (
 // and mounts the cached live endpoint — returning a closer for the store.
 func registerCostEndpoint(ctx context.Context, mux *http.ServeMux, cfg serveCostConfig) (func(), error) {
 	if cfg.pricingPath == "" {
-		mux.HandleFunc("/api/cost", notConfiguredCostHandler)
+		mux.HandleFunc("GET /api/cost", notConfiguredCostHandler)
 		return nil, nil
 	}
 	pricing, err := cost.LoadPricing(cfg.pricingPath)
@@ -41,7 +41,7 @@ func registerCostEndpoint(ctx context.Context, mux *http.ServeMux, cfg serveCost
 	}
 
 	ep := newCostEndpoint(pricing, srcs, snapStore, cfg.window, cfg.cacheTTL)
-	mux.HandleFunc("/api/cost", ep.handler())
+	mux.HandleFunc("GET /api/cost", ep.handler())
 	return closer, nil
 }
 
