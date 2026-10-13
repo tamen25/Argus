@@ -83,6 +83,11 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-50** (#91) — found by the first flagship session: `apply.sh` proved the
+  remediated condition as soon as one service carried a Kubernetes identity, so
+  the first two remediated runs started with 1 to 10 of 17 services covered.
+  It now requires 90% of the services reporting `target_info`, and waits up to
+  15 minutes. Those two cells were rerun.
 - [x] **B-49** (#90) — found by the first flagship session: the OpenAI adapter sent
   no per-turn output cap, and the token budget is only checked between turns, so
   a model looping in its reasoning held one turn open for the full 30-minute
