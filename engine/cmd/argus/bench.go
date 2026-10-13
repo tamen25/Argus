@@ -351,8 +351,7 @@ func buildTools(f benchFlags) (agent.Tools, error) {
 		// The bench's own fault objects carry the sweep label; hide them. They
 		// are the apparatus, and a Deployment named argus-fault-cardinality
 		// would hand the agent the answer.
-		exclude := strings.Replace(kube.ManagedBy, "=", "!=", 1)
-		b.Topology = backend.NewKubeTopology(f.kubeContext, exclude, mimir)
+		b.Topology = backend.NewKubeTopology(f.kubeContext, hideBenchFaults, mimir)
 	}
 	reg, err := mcp.NewServer(b)
 	if err != nil {
