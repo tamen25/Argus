@@ -78,7 +78,11 @@ var sweepKinds = []string{
 func (i *Injector) sweep(ctx context.Context) error {
 	var first error
 	for _, kind := range sweepKinds {
-		err := i.run(ctx, "delete", kind, "--all-namespaces", "-l", ManagedBy, "--ignore-not-found")
+		// No -n: kubectl rejects it beside --all-namespaces, but only when an
+		// object matches, so the conflict went unseen until a leftover fault
+		// failed a real reset ("the namespace from the provided object does not
+		// match").
+		err := i.runIn(ctx, "", "delete", kind, "--all-namespaces", "-l", ManagedBy, "--ignore-not-found")
 		if err != nil && !strings.Contains(err.Error(), "doesn't have a resource type") && first == nil {
 			first = fmt.Errorf("sweeping %s: %w", kind, err)
 		}
@@ -129,6 +133,11 @@ func (i *Injector) path(manifest string) string {
 }
 
 func (i *Injector) run(ctx context.Context, args ...string) error {
+	return i.runIn(ctx, i.Namespace, args...)
+}
+
+// runIn runs kubectl in namespace ns; an empty ns passes no -n.
+func (i *Injector) runIn(ctx context.Context, ns string, args ...string) error {
 	bin := i.Kubectl
 	if bin == "" {
 		bin = "kubectl"
@@ -145,8 +154,8 @@ func (i *Injector) run(ctx context.Context, args ...string) error {
 	if i.Context != "" {
 		full = append(full, "--context", i.Context)
 	}
-	if i.Namespace != "" {
-		full = append(full, "-n", i.Namespace)
+	if ns != "" {
+		full = append(full, "-n", ns)
 	}
 	full = append(full, args...)
 
