@@ -29,11 +29,15 @@ holmesgpt     | --agent shell --shell-command holmes --shell-arg ask
 
 The plan asks for at least one frontier model, one budget model and HolmesGPT.
 The v1.0 flagship ran one open-weights model on a server the maintainer runs
-(DECISIONS.md, 2026-10-09), for example:
+(DECISIONS.md, 2026-10-09 and 2026-10-13):
 
 ```text
-qwen3.6-bench | --agent openai --endpoint http://<host>:11434/v1/chat/completions --model qwen3.6-bench
+qwen3-14b | --agent openai --endpoint http://<host>:11434/v1/chat/completions --model qwen3:14b --agent-timeout 30m
 ```
+
+Serve the model entirely from GPU memory if you can. A model partly offloaded to
+CPU is several times slower, and late turns of a long investigation can take
+more than 10 minutes each.
 
 From WSL, `<host>` is the Windows host as WSL sees it (the default gateway,
 `ip route | awk '/^default/{print $3}'`), and the server must listen on that

@@ -27,6 +27,11 @@ type OpenAIConfig struct {
 	// mid-investigation and records it as an agent failure rather than a limit
 	// of the endpoint.
 	Timeout time.Duration
+	// MaxTurnTokens caps the output of a single turn (max_tokens). Zero sends no
+	// cap. The run's token budget is only checked between turns, so without it
+	// a model that loops in its reasoning holds one turn open until Timeout:
+	// the first flagship session lost 30 minutes to one such turn.
+	MaxTurnTokens int
 }
 
 // OpenAIAgent runs an agentic tool-use loop against an OpenAI-compatible
@@ -76,6 +81,7 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 		s.usage.Steps++
 		resp, err := a.chat(ctx, oaRequest{
 			Model:      a.cfg.Model,
+			MaxTokens:  a.cfg.MaxTurnTokens,
 			Messages:   msgs,
 			Tools:      tools,
 			ToolChoice: "auto",
@@ -89,6 +95,10 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 		}
 		msg := resp.Choices[0].Message
 
+		if len(msg.ToolCalls) == 0 && resp.Choices[0].FinishReason == "length" {
+			return s.result(nil), fmt.Errorf("agent %s: a turn reached the per-turn output cap (%d tokens) without calling a tool",
+				a.cfg.Name, a.cfg.MaxTurnTokens)
+		}
 		if len(msg.ToolCalls) == 0 {
 			// The model answered without calling submit_diagnosis: no structured
 			// diagnosis. Treated as a failed run, not a silent empty answer.

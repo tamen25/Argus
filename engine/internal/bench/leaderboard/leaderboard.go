@@ -389,7 +389,7 @@ func dataCaveats(reports []orchestrator.Report) []string {
 	for _, r := range reports {
 		add(hashes, r.Scenario, short(r.ScenarioHash))
 		add(budgets, r.Agent, budget(r.Budget))
-		add(timeouts, r.Agent, timeout(r.AgentTimeout))
+		add(timeouts, r.Agent, timeout(r.AgentTimeout)+", "+turnCap(r.MaxTurnTokens))
 		lists[strings.Join(r.CategoriesOffered, ", ")] = true
 		if r.Model != nil {
 			add(models, r.Agent, strings.TrimSuffix(r.Model.Model+" at "+r.Model.Endpoint, " at "))
@@ -419,7 +419,7 @@ func dataCaveats(reports []orchestrator.Report) []string {
 	for _, a := range sortedKeys(timeouts) {
 		if len(timeouts[a]) > 1 {
 			out = append(out, fmt.Sprintf(
-				"Agent `%s` ran with %d different per-call timeouts (%s). A run a shorter timeout ended has no diagnosis, and might have answered under a longer one.",
+				"Agent `%s` ran with %d different per-call limits (timeout, output cap per turn: %s). A run a tighter limit ended has no diagnosis, and might have answered under a looser one.",
 				a, len(timeouts[a]), strings.Join(sortedKeys(timeouts[a]), "; ")))
 		}
 	}
@@ -501,6 +501,13 @@ func timeout(d string) string {
 		return "not recorded"
 	}
 	return d
+}
+
+func turnCap(n int) string {
+	if n == 0 {
+		return "no turn cap"
+	}
+	return fmt.Sprintf("%d-token turns", n)
 }
 
 func short(digest string) string {

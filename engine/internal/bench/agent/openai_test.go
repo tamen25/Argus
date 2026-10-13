@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/tamen25/Argus/engine/internal/bench"
@@ -157,6 +158,34 @@ func TestOpenAI_FinishWithoutSubmit(t *testing.T) {
 	_, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
 	if err == nil {
 		t.Fatal("expected error when agent never submits")
+	}
+}
+
+// A turn cut off at the output cap ends the run at once, saying why, and every
+// request carries the cap. Without one, the first flagship session lost 30
+// minutes to a single turn of a model looping in its reasoning.
+func TestOpenAI_TurnCap(t *testing.T) {
+	var sent []int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req oaRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		sent = append(sent, req.MaxTokens)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":""},"finish_reason":"length"}],"usage":{"total_tokens":8300}}`))
+	}))
+	defer srv.Close()
+	ag := NewOpenAI(OpenAIConfig{Name: "test-model", Endpoint: srv.URL, Model: "m", HTTP: srv.Client(), MaxTurnTokens: 8192})
+
+	res, err := ag.Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	if err == nil || !strings.Contains(err.Error(), "per-turn output cap (8192 tokens)") {
+		t.Fatalf("err = %v, want the per-turn cap named", err)
+	}
+	if len(sent) != 1 || sent[0] != 8192 {
+		t.Errorf("max_tokens sent = %v, want one request carrying 8192", sent)
+	}
+	if res.Usage.Tokens != 8300 {
+		t.Errorf("tokens = %d, want the cut-off turn counted (8300)", res.Usage.Tokens)
 	}
 }
 

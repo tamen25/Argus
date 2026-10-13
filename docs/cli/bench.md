@@ -155,9 +155,16 @@ failure when it was a limit of the endpoint. The first flagship run hit exactly
 this: on a model partly offloaded to CPU, late turns of a long investigation took
 over 10 minutes, so it ran with `--agent-timeout 30m`.
 
-The model id, the endpoint and the agent timeout (`agent_timeout`) are recorded
-on every report, so a leaderboard row can be traced to what served it. `bench
-report --compare` says so when an agent's reports ran under different timeouts.
+`--max-turn-tokens` (default 8192) caps the output of a single turn. The run's
+token budget is checked between turns, so without a per-turn cap a model that
+loops in its reasoning holds one turn open until `--agent-timeout`: the first
+flagship session lost 30 minutes to one such turn. A turn cut off at the cap
+without calling a tool ends the run with no diagnosis, and the error says so.
+
+The model id, the endpoint, the agent timeout (`agent_timeout`) and the turn cap
+(`max_turn_tokens`) are recorded on every report, so a leaderboard row can be
+traced to what served it. `bench report --compare` says so when an agent's
+reports ran under different limits.
 
 ## Interrupting a run
 
