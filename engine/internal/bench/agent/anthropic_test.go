@@ -78,12 +78,30 @@ func TestAnthropic_TokenBudget(t *testing.T) {
 	}
 }
 
+// Prose twice: reminded once, then failed. scripted() fails the test on a
+// third call, so the reminder is given exactly once.
 func TestAnthropic_FinishWithoutSubmit(t *testing.T) {
-	srv := scripted(t, antTextResp("probably checkout"))
+	srv := scripted(t, antTextResp("probably checkout"), antTextResp("still checkout"))
 	defer srv.Close()
-	_, err := newAnt(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	res, err := newAnt(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
 	if err == nil {
 		t.Fatal("expected error when agent never submits")
+	}
+	if res.Usage.Nudges != 1 {
+		t.Errorf("nudges = %d, want 1", res.Usage.Nudges)
+	}
+}
+
+// Prose, then a diagnosis after the reminder: the run is answered.
+func TestAnthropic_NudgedThenSubmits(t *testing.T) {
+	srv := scripted(t, antTextResp("it is checkout"), antToolUseResp("t1", submitToolName, diagArgs, 30, 15))
+	defer srv.Close()
+	res, err := newAnt(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	if err != nil {
+		t.Fatalf("Diagnose: %v", err)
+	}
+	if string(res.Raw) != diagArgs || res.Usage.Nudges != 1 {
+		t.Errorf("raw = %s, nudges = %d; want the diagnosis after one reminder", res.Raw, res.Usage.Nudges)
 	}
 }
 

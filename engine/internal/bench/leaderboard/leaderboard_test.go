@@ -262,6 +262,7 @@ func TestDataCaveats_DiscloseWhatIsNotLikeForLike(t *testing.T) {
 	otherList.CategoriesOffered = nil
 	longerTimeout := report("model-b", "s2-latency", "remediated", 360, 1)
 	longerTimeout.AgentTimeout = "30m0s"
+	longerTimeout.Runs[0].Usage.Nudges = 1
 
 	c, err := Compare(append(matrix(), changed, otherBudget, judged, viaOne, viaTwo, otherList, longerTimeout), "degraded", "remediated")
 	if err != nil {
@@ -273,6 +274,7 @@ func TestDataCaveats_DiscloseWhatIsNotLikeForLike(t *testing.T) {
 		"Agent `model-b` was served by 2 different models or endpoints",
 		"1 run(s) were normalized by a non-deterministic method",
 		"Runs were offered 2 different fault category lists (some were offered none)",
+		"1 answered run(s) submitted their diagnosis only after one reminder",
 		"Agent `model-b` ran with 2 different per-call limits (timeout, output cap per turn: 30m0s, no turn cap; not recorded, no turn cap)",
 	} {
 		if !containsCaveat(c.Caveats, want) {

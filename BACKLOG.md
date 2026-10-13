@@ -83,6 +83,11 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-51** (#92) — found by the first flagship pass: 7 of 16 runs ended because
+  the model replied in prose instead of calling `submit_diagnosis`, and the API
+  adapters failed a run on the first such turn. Both now remind the agent once
+  (not past the token cap); the reminder is counted (`nudges`) and `bench
+  report` discloses how many answered runs needed one.
 - [x] **B-50** (#91) — found by the first flagship session: `apply.sh` proved the
   remediated condition as soon as one service carried a Kubernetes identity, so
   the first two remediated runs started with 1 to 10 of 17 services covered.

@@ -100,8 +100,14 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 				a.cfg.Name, a.cfg.MaxTurnTokens)
 		}
 		if len(msg.ToolCalls) == 0 {
-			// The model answered without calling submit_diagnosis: no structured
-			// diagnosis. Treated as a failed run, not a silent empty answer.
+			// The model answered without calling submit_diagnosis. It is reminded
+			// once; after that there is no structured diagnosis, and the run is
+			// failed rather than silently empty.
+			if s.nudge() {
+				msgs = append(msgs, oaMessage{Role: "assistant", Content: msg.Content},
+					oaMessage{Role: "user", Content: noToolNotice})
+				continue
+			}
 			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s", a.cfg.Name, submitToolName)
 		}
 
