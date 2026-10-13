@@ -195,6 +195,38 @@ func TestOpenAI_NudgedThenSubmits(t *testing.T) {
 	}
 }
 
+// A reasoning model's visible reply can be empty. Echoing it back as an
+// assistant message with neither content nor tool calls made Ollama answer
+// HTTP 400 and ended the first gpt-oss run; the fake rejects it the same way.
+func TestOpenAI_NudgeAfterEmptyReply(t *testing.T) {
+	step := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req oaRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		for _, m := range req.Messages {
+			if m.Role == "assistant" && m.Content == "" && len(m.ToolCalls) == 0 {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":{"message":"invalid message content type: <nil>"}}`))
+				return
+			}
+		}
+		if step == 0 {
+			_, _ = w.Write([]byte(contentResp("")))
+		} else {
+			_, _ = w.Write([]byte(toolCallResp("c1", submitToolName, diagArgs, 50)))
+		}
+		step++
+	}))
+	defer srv.Close()
+	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	if err != nil {
+		t.Fatalf("Diagnose: %v", err)
+	}
+	if string(res.Raw) != diagArgs || res.Usage.Nudges != 1 {
+		t.Errorf("raw = %s, nudges = %d; want the diagnosis after one reminder", res.Raw, res.Usage.Nudges)
+	}
+}
+
 // Over the token cap, prose is not answered with a reminder.
 func TestOpenAI_NoNudgePastTokenCap(t *testing.T) {
 	srv := scripted(t, `{"choices":[{"message":{"role":"assistant","content":"checkout"},"finish_reason":"stop"}],"usage":{"total_tokens":2000}}`)

@@ -108,8 +108,11 @@ func (a *AnthropicAgent) Diagnose(ctx context.Context, task Task) (Result, error
 		if len(uses) == 0 {
 			// Reminded once, as in the OpenAI adapter.
 			if s.nudge() {
-				msgs = append(msgs, antMessage{Role: "assistant", Content: resp.Content},
-					antMessage{Role: "user", Content: []antBlock{{Type: "text", Text: noToolNotice}}})
+				// An empty assistant turn is invalid on the wire; skip it.
+				if len(resp.Content) > 0 {
+					msgs = append(msgs, antMessage{Role: "assistant", Content: resp.Content})
+				}
+				msgs = append(msgs, antMessage{Role: "user", Content: []antBlock{{Type: "text", Text: noToolNotice}}})
 				continue
 			}
 			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s", a.cfg.Name, submitToolName)
