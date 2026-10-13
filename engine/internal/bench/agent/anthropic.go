@@ -95,6 +95,12 @@ func (a *AnthropicAgent) Diagnose(ctx context.Context, task Task) (Result, error
 			Tools:     tools,
 		})
 		if err != nil {
+			if s.retry(err) {
+				// The same turn again: a repeated call is not another step.
+				step--
+				s.usage.Steps--
+				continue
+			}
 			return s.result(nil), err
 		}
 		s.addTokens(resp.Usage.InputTokens + resp.Usage.OutputTokens)
@@ -186,7 +192,7 @@ func (a *AnthropicAgent) messages(ctx context.Context, body antRequest) (antResp
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return antResponse{}, fmt.Errorf("agent %s: HTTP %d: %s", a.cfg.Name, resp.StatusCode, b)
+		return antResponse{}, &httpStatusError{Agent: a.cfg.Name, Status: resp.StatusCode, Body: string(b)}
 	}
 	var out antResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {

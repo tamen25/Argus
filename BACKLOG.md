@@ -83,6 +83,10 @@ Not defects. Tracked here so nothing is lost between sessions.
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The
 > merged message cannot be edited, so the correction lives here.
 
+- [x] **B-54** (#96) — found by the second flagship session: a single HTTP 500
+  from the model endpoint (a tool call the server could not parse) ended the
+  run. Model calls are now retried on a 5xx, at most twice per run; counted
+  (`retries`) and disclosed by `--compare`.
 - [x] **B-53** (#95) — found by the second flagship session: `ParseDiagnosis`
   decoded evidence strictly, so a citation in the agent's own shape failed the
   whole diagnosis, which then dropped out of the agent's average (the outcome

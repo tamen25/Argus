@@ -87,6 +87,12 @@ func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 			ToolChoice: "auto",
 		})
 		if err != nil {
+			if s.retry(err) {
+				// The same turn again: a repeated call is not another step.
+				step--
+				s.usage.Steps--
+				continue
+			}
 			return s.result(nil), err
 		}
 		s.addTokens(resp.Usage.TotalTokens)
@@ -201,7 +207,7 @@ func (a *OpenAIAgent) chat(ctx context.Context, body oaRequest) (oaResponse, err
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return oaResponse{}, fmt.Errorf("agent %s: HTTP %d: %s", a.cfg.Name, resp.StatusCode, b)
+		return oaResponse{}, &httpStatusError{Agent: a.cfg.Name, Status: resp.StatusCode, Body: string(b)}
 	}
 	var out oaResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
