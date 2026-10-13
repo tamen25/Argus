@@ -195,7 +195,13 @@ shell agent in the brief, and as a comma-separated name list in
 
 Agents answer by calling a synthetic `submit_diagnosis` tool, so structured
 output falls out of function-calling and the deterministic JSON normalizer
-handles it. For shell agents whose native output we do not control, pass
+handles it. An API agent that replies in prose without calling any tool is
+reminded **once** to call `submit_diagnosis` (or a tool, to keep investigating);
+a second reply without a tool call ends the run with no diagnosis. No reminder
+is sent once the token cap is exceeded. The reminder is counted per run
+(`nudges` in the usage), and `bench report` says how many answered runs needed
+one. The first flagship pass lost 7 of 16 runs to an open-weights model that
+wrote its diagnosis as prose and stopped. For shell agents whose native output we do not control, pass
 `--judge-endpoint`/`--judge-model` to enable the **LLM judge** fallback.
 
 The method actually used is recorded per run, and the report names it — if any

@@ -385,7 +385,7 @@ func dataCaveats(reports []orchestrator.Report) []string {
 	models := map[string]map[string]bool{}   // agent → model provenance
 	timeouts := map[string]map[string]bool{} // agent → per-call timeouts
 	lists := map[string]bool{}               // category lists offered
-	judged := 0
+	judged, nudged := 0, 0
 	for _, r := range reports {
 		add(hashes, r.Scenario, short(r.ScenarioHash))
 		add(budgets, r.Agent, budget(r.Budget))
@@ -397,6 +397,9 @@ func dataCaveats(reports []orchestrator.Report) []string {
 		for _, run := range r.Runs {
 			if run.Normalization != "" && run.Normalization != "json" {
 				judged++
+			}
+			if run.Usage.Nudges > 0 && run.Score != nil {
+				nudged++
 			}
 		}
 	}
@@ -443,6 +446,10 @@ func dataCaveats(reports []orchestrator.Report) []string {
 	if judged > 0 {
 		out = append(out, fmt.Sprintf(
 			"%d run(s) were normalized by a non-deterministic method (an LLM judge), not parsed as JSON. See the run reports.", judged))
+	}
+	if nudged > 0 {
+		out = append(out, fmt.Sprintf(
+			"%d answered run(s) submitted their diagnosis only after one reminder to call a tool, having first replied in prose. See `nudges` in the run reports.", nudged))
 	}
 	return out
 }

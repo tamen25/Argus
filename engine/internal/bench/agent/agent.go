@@ -93,6 +93,9 @@ type Usage struct {
 	ToolErrors int `json:"tool_errors"`
 	Tokens     int `json:"tokens"`
 	Steps      int `json:"steps"`
+	// Nudges is how many times the agent was reminded to call a tool after a
+	// turn that called none (at most once per run).
+	Nudges int `json:"nudges,omitempty"`
 }
 
 // ToolCall records one tool call an agent made: what it asked, and whether it
@@ -243,6 +246,14 @@ const tokenLowNotice = "The token budget is nearly spent (%d of %d used): anothe
 	"exceed it. Call " + submitToolName + " now with the diagnosis your evidence best supports; a tool call " +
 	"now ends the run without an answer."
 
+// noToolNotice answers a turn that called no tool, once per run. The first
+// flagship pass lost 7 of 16 runs to models that wrote their diagnosis as prose
+// and stopped; one reminder of the protocol is the common practice, and the
+// run report counts it (Usage.Nudges).
+const noToolNotice = "You replied without calling a tool. A diagnosis is accepted only through " +
+	submitToolName + ": call it now with the diagnosis your evidence best supports, or call a tool " +
+	"to keep investigating. Another reply without a tool call ends the run without an answer."
+
 // budgetRefusal is what a tool call made past the cap receives instead of a
 // result. It is not executed and not counted.
 const budgetRefusal = `{"error":"tool-call budget spent: this call was not executed"}`
@@ -317,6 +328,16 @@ func (s *session) notice() string {
 		return fmt.Sprintf(tokenLowNotice, s.usage.Tokens, s.budget.MaxTokens)
 	}
 	return ""
+}
+
+// nudge reports whether a turn that called no tool earns the one reminder: the
+// first such turn does, unless the token budget is already exceeded.
+func (s *session) nudge() bool {
+	if s.usage.Nudges > 0 || s.overTokens() {
+		return false
+	}
+	s.usage.Nudges++
+	return true
 }
 
 // exhausted is the error for a run the budget ended, naming the cap.

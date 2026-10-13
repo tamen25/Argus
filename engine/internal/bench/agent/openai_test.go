@@ -152,12 +152,56 @@ func TestOpenAI_TokenBudget(t *testing.T) {
 	}
 }
 
+// Prose twice: reminded once, then failed. scripted() fails the test on a
+// third call, so the reminder is given exactly once.
 func TestOpenAI_FinishWithoutSubmit(t *testing.T) {
-	srv := scripted(t, contentResp("I think it's checkout but I'm not sure."))
+	srv := scripted(t, contentResp("I think it's checkout but I'm not sure."), contentResp("Checkout."))
 	defer srv.Close()
-	_, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
 	if err == nil {
 		t.Fatal("expected error when agent never submits")
+	}
+	if res.Usage.Nudges != 1 {
+		t.Errorf("nudges = %d, want 1", res.Usage.Nudges)
+	}
+}
+
+// Prose, then a diagnosis after the reminder: the run is answered, and the
+// reminder reached the model as the last message it saw.
+func TestOpenAI_NudgedThenSubmits(t *testing.T) {
+	var last string
+	step := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req oaRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		last = req.Messages[len(req.Messages)-1].Content
+		if step == 0 {
+			_, _ = w.Write([]byte(contentResp("It is checkout.")))
+		} else {
+			_, _ = w.Write([]byte(toolCallResp("c1", submitToolName, diagArgs, 50)))
+		}
+		step++
+	}))
+	defer srv.Close()
+	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	if err != nil {
+		t.Fatalf("Diagnose: %v", err)
+	}
+	if string(res.Raw) != diagArgs || res.Usage.Nudges != 1 {
+		t.Errorf("raw = %s, nudges = %d; want the diagnosis after one reminder", res.Raw, res.Usage.Nudges)
+	}
+	if last != noToolNotice {
+		t.Errorf("last message before the answer = %q, want the reminder", last)
+	}
+}
+
+// Over the token cap, prose is not answered with a reminder.
+func TestOpenAI_NoNudgePastTokenCap(t *testing.T) {
+	srv := scripted(t, `{"choices":[{"message":{"role":"assistant","content":"checkout"},"finish_reason":"stop"}],"usage":{"total_tokens":2000}}`)
+	defer srv.Close()
+	res, err := newAgent(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxTokens: 1000}})
+	if err == nil || res.Usage.Nudges != 0 {
+		t.Fatalf("err = %v, nudges = %d; want a failed run and no reminder", err, res.Usage.Nudges)
 	}
 }
 
