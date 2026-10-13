@@ -385,7 +385,7 @@ func dataCaveats(reports []orchestrator.Report) []string {
 	models := map[string]map[string]bool{}   // agent → model provenance
 	timeouts := map[string]map[string]bool{} // agent → per-call timeouts
 	lists := map[string]bool{}               // category lists offered
-	judged, nudged, retried := 0, 0, 0
+	judged, nudged, retried, corrected := 0, 0, 0, 0
 	for _, r := range reports {
 		add(hashes, r.Scenario, short(r.ScenarioHash))
 		add(budgets, r.Agent, budget(r.Budget))
@@ -403,6 +403,9 @@ func dataCaveats(reports []orchestrator.Report) []string {
 			}
 			if run.Usage.Retries > 0 {
 				retried++
+			}
+			if run.Usage.SubmitRejections > 0 && run.Score != nil {
+				corrected++
 			}
 		}
 	}
@@ -449,6 +452,10 @@ func dataCaveats(reports []orchestrator.Report) []string {
 	if judged > 0 {
 		out = append(out, fmt.Sprintf(
 			"%d run(s) were normalized by a non-deterministic method (an LLM judge), not parsed as JSON. See the run reports.", judged))
+	}
+	if corrected > 0 {
+		out = append(out, fmt.Sprintf(
+			"%d answered run(s) had a submit_diagnosis call rejected (unparseable, a category not offered, or no well-formed citation) and resubmitted. The check never judges correctness. See `submit_rejections` in the run reports.", corrected))
 	}
 	if retried > 0 {
 		out = append(out, fmt.Sprintf(

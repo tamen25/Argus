@@ -206,7 +206,19 @@ a second reply without a tool call ends the run with no diagnosis. No reminder
 is sent once the token cap is exceeded. The reminder is counted per run
 (`nudges` in the usage), and `bench report` says how many answered runs needed
 one. The first flagship pass lost 7 of 16 runs to an open-weights model that
-wrote its diagnosis as prose and stopped. For shell agents whose native output we do not control, pass
+wrote its diagnosis as prose and stopped.
+
+`submit_diagnosis` checks its arguments the way any tool checks its input:
+they must parse, carry the required fields, use a category from the offered
+list, and include at least one well-formed citation (`signal` from the fixed
+list, and an `observation`). A submission that fails is answered with the
+problem, and the agent can correct it; this happens at most twice per run and
+not past the token cap, after which the next submission is scored as it is.
+The check never judges whether the diagnosis is right. It is counted
+(`submit_rejections`) and disclosed by `bench report`. In the second flagship
+pass, every answered run had cited evidence in its own shape, so the evidence
+rule scored all of them 0, including runs that named the right workload and
+category. For shell agents whose native output we do not control, pass
 `--judge-endpoint`/`--judge-model` to enable the **LLM judge** fallback.
 
 The method actually used is recorded per run, and the report names it — if any

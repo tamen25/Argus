@@ -323,15 +323,17 @@ func TestSubmitSchema_OffersTheCategoryList(t *testing.T) {
 
 func TestAgents_SendTheCategoryListToTheModel(t *testing.T) {
 	task := Task{Scenario: "s", Brief: "an incident", Tools: &fakeTools{}, Categories: testCategories}
+	// A category from the list: reviewSubmission rejects one that was not offered.
+	args := strings.Replace(diagArgs, "cardinality-explosion", "oomkill", 1)
 
 	var oa []string
-	srv := recording(t, &oa, toolCallResp("c1", submitToolName, diagArgs, 50))
+	srv := recording(t, &oa, toolCallResp("c1", submitToolName, args, 50))
 	defer srv.Close()
 	if _, err := newAgent(t, srv).Diagnose(context.Background(), task); err != nil {
 		t.Fatal(err)
 	}
 	var ant []string
-	asrv := recording(t, &ant, antToolUseResp("t1", submitToolName, diagArgs, 5, 5))
+	asrv := recording(t, &ant, antToolUseResp("t1", submitToolName, args, 5, 5))
 	defer asrv.Close()
 	if _, err := newAnt(t, asrv).Diagnose(context.Background(), task); err != nil {
 		t.Fatal(err)

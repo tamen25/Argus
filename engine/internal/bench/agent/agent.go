@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -100,6 +101,10 @@ type Usage struct {
 	// with a 5xx (at most maxRetries per run). A failed call reports no usage,
 	// so its tokens are not in Tokens.
 	Retries int `json:"retries,omitempty"`
+	// SubmitRejections is how many submit_diagnosis calls were answered with a
+	// validation error instead of ending the run (at most
+	// maxSubmitRejections per run).
+	SubmitRejections int `json:"submit_rejections,omitempty"`
 }
 
 // ToolCall records one tool call an agent made: what it asked, and whether it
@@ -368,6 +373,62 @@ func (s *session) retry(err error) bool {
 	}
 	s.usage.Retries++
 	return true
+}
+
+// maxSubmitRejections bounds the submit_diagnosis validation errors in one run.
+// After that the next submission ends the run as it is, and is scored as it is.
+const maxSubmitRejections = 2
+
+// reviewSubmission checks submit_diagnosis arguments the way a tool checks its
+// input, and returns the problem to answer the call with, or "" to accept it.
+//
+// The second flagship pass scored 0 on every answered run: neither model cited
+// evidence in the schema's shape (they wrote {"type":"alert","id":...}), and a
+// scenario requiring evidence scores an uncited diagnosis 0 whatever it says.
+// Runs that named the right workload and category scored the same 0 as wrong
+// ones, so the bench measured citation format, not diagnosis. A tool that
+// says what is wrong with its input is ordinary; the rubric is unchanged.
+//
+// Checked: the arguments parse, the required fields are present, the category
+// is one offered, and at least one citation is well-formed. Never checked:
+// whether the diagnosis is right. Not past the token cap, and at most
+// maxSubmitRejections times, so a run cannot loop and nothing drops out of the
+// mean: the submission after the last rejection is accepted and scored.
+func (s *session) reviewSubmission(raw json.RawMessage, categories []bench.Category) string {
+	if s.usage.SubmitRejections >= maxSubmitRejections || s.overTokens() {
+		return ""
+	}
+	problem := submissionProblem(raw, categories)
+	if problem != "" {
+		s.usage.SubmitRejections++
+	}
+	return problem
+}
+
+func submissionProblem(raw json.RawMessage, categories []bench.Category) string {
+	d, err := bench.ParseDiagnosis(raw)
+	if err != nil {
+		return err.Error()
+	}
+	d.Scenario = "submission" // the orchestrator sets the real one
+	if err := d.Validate(); err != nil {
+		return err.Error()
+	}
+	if len(categories) > 0 && !slices.ContainsFunc(categories, func(c bench.Category) bool { return c.Name == d.Category }) {
+		return fmt.Sprintf("category %q is not one of the offered categories", d.Category)
+	}
+	if len(d.WellFormedEvidence()) == 0 {
+		return `no evidence item is in the required shape: each needs "signal" (one of ` +
+			strings.Join(bench.ValidSignals, ", ") + `) and "observation" (what you saw), and may add "query"`
+	}
+	return ""
+}
+
+// submitRejection is the tool result for a submit_diagnosis call that
+// reviewSubmission rejected.
+func submitRejection(problem string) string {
+	return `{"error":` + strconv.Quote(submitToolName+" rejected: "+problem+
+		". Correct the arguments and call "+submitToolName+" again; nothing is recorded until it is accepted.") + `}`
 }
 
 // httpStatusError is a non-200 answer from a model endpoint.

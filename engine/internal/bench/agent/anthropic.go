@@ -126,12 +126,17 @@ func (a *AnthropicAgent) Diagnose(ctx context.Context, task Task) (Result, error
 		// Same rules as the OpenAI adapter: a diagnosis anywhere in the turn
 		// ends the run, even past the token cap; otherwise a cap, or a tool
 		// call after the budget notice, ends it with nothing more executed.
+		rejected := map[string]string{}
 		for _, b := range uses {
 			if b.Name == submitToolName {
-				return s.result(b.Input), nil
+				problem := s.reviewSubmission(b.Input, task.Categories)
+				if problem == "" {
+					return s.result(b.Input), nil
+				}
+				rejected[b.ID] = problem
 			}
 		}
-		if s.overTokens() || s.warned {
+		if (s.overTokens() || s.warned) && len(rejected) == 0 {
 			return s.result(nil), s.exhausted()
 		}
 
@@ -140,7 +145,9 @@ func (a *AnthropicAgent) Diagnose(ctx context.Context, task Task) (Result, error
 		var toolResults []antBlock
 		for _, b := range uses {
 			content := budgetRefusal
-			if !s.spent() {
+			if problem, ok := rejected[b.ID]; ok {
+				content = submitRejection(problem)
+			} else if !s.spent() && !s.warned {
 				content = s.call(ctx, task.Tools, b.Name, b.Input)
 			}
 			// Every tool_use id needs a tool_result, so a call made past the
