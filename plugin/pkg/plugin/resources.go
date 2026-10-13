@@ -3,6 +3,8 @@ package plugin
 import (
 	"io"
 	"net/http"
+
+	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 )
 
 // engineRoutes maps plugin resource paths to engine API paths. The browser
@@ -33,18 +35,16 @@ func (a *App) proxyTo(enginePath string) http.HandlerFunc {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		url := a.engineURL + enginePath
+		pathAndQuery := enginePath
 		if req.URL.RawQuery != "" {
-			url += "?" + req.URL.RawQuery
+			pathAndQuery += "?" + req.URL.RawQuery
 		}
-		outReq, err := http.NewRequestWithContext(req.Context(), http.MethodGet, url, nil)
+		resp, err := a.get(req.Context(), pathAndQuery)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		resp, err := a.client.Do(outReq)
-		if err != nil {
-			http.Error(w, "engine unreachable: "+err.Error(), http.StatusBadGateway)
+			// Any Grafana viewer can see this response: the details, which
+			// name the engine's internal address, go to the server log only.
+			log.DefaultLogger.Error("argus engine unreachable", "path", enginePath, "error", err)
+			http.Error(w, "engine unreachable (details in the Grafana server log)", http.StatusBadGateway)
 			return
 		}
 		defer func() { _ = resp.Body.Close() }()

@@ -90,10 +90,12 @@ func (s ScriptInjector) run(ctx context.Context, sc bench.Scenario, script strin
 	}
 
 	var cmd *exec.Cmd
+	// Scenario scripts are operator-authored, like any test fixture: running
+	// them is the point.
 	if s.Shell != "" {
-		cmd = exec.CommandContext(ctx, s.Shell, path)
+		cmd = exec.CommandContext(ctx, s.Shell, path) //nolint:gosec // operator-authored scenario
 	} else {
-		cmd = exec.CommandContext(ctx, path)
+		cmd = exec.CommandContext(ctx, path) //nolint:gosec // operator-authored scenario
 	}
 	cmd.Env = append(os.Environ(),
 		"ARGUS_SCENARIO="+sc.Metadata.Name,

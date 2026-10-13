@@ -60,7 +60,8 @@ func (s *ShellAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, s.cfg.Command, s.cfg.Args...)
+	// The command and its arguments come from the operator's bench flags.
+	cmd := exec.CommandContext(ctx, s.cfg.Command, s.cfg.Args...) //nolint:gosec // operator-chosen agent
 	cmd.Dir = s.cfg.Dir
 	cmd.Env = append(os.Environ(), s.cfg.Env...)
 	// An external agent sees no tool schema, so the fault categories it must

@@ -8,9 +8,22 @@ request to the engine (`/resources/scores` → `/api/report`,
 engine access, and engine status codes pass through unchanged so a 404 for an
 absent finding (or unconfigured cost) stays a 404.
 
-Engine connection: plugin settings `jsonData.engineUrl` (default
-`http://argus-engine.argus.svc:8080`, matching the kind deployment). The
-plugin health check pings the engine's `/healthz` through the proxy.
+Engine connection, on the app's configuration page:
+
+- **Engine URL** (`jsonData.engineUrl`): default
+  `http://argus-engine.argus.svc:8080`, matching the kind deployment. It must
+  be an `http(s)` URL; anything else is refused when the settings are saved.
+- **API token** (`secureJsonData.apiToken`): the engine's `ARGUS_API_TOKEN`.
+  When the engine has one, every `/api/` call needs it as a bearer token.
+  The Helm chart generates it, and `helm status` shows how to read it.
+  Grafana stores the token encrypted, and only the plugin backend reads it.
+  It never reaches a browser.
+
+The health check pings the engine's `/healthz`, then makes one API call, so a
+wrong token shows there ("the engine rejected the API token"), not as a
+failure on every page. A request the engine cannot answer is a 502 whose
+details go to the Grafana server log: they name the engine's internal address,
+and any viewer can see the response.
 
 ## Pages
 
@@ -127,4 +140,5 @@ curl -u admin:argus-dev -X POST http://localhost:3000/api/plugins/tamen25-argus-
 ```
 
 The backend's default `engineUrl` (`http://argus-engine.argus.svc:8080`)
-already matches the kind deployment — no settings needed.
+already matches the kind deployment, and the kind engine runs without a token,
+so no settings are needed.

@@ -44,6 +44,18 @@ func getRaw(ctx context.Context, hc *http.Client, u, tenant string) (json.RawMes
 	return json.RawMessage(body), nil
 }
 
+// pathSegment escapes an agent-supplied label or tag name for use as one URL
+// path segment. url.PathEscape escapes "/", but leaves "." and ".." as they
+// are, and those would make ".../label/../values" reach a different endpoint
+// of the backend. No label or tag is named that, so they are refused.
+func pathSegment(name string) (string, error) {
+	switch name {
+	case "", ".", "..":
+		return "", fmt.Errorf("invalid label or tag name %q", name)
+	}
+	return url.PathEscape(name), nil
+}
+
 func truncate(b []byte, n int) string {
 	if len(b) <= n {
 		return string(b)
@@ -210,7 +222,11 @@ func (m *Mimir) LabelNames(ctx context.Context, selector string) ([]string, erro
 
 // LabelValues lists one label's values on recent series.
 func (m *Mimir) LabelValues(ctx context.Context, label, selector string) ([]string, error) {
-	return m.labels(ctx, "label/"+url.PathEscape(label)+"/values", selector)
+	seg, err := pathSegment(label)
+	if err != nil {
+		return nil, err
+	}
+	return m.labels(ctx, "label/"+seg+"/values", selector)
 }
 
 func (l *Loki) labels(ctx context.Context, path string) ([]string, error) {
@@ -232,7 +248,11 @@ func (l *Loki) LogLabelNames(ctx context.Context) ([]string, error) {
 
 // LogLabelValues lists one stream label's values over the last hour.
 func (l *Loki) LogLabelValues(ctx context.Context, label string) ([]string, error) {
-	return l.labels(ctx, "label/"+url.PathEscape(label)+"/values")
+	seg, err := pathSegment(label)
+	if err != nil {
+		return nil, err
+	}
+	return l.labels(ctx, "label/"+seg+"/values")
 }
 
 // TraceTagNames lists searchable attribute names, scoped as TraceQL writes
@@ -267,7 +287,11 @@ func (t *Tempo) TraceTagNames(ctx context.Context) ([]string, error) {
 
 // TraceTagValues lists the values of one scoped attribute.
 func (t *Tempo) TraceTagValues(ctx context.Context, tag string) ([]string, error) {
-	raw, err := getRaw(ctx, t.hc, t.base+"/api/v2/search/tag/"+url.PathEscape(tag)+"/values", t.tenant)
+	seg, err := pathSegment(tag)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := getRaw(ctx, t.hc, t.base+"/api/v2/search/tag/"+seg+"/values", t.tenant)
 	if err != nil {
 		return nil, err
 	}

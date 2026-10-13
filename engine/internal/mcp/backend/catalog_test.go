@@ -211,3 +211,17 @@ func TestKubeTopology_KubectlFailureIsAnError(t *testing.T) {
 		t.Error("a kubectl failure was swallowed")
 	}
 }
+
+// The namespace is the one kubectl argument an agent picks: only a valid
+// namespace name reaches the command.
+func TestTopologyRejectsInvalidNamespace(t *testing.T) {
+	k := &KubeTopology{run: func(context.Context, ...string) ([]byte, error) {
+		t.Fatal("kubectl ran with an invalid namespace")
+		return nil, nil
+	}}
+	for _, ns := range []string{"--raw=/api/v1/secrets", "-A", "Default", "a/b", strings.Repeat("a", 64)} {
+		if _, err := k.Topology(context.Background(), ns); err == nil {
+			t.Errorf("namespace %q accepted", ns)
+		}
+	}
+}

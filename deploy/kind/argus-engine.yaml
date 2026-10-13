@@ -83,10 +83,20 @@ spec:
     metadata:
       labels: {app: argus-engine}
     spec:
+      # The same restrictions as the Helm chart, so dev runs what ships.
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: engine
           image: argus-engine:dev
           imagePullPolicy: Never # kind-loaded local image
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           args:
             - serve
             - --addr=:8080

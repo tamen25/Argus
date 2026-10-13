@@ -47,7 +47,8 @@ func main() {
 			if err != nil {
 				fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(dst, e.Name()), b, 0o644); err != nil {
+			// The name comes from listing the repo's own rules/ directory.
+			if err := os.WriteFile(filepath.Join(dst, e.Name()), b, 0o644); err != nil { //nolint:gosec // dev tool, repo-local paths
 				fatal(err)
 			}
 			n++

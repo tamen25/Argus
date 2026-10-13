@@ -24,6 +24,7 @@ nav:
   - Backtest fidelity (spike): backtest-fidelity.md
   - Grafana plugin: plugin.md
   - CLI:
+      - serve: cli/serve.md
       - score: cli/score.md
       - remediate: cli/remediate.md
       - cost: cli/cost.md

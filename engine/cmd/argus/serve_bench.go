@@ -36,7 +36,7 @@ type benchResponse struct {
 // Unconfigured, /api/bench 404s and the plugin says how to configure it.
 func registerBenchEndpoint(mux *http.ServeMux, cfg serveBenchConfig) error {
 	if cfg.reportsDir == "" {
-		mux.HandleFunc("/api/bench", notConfiguredBenchHandler)
+		mux.HandleFunc("GET /api/bench", notConfiguredBenchHandler)
 		return nil
 	}
 	// Fail fast on a typo: a directory that does not exist at startup is a
@@ -48,7 +48,7 @@ func registerBenchEndpoint(mux *http.ServeMux, cfg serveBenchConfig) error {
 	if !info.IsDir() {
 		return fmt.Errorf("--bench-reports: %s is not a directory", cfg.reportsDir)
 	}
-	mux.HandleFunc("/api/bench", benchHandler(cfg.reportsDir))
+	mux.HandleFunc("GET /api/bench", benchHandler(cfg.reportsDir))
 	return nil
 }
 

@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -123,6 +125,9 @@ type serveConfig struct {
 
 // serve runs the HTTP endpoints (and, when configured, the OTLP receiver and
 // periodic score export) until ctx is cancelled or SIGINT/SIGTERM.
+//
+// Every route is registered as "GET /path" (Go 1.22 method patterns): the API
+// is read-only, so anything else is answered 405 by the mux itself.
 func serve(ctx context.Context, cfg serveConfig) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -131,108 +136,165 @@ func serve(ctx context.Context, cfg serveConfig) error {
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
-	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	mux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
-	// Cost showback endpoint (independent of OTLP ingest). Configured →
-	// cached live report; unconfigured → 404 the plugin renders gracefully.
-	if closeStore, err := registerCostEndpoint(ctx, mux, cfg.cost); err != nil {
+	// The cost, backtest and bench endpoints work without OTLP ingest. Each
+	// one 404s when it is not configured, and the plugin shows that plainly.
+	closeStore, err := registerCostEndpoint(ctx, mux, cfg.cost)
+	if err != nil {
 		return err
-	} else if closeStore != nil {
+	}
+	if closeStore != nil {
 		defer closeStore()
 	}
-
-	// Backtest endpoint (independent of OTLP ingest). Configured → cached
-	// rolling-window report; unconfigured → 404 the plugin renders gracefully.
 	if err := registerBacktestEndpoint(mux, cfg.backtest); err != nil {
 		return err
 	}
-
-	// Bench leaderboard endpoint: reads run reports from a directory.
 	if err := registerBenchEndpoint(mux, cfg.bench); err != nil {
 		return err
 	}
 
-	// Optional ingest + score export loop.
 	if cfg.otlpAddr != "" {
-		rs, err := builtin.Load()
+		stopScoring, err := startScoring(ctx, cfg, mux, reg)
 		if err != nil {
 			return err
 		}
-		if cfg.rulesDir != "" {
-			custom, err := rules.LoadDir(cfg.rulesDir)
-			if err != nil {
-				return err
-			}
-			rs = rules.Merge(rs, custom)
-		}
-		eng, err := rules.NewEngine(rs)
-		if err != nil {
-			return err
-		}
-		col := rules.NewCollector(eng)
-		pipe := ingest.NewPipeline(col, ingest.TrackerOpts{MaxPairs: cfg.maxPairs, Window: cfg.window})
-		export.RegisterAggregateStats(reg, pipe.PairsTracked, pipe.Evictions)
-		export.RegisterItemStats(reg, pipe.ItemsConsumed)
-		registerAPI(mux, col, pipe, rs, readSpecVersion(cfg.specVersionFile), cfg.window)
-		lis, err := net.Listen("tcp", cfg.otlpAddr)
-		if err != nil {
-			return err
-		}
-		grpcSrv := ingest.NewGRPCServer(pipe)
-		go func() { _ = grpcSrv.Serve(lis) }()
-		defer grpcSrv.GracefulStop()
+		defer stopScoring()
+	}
+	return serveHTTP(ctx, cfg.addr, requireAPIToken(mux, os.Getenv(apiTokenEnv)))
+}
 
-		// Self-instrumentation (dogfooding, §3.4): exports only when
-		// OTEL_EXPORTER_OTLP_ENDPOINT is set — typically pointed at another
-		// argus scoring this one (the CI dogfood gate does exactly that).
-		tel, err := telemetry.Setup(ctx, telemetry.Config{
-			Endpoint:       strings.TrimPrefix(strings.TrimPrefix(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "http://"), "https://"),
-			ServiceName:    "argus-engine",
-			ServiceVersion: version,
-			Environment:    os.Getenv("ARGUS_ENVIRONMENT"),
-			ExportInterval: cfg.interval,
-		})
-		if err != nil {
-			return err
-		}
-		defer func() {
-			shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = tel.Shutdown(shCtx)
-		}()
+// apiTokenEnv names the variable holding the engine API's bearer token. The
+// Helm chart sets it from a generated Secret (master plan §5.3: the API
+// requires a token; the plugin backend is its only documented caller).
+const apiTokenEnv = "ARGUS_API_TOKEN" //nolint:gosec // the variable's name, not a credential
 
-		prom := export.NewPrometheus(reg)
-		go func() {
-			t := time.NewTicker(cfg.interval)
-			defer t.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-					tickCtx, span := tel.Tracer.Start(ctx, "score.export")
-					pipe.AggregateRows()
-					prom.Update(col.Snapshot())
-					tel.ExportTicks.Add(tickCtx, 1)
-					span.End()
-				}
-			}
-		}()
+// requireAPIToken guards every /api/ route with the bearer token. /healthz
+// and /metrics stay open for probes and Prometheus; they carry no findings.
+// Without a token the API is open, and the engine says so at startup.
+func requireAPIToken(next http.Handler, token string) http.Handler {
+	if token == "" {
+		log.Printf("warning: %s is not set: /api endpoints are unauthenticated", apiTokenEnv)
+		return next
+	}
+	want := []byte("Bearer " + token)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") &&
+			subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), want) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="argus"`)
+			http.Error(w, "missing or wrong API token", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// startScoring starts live scoring: the OTLP receiver feeding the rule
+// engine, the /api endpoints that read its state, the engine's own telemetry,
+// and the loop that exports scores to /metrics every interval. The returned
+// function stops all of it.
+func startScoring(ctx context.Context, cfg serveConfig, mux *http.ServeMux, reg *prometheus.Registry) (stop func(), err error) {
+	rs, err := loadRules(cfg.rulesDir)
+	if err != nil {
+		return nil, err
+	}
+	eng, err := rules.NewEngine(rs)
+	if err != nil {
+		return nil, err
+	}
+	col := rules.NewCollector(eng)
+	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{MaxPairs: cfg.maxPairs, Window: cfg.window})
+	export.RegisterAggregateStats(reg, pipe.PairsTracked, pipe.Evictions)
+	export.RegisterItemStats(reg, pipe.ItemsConsumed)
+	registerAPI(mux, col, pipe, rs, readSpecVersion(cfg.specVersionFile), cfg.window)
+
+	lis, err := net.Listen("tcp", cfg.otlpAddr)
+	if err != nil {
+		return nil, err
+	}
+	grpcSrv := ingest.NewGRPCServer(pipe)
+	go func() { _ = grpcSrv.Serve(lis) }()
+
+	// Self-instrumentation (dogfooding, §3.4): exports only when
+	// OTEL_EXPORTER_OTLP_ENDPOINT is set, typically to another argus scoring
+	// this one (the CI dogfood gate does exactly that).
+	tel, err := telemetry.Setup(ctx, telemetry.Config{
+		Endpoint:       otlpEndpointFromEnv(),
+		ServiceName:    "argus-engine",
+		ServiceVersion: version,
+		Environment:    os.Getenv("ARGUS_ENVIRONMENT"),
+		ExportInterval: cfg.interval,
+	})
+	if err != nil {
+		grpcSrv.GracefulStop()
+		return nil, err
 	}
 
-	return serveHTTP(ctx, cfg.addr, mux)
+	prom := export.NewPrometheus(reg)
+	go func() {
+		t := time.NewTicker(cfg.interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				tickCtx, span := tel.Tracer.Start(ctx, "score.export")
+				pipe.AggregateRows()
+				prom.Update(col.Snapshot())
+				tel.ExportTicks.Add(tickCtx, 1)
+				span.End()
+			}
+		}
+	}()
+
+	return func() {
+		shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tel.Shutdown(shCtx)
+		grpcSrv.GracefulStop()
+	}, nil
+}
+
+// loadRules returns the built-in rules, merged with a directory of custom ones
+// when rulesDir is set (custom rules override built-ins with the same ID).
+func loadRules(rulesDir string) ([]*rules.Rule, error) {
+	rs, err := builtin.Load()
+	if err != nil || rulesDir == "" {
+		return rs, err
+	}
+	custom, err := rules.LoadDir(rulesDir)
+	if err != nil {
+		return nil, err
+	}
+	return rules.Merge(rs, custom), nil
+}
+
+// otlpEndpointFromEnv is OTEL_EXPORTER_OTLP_ENDPOINT as host:port: the OTel
+// convention allows a URL, the gRPC exporter wants no scheme.
+func otlpEndpointFromEnv() string {
+	ep := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	ep = strings.TrimPrefix(ep, "http://")
+	return strings.TrimPrefix(ep, "https://")
 }
 
 // registerAPI mounts the JSON endpoints backing the soak harness and the
-// Grafana plugin: /api/report (score-CLI-equivalent envelope from live state)
-// and /api/aggregates (raw rows, calibrate input). Both are read-only: they
-// must not evaluate anything into the collector.
+// Grafana plugin. All of them are read-only: none may evaluate anything into
+// the collector.
 func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline, rs []*rules.Rule, specVersion string, window time.Duration) {
-	mux.HandleFunc("/api/report", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /api/report", reportHandler(col, pipe, specVersion, window))
+	mux.HandleFunc("GET /api/aggregates", aggregatesHandler(pipe))
+	mux.HandleFunc("GET /api/servicegraph", serviceGraphHandler(col, pipe, window))
+	mux.HandleFunc("GET /api/remediation", remediationHandler(col, rs))
+}
+
+// reportHandler serves /api/report: the same envelope the score CLI writes,
+// built from live state. The soak harness snapshots it hourly.
+func reportHandler(col *rules.Collector, pipe *ingest.Pipeline, specVersion string, window time.Duration) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		snap := col.Snapshot()
 		var notes []string
 		if n := pipe.Evictions(); n > 0 {
@@ -246,33 +308,44 @@ func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline
 			ArgusVersion:    version,
 			SpecVersion:     specVersion,
 			Window:          window.String(),
-			RuleSetComplete: false, // Phase 1 implements a subset of official rules
+			RuleSetComplete: false, // the official rule set is implemented in part
 			Notes:           notes,
 			Snapshot:        snap,
 		})
-	})
-	mux.HandleFunc("/api/aggregates", func(w http.ResponseWriter, _ *http.Request) {
+	}
+}
+
+// aggregatesHandler serves /api/aggregates: the raw aggregate rows, which are
+// `argus rules calibrate`'s input.
+func aggregatesHandler(pipe *ingest.Pipeline) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		rows := pipe.CurrentRows()
 		if rows == nil {
-			rows = []rules.AggregateRow{}
+			rows = []rules.AggregateRow{} // [] rather than null for the plugin
 		}
 		writeJSON(w, rows)
-	})
-	// /api/servicegraph joins caller→callee edges (resolved cross-service
-	// parent references, completed trace generation only) with the latest
-	// per-service scores — the plugin's service graph page. Scores are
-	// pointers: a service can appear in an edge before it has been scored.
-	mux.HandleFunc("/api/servicegraph", func(w http.ResponseWriter, _ *http.Request) {
-		type graphNode struct {
-			Service   string   `json:"service"`
-			SpecScore *float64 `json:"spec_score,omitempty"`
-			Findings  int      `json:"findings"`
-		}
-		type graphEdge struct {
-			Source string `json:"source"`
-			Target string `json:"target"`
-			Traces int64  `json:"traces"`
-		}
+	}
+}
+
+type graphNode struct {
+	Service string `json:"service"`
+	// SpecScore is a pointer: a service can appear in an edge before it has
+	// been scored.
+	SpecScore *float64 `json:"spec_score,omitempty"`
+	Findings  int      `json:"findings"`
+}
+
+type graphEdge struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Traces int64  `json:"traces"`
+}
+
+// serviceGraphHandler serves /api/servicegraph, the plugin's service graph:
+// caller→callee edges (cross-service parent references resolved in the last
+// completed trace generation) joined with each service's latest score.
+func serviceGraphHandler(col *rules.Collector, pipe *ingest.Pipeline, window time.Duration) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		snap := col.Snapshot()
 		nodes := map[string]*graphNode{}
 		for i := range snap.Services {
@@ -280,20 +353,22 @@ func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline
 			score := svc.SpecScore
 			nodes[svc.ServiceName] = &graphNode{Service: svc.ServiceName, SpecScore: &score, Findings: len(svc.Findings)}
 		}
+
 		edges := []graphEdge{}
-		for _, r := range pipe.CurrentRows() {
-			if r.Aggregate != "service_dependency" {
+		for _, row := range pipe.CurrentRows() {
+			if row.Aggregate != "service_dependency" {
 				continue
 			}
-			callee, _ := r.Fields["callee"].(string)
-			traces, _ := r.Fields["traces"].(int64)
-			edges = append(edges, graphEdge{Source: r.Service, Target: callee, Traces: traces})
-			for _, s := range []string{r.Service, callee} {
+			callee, _ := row.Fields["callee"].(string)
+			traces, _ := row.Fields["traces"].(int64)
+			edges = append(edges, graphEdge{Source: row.Service, Target: callee, Traces: traces})
+			for _, s := range []string{row.Service, callee} {
 				if _, ok := nodes[s]; !ok {
 					nodes[s] = &graphNode{Service: s}
 				}
 			}
 		}
+
 		nodeList := make([]graphNode, 0, len(nodes))
 		for _, n := range nodes {
 			nodeList = append(nodeList, *n)
@@ -305,22 +380,21 @@ func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline
 			"nodes":        nodeList,
 			"edges":        edges,
 		})
-	})
-	// /api/remediation?rule=ID&service=NAME renders the rule's patch template
-	// for a finding present in the CURRENT snapshot — 404 otherwise, so the
-	// plugin can never show a patch for a problem Argus didn't observe.
-	mux.HandleFunc("/api/remediation", func(w http.ResponseWriter, r *http.Request) {
+	}
+}
+
+// remediationHandler serves /api/remediation?rule=ID&service=NAME: the rule's
+// patch template, rendered for a finding present in the CURRENT snapshot. Any
+// other request is a 404, so the plugin can never show a patch for a problem
+// Argus did not observe.
+func remediationHandler(col *rules.Collector, rs []*rules.Rule) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		ruleID, service := r.URL.Query().Get("rule"), r.URL.Query().Get("service")
 		if ruleID == "" || service == "" {
 			http.Error(w, "rule and service query params are required", http.StatusBadRequest)
 			return
 		}
-		var tmpl string
-		for _, rr := range rs {
-			if rr.ID == ruleID {
-				tmpl = rr.Remediation.Template
-			}
-		}
+		tmpl := remediationTemplate(rs, ruleID)
 		if tmpl == "" {
 			http.Error(w, fmt.Sprintf("rule %q has no remediation template", ruleID), http.StatusNotFound)
 			return
@@ -345,20 +419,45 @@ func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline
 			return
 		}
 		http.Error(w, "no such finding in the current snapshot", http.StatusNotFound)
-	})
-}
-
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func serveHTTP(ctx context.Context, addr string, mux *http.ServeMux) error {
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+// remediationTemplate is the template name of the rule with this ID, or "" if
+// there is no such rule or it has no template.
+func remediationTemplate(rs []*rules.Rule, ruleID string) string {
+	for _, r := range rs {
+		if r.ID == ruleID {
+			return r.Remediation.Template
+		}
+	}
+	return ""
+}
+
+// writeJSON writes v as indented JSON. It encodes before writing anything, so
+// an encoding failure is a clean 500 rather than a 200 with half a body.
+func writeJSON(w http.ResponseWriter, v any) {
+	body, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(append(body, '\n'))
+}
+
+// serveHTTP serves handler on addr until ctx is cancelled, then shuts down
+// gracefully.
+func serveHTTP(ctx context.Context, addr string, handler http.Handler) error {
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		// Every route is a GET with no body worth waiting for.
+		ReadTimeout: 30 * time.Second,
+		IdleTimeout: 2 * time.Minute,
+		// No WriteTimeout: the first /api/backtest of a cache period replays a
+		// week of history before it answers, which can take minutes.
+	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
 

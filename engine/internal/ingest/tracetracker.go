@@ -151,7 +151,7 @@ func (t *TraceTracker) observeSpanLocked(svc string, sp ptrace.Span) {
 	idx, seen := st.svcIdx[svc]
 	if !seen {
 		if len(st.svcList) < maxServicesPerTrace {
-			idx = uint8(len(st.svcList))
+			idx = uint8(len(st.svcList)) //nolint:gosec // len < maxServicesPerTrace, which fits a uint8
 			st.svcIdx[svc] = idx
 			st.svcList = append(st.svcList, svc)
 		} else {
