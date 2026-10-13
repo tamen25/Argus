@@ -29,9 +29,11 @@ Thumbs.db
 deploy/helm/argus/charts/
 
 # Terraform
-deploy/terraform/.terraform/
-deploy/terraform/*.tfstate*
-deploy/terraform/*.tfvars
+deploy/terraform/**/.terraform/
+deploy/terraform/**/.terraform.lock.hcl
+deploy/terraform/**/*.tfstate*
+deploy/terraform/**/*.tfvars
+runs/
 
 # mkdocs
 site/
