@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
@@ -54,6 +55,25 @@ var ValidSignals = []string{"metrics", "logs", "traces", "alerts", "topology"}
 // WellFormed reports whether a citation names a known signal and says what was
 // observed. A malformed citation is not an error in the diagnosis — it is simply
 // not a citation, and scoring counts only well-formed ones.
+// UnmarshalJSON decodes a citation leniently: unknown fields are ignored, and
+// an item that is not an object at all decodes as an empty citation. Either way
+// WellFormed then decides whether it counts. ParseDiagnosis is strict, and a
+// custom unmarshaler is how one field opts out of that: json.Decoder's
+// DisallowUnknownFields does not reach inside it. Without this, gpt-oss's first
+// clean run, which named the right category but cited
+// {"type":"alert","id":"HighSpanErrorRatio"}, failed as "no diagnosis" and
+// dropped out of its own average, the outcome Validate's comment rules out.
+func (e *Evidence) UnmarshalJSON(b []byte) error {
+	type plain Evidence // same fields, no UnmarshalJSON: avoids recursing
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		*e = Evidence{}
+		return nil
+	}
+	*e = Evidence(p)
+	return nil
+}
+
 func (e Evidence) WellFormed() bool {
 	sig := strings.ToLower(strings.TrimSpace(e.Signal))
 	return strings.TrimSpace(e.Observation) != "" && slices.Contains(ValidSignals, sig)
@@ -92,6 +112,8 @@ func (d Diagnosis) Validate() error {
 
 // WellFormedEvidence returns the citations scoring will count.
 func (d Diagnosis) WellFormedEvidence() []Evidence {
+	// UnmarshalJSON below is what lets a malformed citation reach this filter at
+	// all: decoded strictly, it failed the whole diagnosis first.
 	var out []Evidence
 	for _, e := range d.Evidence {
 		if e.WellFormed() {

@@ -41,6 +41,30 @@ func TestParseDiagnosis_Strict(t *testing.T) {
 	}
 }
 
+// A malformed citation is not counted; it must not fail the diagnosis. This is
+// gpt-oss's first clean flagship submission (right category, citations in its
+// own shape), which strict decoding rejected as "no diagnosis". Top-level
+// strictness is unchanged (TestParseDiagnosis_Strict).
+func TestParseDiagnosis_MalformedCitationsAreNotCountedNotFatal(t *testing.T) {
+	raw := `{"category":"broken-trace-propagation","confidence":0.45,"evidence":[` +
+		`{"id":"HighSpanErrorRatio","service":"checkout","type":"alert"},` +
+		`{"query":"service:span_errors:ratio_rate5m","type":"metric_query","values":[["t",0.08]]},` +
+		`"a bare string",` +
+		`{"signal":"traces","query":"{status=error}","observation":"no error spans","extra":1}],` +
+		`"root_cause_entities":[{"kind":"Deployment","name":"checkout","namespace":"otel-demo"}],"summary":"s"}`
+	d, err := JSONNormalizer{}.Normalize(context.Background(), []byte(raw), "broken-trace-propagation-payment")
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if d.Category != "broken-trace-propagation" || len(d.Evidence) != 4 {
+		t.Errorf("category = %q, evidence items = %d; want the diagnosis kept with all 4 items", d.Category, len(d.Evidence))
+	}
+	// Only the item in the schema's shape counts, extra field and all.
+	if wf := d.WellFormedEvidence(); len(wf) != 1 || wf[0].Signal != "traces" {
+		t.Errorf("well-formed evidence = %+v, want only the traces citation", wf)
+	}
+}
+
 func TestDiagnosis_Validate(t *testing.T) {
 	base := func() Diagnosis {
 		return Diagnosis{
