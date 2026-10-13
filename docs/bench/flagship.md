@@ -53,6 +53,8 @@ measured. Multiply each agent's tokens by its provider's price. Master plan
 
 ## 4. Run it
 
+In one sitting:
+
 ```bash
 scripts/bench-matrix.sh --agents agents.txt --out runs/flagship --yes
 ```
@@ -60,23 +62,55 @@ scripts/bench-matrix.sh --agents agents.txt --out runs/flagship --yes
 For each condition the script applies it with
 `scenarios/conditions/apply.sh` (which proves it took effect in the telemetry),
 then runs every agent on every scenario with the budgets capped. A run that
-fails is recorded in its report and the matrix carries on. A report that already
-exists is skipped, so an interrupted matrix resumes where it stopped. The
-cluster is returned to the baseline condition at the end, even on failure.
+fails is recorded in its report and the matrix carries on. The cluster is
+returned to the baseline condition at the end, even on failure.
+
+### In sessions
+
+The matrix does not have to run in one sitting. A cell whose report exists is
+skipped, so the same command resumes where the last one stopped, and
+`--stop-after <minutes>` ends a session on time (the cell running then finishes
+first). Ctrl-C is safe too: the run in progress removes its fault and writes no
+report, so that cell runs again next time.
+
+Repeats can be added in **passes** instead of all at once. Each pass is one
+repeat of every cell, and the comparison pools every pass so far. Running one
+condition per session saves a condition switch:
+
+```bash
+# session 1 and 2: pass 1
+scripts/bench-matrix.sh --agents agents.txt --out runs/flagship --repeats 1 --pass 1 --conditions degraded   --stop-after 100 --yes
+scripts/bench-matrix.sh --agents agents.txt --out runs/flagship --repeats 1 --pass 1 --conditions remediated --stop-after 100 --yes
+# sessions 3 and 4: pass 2, the same with --pass 2
+```
+
+The comparison is written as soon as both conditions have reports, and
+rewritten after every session. Read its answer rates and its spread before
+deciding whether another pass is worth it.
+
+After a Docker or PC restart, run `make dev-heal` and let the demo serve
+traffic for about 15 minutes before a session.
 
 Outputs in `runs/flagship/`:
 
 | File | What it is |
 |---|---|
-| `<condition>__<agent>__<scenario>.json` | one run report per cell, with its tool logs |
-| `<condition>__<agent>__<scenario>.log` | that invocation's stderr |
-| `comparison.md`, `comparison.json` | the degraded-vs-remediated comparison |
+| `reports/pass-<N>/<condition>__<agent>__<scenario>.json` | one run report per cell, with its tool logs |
+| `logs/pass-<N>/<condition>__<agent>__<scenario>.log` | that invocation's stderr |
+| `comparison.md`, `comparison.json` | the degraded-vs-remediated comparison over every pass |
 
 ## 5. Publish
 
-- Load the reports into the Grafana app's **Bench** page: on the dev cluster,
-  `kubectl -n argus create configmap argus-bench-reports --from-file=runs/flagship --dry-run=client -o yaml | kubectl apply -f -`,
-  then `kubectl -n argus rollout restart deploy/argus-engine`.
+- Load the reports into the Grafana app's **Bench** page. On the dev cluster
+  (each key prefixed with its pass, since passes reuse file names):
+
+    ```bash
+    args=(); for f in runs/flagship/reports/pass-*/*.json; do
+      args+=(--from-file="$(basename "$(dirname "$f")")__$(basename "$f")=$f"); done
+    kubectl -n argus create configmap argus-bench-reports "${args[@]}" --dry-run=client -o yaml | kubectl apply -f -
+    kubectl -n argus rollout restart deploy/argus-engine
+    ```
+
 - The comparison is the headline. Publish it with its caveats, never without:
   the degraded condition is Argus's construction (see
   `scenarios/conditions/README.md`), evidence is checked for form and not
