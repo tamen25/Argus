@@ -78,7 +78,7 @@ make dev-down  # delete the cluster
 make test      # unit tests, all modules
 make lint      # golangci-lint + eslint
 make build     # engine binary + plugin dist
-make demo      # docker compose: engine + postgres + grafana + mini-LGTM
+make demo      # Docker only: engine + Grafana with the Argus app, scoring itself (localhost:23000)
 ```
 
 ## License

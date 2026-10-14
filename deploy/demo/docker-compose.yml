@@ -1,23 +1,39 @@
-# `make demo`: the engine, Postgres, and grafana/otel-lgtm (Grafana with a
-# mini Loki, Tempo, Mimir and Collector in one image), without a cluster.
+# `make demo`: Argus without a cluster. The engine, Postgres, and
+# grafana/otel-lgtm (Grafana with a mini Loki, Tempo, Prometheus and
+# Collector in one image) with the Argus plugin installed and provisioned.
 #
-# What it does not do yet: install the Argus plugin in Grafana, or point the
-# Collector's sampled mirror at the engine's OTLP port. Send OTLP to
-# localhost:4317 yourself to see scores at http://localhost:8080/api/report.
-# Every port is bound to localhost: this is a local demo.
+# The Collector mirrors everything it receives to the engine. The engine
+# sends its own telemetry to the Collector, so it scores itself from the
+# start; send your own applications' OTLP to localhost:24317 (gRPC) or
+# localhost:24318 (HTTP) to see them scored too. Grafana is at
+# http://localhost:23000 (anonymous admin), the Argus app under Apps, and the
+# engine's API at http://localhost:28080.
+#
+# Every port is bound to localhost: this is a local demo. The ports are in
+# the 2xxxx range so they do not clash with the kind dev cluster (13000, 4317,
+# 4318) or anything else on the usual 3000 and 8080.
 name: argus-demo
 
 services:
   engine:
     build:
       context: ../../engine
+      args:
+        # The pinned Instrumentation Score spec version, echoed in reports;
+        # `make demo` passes it from .instrumentation-score-version.
+        SPEC_VERSION: ${ARGUS_SPEC_VERSION:-unknown}
     # The API is open (no ARGUS_API_TOKEN), which serve allows on a
     # non-loopback address only with --insecure-no-auth; the host ports
     # below are bound to localhost.
-    command: ["serve", "--addr", ":8080", "--otlp-grpc", ":4317", "--insecure-no-auth"]
+    command: ["serve", "--addr", ":8080", "--otlp-grpc", ":4317", "--insecure-no-auth", "--score-interval", "10s"]
+    environment:
+      # The engine's own telemetry goes to the Collector, which mirrors it back.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      ARGUS_ENVIRONMENT: demo
     ports:
-      - "127.0.0.1:8080:8080" # API, /healthz, /metrics
-      - "127.0.0.1:4317:4317" # OTLP gRPC receiver
+      # API, /healthz, /metrics. The OTLP receiver is not published: telemetry
+      # reaches it through the Collector's mirror.
+      - "127.0.0.1:28080:8080"
     healthcheck:
       # The image is distroless (no shell, no curl): the binary checks itself.
       test: ["CMD", "argus", "healthcheck"]
@@ -43,11 +59,16 @@ services:
       retries: 10
 
   lgtm:
-    image: grafana/otel-lgtm:0.34.0 # pinned: latest changes under you
+    # grafana/otel-lgtm 0.34.0 with the plugin and the mirror; see grafana.Dockerfile.
+    build:
+      context: ../..
+      dockerfile: deploy/demo/grafana.Dockerfile
+    environment:
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: tamen25-argus-app
     ports:
-      - "127.0.0.1:3000:3000" # Grafana
-      - "127.0.0.1:14317:4317" # OTLP gRPC (offset from the engine's, and from kind's)
-      - "127.0.0.1:14318:4318" # OTLP HTTP
+      - "127.0.0.1:23000:3000" # Grafana
+      - "127.0.0.1:24317:4317" # OTLP gRPC, into the Collector
+      - "127.0.0.1:24318:4318" # OTLP HTTP
 
 volumes:
   pgdata:

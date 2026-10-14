@@ -1,0 +1,10 @@
+# Grafana provisioning for the demo: the Argus app, enabled and pointed at the
+# demo's engine. The demo engine runs without an API token (--insecure-no-auth,
+# local only), so none is set here.
+apiVersion: 1
+apps:
+  - type: tamen25-argus-app
+    org_id: 1
+    disabled: false
+    jsonData:
+      engineUrl: http://engine:8080

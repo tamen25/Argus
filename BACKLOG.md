@@ -93,9 +93,9 @@ fixed; a finding that does not hold is marked so here, with the reason.
   next repeat on a contaminated cluster. Done in #112: each run records `cleanup_error` and keeps its result; `Finished` is set after cleanup; a failed cleanup stops the run unless the probe verifies the next baseline; a failed last cleanup writes the report and fails the command (`ErrNotRestored`).
 - [x] **R11** — reset sweeps argus-managed faults cluster-wide, so parallel
   runners delete each other's faults. Done in #112: a run claims the cluster with a lock ConfigMap (`argus-bench-lock` in `default`, created atomically, outside the sweep's label) and releases it at the end, so a second run fails at once rather than deleting the first one's fault. The sweep stays cluster-wide under the lock.
-- [ ] **R12** — the Helm chart and the demo compose start `serve` without OTLP
+- [x] **R12** — the Helm chart and the demo compose start `serve` without OTLP
   ingest, expose an unimplemented OTLP HTTP port, and health-check with
-  `argus version`. Partly done in #113: Helm starts `--otlp-grpc` and exposes only it (no OTLP/HTTP port); compose runs ingest, health-checks with `argus healthcheck`, binds every port to localhost and pins `otel-lgtm`. Still open: the demo does not install the plugin or wire the Collector mirror (needs a live Docker check), and no image is published (B-61).
+  `argus version`. Partly done in #113: Helm starts `--otlp-grpc` and exposes only it (no OTLP/HTTP port); compose runs ingest, health-checks with `argus healthcheck`, binds every port to localhost and pins `otel-lgtm`. The demo is completed in #116: Grafana is built with the plugin, provisioned against the engine, and its Collector mirrors every signal to the engine, which scores its own telemetry from the start (checked end to end with Docker). The image publishing part is B-61.
 
 **P2** — correctness, availability and privacy:
 

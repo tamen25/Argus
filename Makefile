@@ -42,9 +42,10 @@ build: ## Engine binary + plugin dist
 	cd $(ENGINE_DIR) && CGO_ENABLED=0 go build -trimpath -o bin/argus ./cmd/argus
 	@if [ -f $(PLUGIN_DIR)/package.json ]; then cd $(PLUGIN_DIR) && npm run build --if-present; fi
 
-demo: ## docker compose demo: engine + postgres + grafana + mini-LGTM
-	docker compose -f deploy/demo/docker-compose.yml up --build -d
-	@echo "Grafana: http://localhost:3000 (anonymous admin) — engine health: http://localhost:8080/healthz"
+demo: ## Docker-only demo: engine, Postgres, Grafana with the Argus app, scoring itself
+	ARGUS_SPEC_VERSION=$$(cat .instrumentation-score-version) docker compose -f deploy/demo/docker-compose.yml up --build -d
+	@echo "Grafana: http://localhost:23000 (anonymous admin; the Argus app is under Apps)"
+	@echo "Engine:  http://localhost:28080/api/report · send OTLP to localhost:24317 (gRPC) or :24318 (HTTP)"
 
 demo-down: ## Stop the demo compose stack
 	docker compose -f deploy/demo/docker-compose.yml down -v
