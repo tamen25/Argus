@@ -147,6 +147,13 @@ func (p *Pipeline) ItemsConsumed() (traces, metrics, logs int64) {
 	return p.traceItems.Load(), p.metricItems.Load(), p.logItems.Load()
 }
 
+// CloseWindow ends the trace window now, so the next rows judge every trace
+// seen so far. For a finite collection: see TraceTracker.CloseWindow.
+func (p *Pipeline) CloseWindow() { p.traces.CloseWindow() }
+
+// EdgesOmitted is how many service-graph edges the last rows left out.
+func (p *Pipeline) EdgesOmitted() int { return p.traces.EdgesOmitted() }
+
 // AggregateRows evaluates every tracker's current rows into the collector,
 // replacing the previous evaluation, and returns the rows for inspection.
 func (p *Pipeline) AggregateRows() []rules.AggregateRow {

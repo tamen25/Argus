@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 	"google.golang.org/grpc"
@@ -193,5 +194,53 @@ func TestScoreGate(t *testing.T) {
 		if got := errors.Is(err, errBelowThreshold); got != c.trips {
 			t.Errorf("%s: err = %v, want trip %v", c.name, err, c.trips)
 		}
+	}
+}
+
+// R14: a run of a few seconds used to judge no trace at all. The trace rules
+// read only a completed window (1h by default), which a short run never
+// reaches, so they were skipped. The run now closes its window when
+// collection stops.
+func TestRunScoreJudgesTracesFromAShortRun(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := &scoreOptions{window: 2 * time.Second, specVersionFile: specVersionFile(t), listener: lis}
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		td := ptrace.NewTraces()
+		rs := td.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", "cart")
+		sp := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		sp.SetName("checkout")
+		sp.SetTraceID(pcommon.TraceID{1})
+		sp.SetSpanID(pcommon.SpanID{2})
+		sp.SetParentSpanID(pcommon.SpanID{9}) // a parent that never arrives
+		_, _ = ptraceotlp.NewGRPCClient(conn).Export(context.Background(), ptraceotlp.NewExportRequestFromTraces(td))
+	}()
+
+	rep, err := runScore(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cart := rep.Snapshot.Service("cart")
+	if cart == nil {
+		t.Fatal("no report for cart")
+	}
+	var traceRules []string
+	for _, f := range cart.Findings {
+		if f.RuleID == "SPA-002" || f.RuleID == "ARG-SPA-002" {
+			traceRules = append(traceRules, f.RuleID)
+		}
+	}
+	if len(traceRules) == 0 {
+		t.Errorf("findings = %+v, want the orphaned span judged by the trace rules", cart.Findings)
 	}
 }

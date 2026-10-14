@@ -466,18 +466,51 @@ func (s *svcState) tallyFor(r *Rule) tally {
 	return sum
 }
 
+// maxEvidenceAttrs caps the attributes one evidence sample keeps.
+const maxEvidenceAttrs = 32
+
+// evidenceFor turns an item into an evidence sample. Evidence outlives the
+// item, so everything in it is bounded and copied: the summary, and at most
+// maxEvidenceAttrs attributes, keys and string values cut to
+// model.MaxAttrValueLen.
 func evidenceFor(it model.Item) Evidence {
 	e := Evidence{Kind: it.Kind.String()}
 	switch {
 	case it.Span != nil:
 		e.Summary = "span " + it.Span.Name
-		e.Attrs = it.Resource
+		e.Attrs = boundedAttrs(it.Resource)
 	case it.Metric != nil:
 		e.Summary = "metric " + it.Metric.Name
-		e.Attrs = it.Metric.Attrs
+		e.Attrs = boundedAttrs(it.Metric.Attrs)
 	case it.Log != nil:
 		e.Summary = "log severity=" + it.Log.SeverityText
-		e.Attrs = it.Resource
+		e.Attrs = boundedAttrs(it.Resource)
 	}
+	e.Summary = model.Truncate(e.Summary, model.MaxAttrValueLen)
 	return e
+}
+
+// boundedAttrs copies at most maxEvidenceAttrs attributes, the first by key
+// order so the choice is stable, with keys and string values truncated.
+func boundedAttrs(attrs map[string]any) map[string]any {
+	if attrs == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(attrs))
+	for k := range attrs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	if len(keys) > maxEvidenceAttrs {
+		keys = keys[:maxEvidenceAttrs]
+	}
+	out := make(map[string]any, len(keys))
+	for _, k := range keys {
+		v := attrs[k]
+		if s, ok := v.(string); ok {
+			v = model.Truncate(s, model.MaxAttrValueLen)
+		}
+		out[model.Truncate(k, model.MaxAttrValueLen)] = v
+	}
+	return out
 }
