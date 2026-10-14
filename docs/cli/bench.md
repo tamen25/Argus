@@ -178,7 +178,26 @@ call is cancelled, the repeat's cleanup still removes the fault (with its own
 10-minute limit), and the command exits with an error and **writes no report**.
 A partial report would look like a finished cell to the matrix runner, which
 resumes by skipping cells that have one. A SIGKILL cannot be caught: after one,
-run the scenario's cleanup hook yourself.
+run the scenario's cleanup hook yourself, and remove the cluster lock (below).
+
+## One run per cluster
+
+A reset sweeps every argus-managed fault in the cluster, not only the
+scenario's own, so two runs on one cluster would delete each other's faults.
+With `--inject=auto` or `kubectl`, a run first claims the cluster by creating
+the ConfigMap `argus-bench-lock` in `default`, and deletes it when it ends,
+interrupted or not. A second run fails at once. If no run is active, a crashed
+one left the lock behind: `kubectl delete configmap argus-bench-lock -n default`.
+
+## When cleanup fails
+
+A repeat whose cleanup fails keeps its result, and records the failure as
+`cleanup_error`; the markdown report names the repeat in its caveats. The next
+repeat starts from a reset. If the scenario has a `steadyState` probe, that
+reset is checked before anything is injected, and the run goes on; without one,
+nothing would notice a leftover fault, so the run stops there. Either way, if
+the last cleanup failed, `bench run` writes the report and then exits with an
+error: check the cluster before running anything else.
 
 API agents get the identical MCP tool set, so the benchmark compares **agents,
 not tool access**. That set includes the discovery tools (`list_metrics`,

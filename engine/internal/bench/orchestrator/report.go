@@ -134,9 +134,24 @@ func writeCaveats(b *strings.Builder, r Report) {
 		fmt.Fprintf(b, "- %d of %d tool calls returned an error to the agent (a rejected query, or a backend that did not answer). "+
 			"Read `tool_log` in the JSON report before attributing a low score to the agent alone.\n", errs, calls)
 	}
+	if failed := cleanupFailures(r); len(failed) > 0 {
+		fmt.Fprintf(b, "- The fault could not be removed after %s. A repeat after one starts from a reset, and was only checked "+
+			"clean if the scenario has a steadyState probe. See `cleanup_error` in the JSON report.\n", strings.Join(failed, ", "))
+	}
 	for _, c := range standingBenchCaveats {
 		fmt.Fprintf(b, "- %s\n", c)
 	}
+}
+
+// cleanupFailures names the repeats whose cleanup failed.
+func cleanupFailures(r Report) []string {
+	var failed []string
+	for _, run := range r.Runs {
+		if run.CleanupError != "" {
+			failed = append(failed, fmt.Sprintf("repeat %d", run.Repeat))
+		}
+	}
+	return failed
 }
 
 // StandingCaveats returns the caveats every rendering of bench results must

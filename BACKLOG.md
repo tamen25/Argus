@@ -89,10 +89,10 @@ fixed; a finding that does not hold is marked so here, with the reason.
   service. Done in #110: names reach configuration only if config-safe, else `REPLACE_WITH_…`; comments quote values on one line; metric-changing patches are scoped to `service.name`.
 - [x] **R09** — zero or negative step, stride and interval values hang replay
   or panic `serve` (`time.NewTicker`). Done in #111: every duration flag is checked at command start (`serve` can no longer reach `time.NewTicker(0)`); the backtest entry points refuse a non-positive step, and a walk of more than 100,000 evaluations, before any query.
-- [ ] **R10** — bench cleanup errors are discarded; a failed restore leaves the
-  next repeat on a contaminated cluster.
-- [ ] **R11** — reset sweeps argus-managed faults cluster-wide, so parallel
-  runners delete each other's faults.
+- [x] **R10** — bench cleanup errors are discarded; a failed restore leaves the
+  next repeat on a contaminated cluster. Done in #112: each run records `cleanup_error` and keeps its result; `Finished` is set after cleanup; a failed cleanup stops the run unless the probe verifies the next baseline; a failed last cleanup writes the report and fails the command (`ErrNotRestored`).
+- [x] **R11** — reset sweeps argus-managed faults cluster-wide, so parallel
+  runners delete each other's faults. Done in #112: a run claims the cluster with a lock ConfigMap (`argus-bench-lock` in `default`, created atomically, outside the sweep's label) and releases it at the end, so a second run fails at once rather than deleting the first one's fault. The sweep stays cluster-wide under the lock.
 - [ ] **R12** — the Helm chart and the demo compose start `serve` without OTLP
   ingest, expose an unimplemented OTLP HTTP port, and health-check with
   `argus version`.

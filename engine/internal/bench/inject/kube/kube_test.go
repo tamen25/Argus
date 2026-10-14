@@ -39,6 +39,11 @@ func TestKubectlHelperProcess(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "error: the server doesn't have a resource type %q\n", kind)
 		os.Exit(1)
 	}
+	// Simulate a lock another run already holds.
+	if os.Getenv("ARGUS_KUBECTL_LOCK_HELD") == "1" && strings.Contains(strings.Join(args, " "), "create configmap") {
+		fmt.Fprintln(os.Stderr, `Error from server (AlreadyExists): configmaps "argus-bench-lock" already exists`)
+		os.Exit(1)
+	}
 	if os.Getenv("ARGUS_KUBECTL_FAIL") == "1" {
 		fmt.Fprintln(os.Stderr, "the server could not find the requested resource")
 		os.Exit(1)
