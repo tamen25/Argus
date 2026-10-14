@@ -117,3 +117,45 @@ func TestDiffMarkdownRendering(t *testing.T) {
 		}
 	}
 }
+
+// R22: equal covered time is not the same history. Different windows or
+// different segments with the same total coverage used to be accepted; zero
+// coverage used to pass the gate on no evidence.
+func TestDiffRefusesDifferentHistory(t *testing.T) {
+	shifted := reportWith()
+	shifted.From, shifted.To = ts(7, 0), ts(8, 0) // also one covered hour
+	otherGaps := reportWith()
+	otherGaps.Spans = []backtest.Segment{{Start: ts(5, 30), End: ts(6, 0)}}
+	steps := reportWith()
+	steps.Step = 2 * time.Minute
+	empty := reportWith()
+	empty.Coverage = 0
+
+	for name, b := range map[string]backtest.Report{
+		"another window, same coverage": shifted,
+		"other segments":                otherGaps,
+		"another step":                  steps,
+	} {
+		if _, err := backtest.DiffReports(reportWith(), b, backtest.DiffOptions{}); err == nil {
+			t.Errorf("%s: compared", name)
+		}
+	}
+	if _, err := backtest.DiffReports(empty, empty, backtest.DiffOptions{}); err == nil ||
+		!strings.Contains(err.Error(), "no telemetry coverage") {
+		t.Errorf("zero coverage: err = %v, want it refused", err)
+	}
+}
+
+// R22: each set's caveats travel into the diff, so a gate result is never
+// read without knowing, say, that a rule in B could not be replayed.
+func TestDiffCarriesEachSetsCaveats(t *testing.T) {
+	a, b := reportWith(), reportWith()
+	b.Caveats = []string{"HighErr not replayed: recording rule undefined"}
+	d, err := backtest.DiffReports(a, b, backtest.DiffOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md := backtest.RenderDiffMarkdown(d); !strings.Contains(md, "Set B: HighErr not replayed") {
+		t.Errorf("the diff dropped B's caveat:\n%s", md)
+	}
+}

@@ -3,6 +3,7 @@ package mimir
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"sort"
 	"strconv"
@@ -91,11 +92,19 @@ type PresenceSource struct {
 	Expr   string // e.g. count(target_info)
 }
 
-// HasData satisfies backtest.InstantQuerier.
+// HasData satisfies backtest.InstantQuerier: data is present when the probe
+// returns at least one series with a number. A NaN sample (a ratio over no
+// requests, say) is not evidence that data existed; a zero is, since a
+// counter at zero is data.
 func (p PresenceSource) HasData(ctx context.Context, t time.Time) (bool, error) {
 	vals, err := p.Client.Query(ctx, p.Expr, t)
 	if err != nil {
 		return false, err
 	}
-	return len(vals) > 0, nil
+	for _, v := range vals {
+		if !math.IsNaN(v) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

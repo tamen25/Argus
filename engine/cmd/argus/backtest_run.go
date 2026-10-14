@@ -25,6 +25,9 @@ type backtestRunOptions struct {
 	synthesize  bool
 	output      string
 	outPath     string
+
+	// segments, when set, replaces the presence sweep (see backtest diff).
+	segments []backtest.Segment
 }
 
 func newBacktestRunCmd() *cobra.Command {
@@ -109,6 +112,6 @@ func runBacktestRun(ctx context.Context, opts *backtestRunOptions) (backtest.Rep
 		backtest.RunInput{
 			Rules: rs, Incidents: reg.Incidents,
 			From: from, To: to, Step: opts.step, Grace: opts.grace,
-			Synthesize: opts.synthesize,
+			Synthesize: opts.synthesize, Segments: opts.segments,
 		})
 }

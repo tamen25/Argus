@@ -116,12 +116,12 @@ fixed; a finding that does not hold is marked so here, with the reason.
   snapshot, not one a week old.
 - [x] **R21** — recording-rule synthesis at the root, and cycles. Done in #106
   (B-60). Still open from R21: recording-rule output labels and `offset`/`@`.
-- [ ] **R22** — `backtest diff` compares total coverage only: different windows
-  with the same covered duration are accepted, and zero coverage passes.
-- [ ] **R23** — the presence probe (`target_info`) shows backend availability,
-  not coverage of each rule's input series.
-- [ ] **R24** — replay ignores a rule's static labels, group interval and
-  `keep_firing_for`.
+- [x] **R22** — `backtest diff` compares total coverage only: different windows
+  with the same covered duration are accepted, and zero coverage passes. Done in #119: `backtest diff` maps presence once and replays both sets over those segments; `DiffReports` refuses different windows, steps or segments, and zero coverage; each set's caveats are carried into the diff.
+- [x] **R23** — the presence probe (`target_info`) shows backend availability,
+  not coverage of each rule's input series. Done in #119: every report states that coverage is measured backend-wide, not per rule; a NaN-only probe answer is not presence (zero still is). Per-rule coverage stays out of scope.
+- [x] **R24** — replay ignores a rule's static labels, group interval and
+  `keep_firing_for`. Done in #119: `keep_firing_for` is replayed; an alert name in two groups is scored as `group/alert`; a group interval other than the replay step is disclosed; static labels are documented as not applied.
 - [x] **R25** — the engine API is open when `ARGUS_API_TOKEN` is unset, and
   `--addr` defaults to every interface. Done in #113: without a token, `serve` refuses a non-loopback `--addr` unless `--insecure-no-auth` is given (kind and the demo pass it, with a comment).
 - [x] **R26** — the OTLP receiver's trust boundary (no auth, network policy
