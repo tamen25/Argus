@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -83,5 +84,22 @@ func TestServeHealthzAndShutdown(t *testing.T) {
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("serve did not shut down after context cancel")
+	}
+}
+
+// A tripped CI gate exits 2; any other error exits 1.
+func TestExitCode(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want int
+	}{
+		{fmt.Errorf("%w: 61.00 < 85.00", errBelowThreshold), 2},
+		{fmt.Errorf("%w: 120.00 > 100.00", errOverBudget), 2},
+		{fmt.Errorf("%w: 2 reason(s)", errBacktestRegression), 2},
+		{errors.New("dial tcp: connection refused"), 1},
+	} {
+		if got := exitCode(c.err); got != c.want {
+			t.Errorf("exitCode(%v) = %d, want %d", c.err, got, c.want)
+		}
 	}
 }

@@ -211,3 +211,17 @@ func TestTopologyMode(t *testing.T) {
 		t.Errorf("auto without kubectl = %v, %v; want the tool left out", on, err)
 	}
 }
+
+// One parser for --compare and /api/bench?compare=, so the two accept the same
+// input: two valid labels, spaces trimmed.
+func TestParseCompare(t *testing.T) {
+	b, tr, err := parseCompare(" degraded , remediated ")
+	if err != nil || b != "degraded" || tr != "remediated" {
+		t.Errorf("parseCompare = %q, %q, %v", b, tr, err)
+	}
+	for _, bad := range []string{"degraded", "degraded,", "Degraded,remediated", "a b,c"} {
+		if _, _, err := parseCompare(bad); err == nil {
+			t.Errorf("parseCompare(%q) accepted", bad)
+		}
+	}
+}

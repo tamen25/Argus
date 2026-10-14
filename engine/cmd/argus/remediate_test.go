@@ -126,3 +126,47 @@ func TestRunRemediateUnknownFinding(t *testing.T) {
 		t.Errorf("want no-findings error, got %v", err)
 	}
 }
+
+// Service names come from telemetry, so they must not choose where a patch is
+// written. A report whose service is named "../escaped" still writes inside
+// the output directory.
+func TestRunRemediateKeepsPatchesInsideOutDir(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("testdata", "calibrate-soak", "report-000.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	reportPath := filepath.Join(dir, "report.json")
+	hostile := strings.ReplaceAll(string(src), `"checkout"`, `"../escaped"`)
+	if err := os.WriteFile(reportPath, []byte(hostile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "out")
+	if _, err := runRemediate(context.Background(), &remediateOptions{
+		reportPath: reportPath, findingID: "ARG-LOG-001", outDir: out,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if escaped, _ := filepath.Glob(filepath.Join(dir, "escaped*")); len(escaped) > 0 {
+		t.Fatalf("a patch escaped the output directory: %v", escaped)
+	}
+	if _, err := os.Stat(filepath.Join(out, ".._escaped-logs-without-trace-context.alloy.river")); err != nil {
+		t.Errorf("the patch for the hostile name is not where it should be: %v", err)
+	}
+}
+
+func TestFileSafe(t *testing.T) {
+	for in, want := range map[string]string{
+		"checkout":      "checkout",
+		"cart.v2_x-y":   "cart.v2_x-y",
+		"../../etc/x":   ".._.._etc_x",
+		`a/b\c`:         "a_b_c",
+		"..":            "_",
+		"":              "_",
+		"svc with spcs": "svc_with_spcs",
+	} {
+		if got := fileSafe(in); got != want {
+			t.Errorf("fileSafe(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

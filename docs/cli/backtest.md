@@ -74,7 +74,8 @@ argus backtest diff \
 - **Losing a detection always fails.** Gained detections are reported.
 - `--max-ttd-regression` fails when any incident's best TTD worsens beyond it.
 - `--max-pages-week` fails when set B's total exceeds the budget.
-- Exit code is non-zero on regression — wire it straight into CI.
+- The exit code is **2** on a regression and **1** on any other error: wire it
+  straight into CI, and retry only the second.
 - Reports over different coverage are **refused, not fudged**: both sets are
   replayed in one invocation over identical segments.
 

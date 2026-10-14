@@ -49,8 +49,7 @@ Numbers without their caveats are not Argus output.`,
 			if err != nil {
 				return err
 			}
-			cmd.Print(out)
-			return nil
+			return writeOutput(cmd, "", []byte(out))
 		},
 	}
 	f := cmd.Flags()
@@ -69,29 +68,20 @@ Numbers without their caveats are not Argus output.`,
 	return cmd
 }
 
+// runBacktestReplay replays every alerting rule through the covered parts of
+// the window and returns the Markdown report: coverage, the firings per rule,
+// and the fidelity caveats that applied.
 func runBacktestReplay(ctx context.Context, opts *backtestReplayOptions) (string, error) {
-	from, err := time.Parse(time.RFC3339, opts.from)
+	from, to, err := parseWindow(opts.from, opts.to)
 	if err != nil {
-		return "", fmt.Errorf("--from: %w", err)
+		return "", err
 	}
-	to, err := time.Parse(time.RFC3339, opts.to)
-	if err != nil {
-		return "", fmt.Errorf("--to: %w", err)
-	}
-	if !to.After(from) {
-		return "", fmt.Errorf("--to must be after --from")
-	}
-
 	rs, err := backtest.LoadRuleFiles(opts.rules...)
 	if err != nil {
 		return "", err
 	}
-
 	client := mimir.New(opts.mimirURL, opts.mimirTenant)
-	eval := mimir.EvalSource{Client: client}
-	probe := mimir.PresenceSource{Client: client, Expr: opts.probeExpr}
-
-	segs, err := backtest.Segments(ctx, probe, from, to, opts.step)
+	segs, err := backtest.Segments(ctx, mimir.PresenceSource{Client: client, Expr: opts.probeExpr}, from, to, opts.step)
 	if err != nil {
 		return "", fmt.Errorf("presence mapping: %w", err)
 	}
@@ -99,19 +89,7 @@ func runBacktestReplay(ctx context.Context, opts *backtestReplayOptions) (string
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Backtest replay (fidelity spike)\n\n")
 	fmt.Fprintf(&b, "- Window: %s → %s · step %s\n", from.Format(time.RFC3339), to.Format(time.RFC3339), opts.step)
-
-	var caveats []string
-	var covered time.Duration
-	for _, s := range segs {
-		covered += s.End.Sub(s.Start)
-	}
-	fmt.Fprintf(&b, "- Coverage: %s of %s calendar window across %d segment(s)\n\n", covered, to.Sub(from), len(segs))
-	if covered < to.Sub(from) {
-		caveats = append(caveats, fmt.Sprintf("telemetry covers %s of the %s window — verdicts apply to covered segments only", covered, to.Sub(from)))
-	}
-	if len(segs) == 0 {
-		caveats = append(caveats, "no telemetry in the window: nothing was evaluated")
-	}
+	caveats := writeCoverage(&b, segs, to.Sub(from))
 
 	deps := backtest.Dependencies(rs)
 	for _, g := range rs.Groups {
@@ -119,47 +97,17 @@ func runBacktestReplay(ctx context.Context, opts *backtestReplayOptions) (string
 			if !r.Alert {
 				continue
 			}
-			expr := r.Expr
-			if opts.synthesize {
-				synth, synthCaveats, err := backtest.Synthesize(rs, r.Expr)
-				if err != nil {
-					fmt.Fprintf(&b, "## %s — NOT REPLAYED\n\n%v\n\n", r.Name, err)
-					caveats = append(caveats, fmt.Sprintf("%s skipped: %v", r.Name, err))
-					continue
-				}
-				expr = synth
-				caveats = append(caveats, synthCaveats...)
-			} else {
-				for _, d := range deps[r.Name] {
-					if d.Kind == backtest.DepExternalRecording {
-						caveats = append(caveats, fmt.Sprintf("%s reads external recording rule %q — results are empty unless it ran historically (try --synthesize for defined rules)", r.Name, d.Series))
-					}
-				}
+			expr, ruleCaveats, err := replayExpr(rs, r, deps, opts.synthesize)
+			caveats = append(caveats, ruleCaveats...)
+			if err != nil {
+				fmt.Fprintf(&b, "## %s — NOT REPLAYED\n\n%v\n\n", r.Name, err)
+				continue
 			}
-
 			rule := r
 			rule.Expr = expr
-			fmt.Fprintf(&b, "## %s (for: %s)\n\n", r.Name, r.For)
-			total := 0
-			for _, seg := range segs {
-				firings, err := backtest.Replay(ctx, eval, rule, seg, opts.step)
-				if err != nil {
-					return "", fmt.Errorf("replaying %s: %w", r.Name, err)
-				}
-				for _, f := range firings {
-					total++
-					resolved := "unresolved at segment end"
-					if !f.ResolvedAt.IsZero() {
-						resolved = "resolved " + f.ResolvedAt.Format(time.RFC3339)
-					}
-					fmt.Fprintf(&b, "- %s · active %s · fired %s · %s\n",
-						f.Series, f.ActiveAt.Format(time.RFC3339), f.FiredAt.Format(time.RFC3339), resolved)
-				}
+			if err := writeFirings(ctx, &b, mimir.EvalSource{Client: client}, rule, segs, opts.step); err != nil {
+				return "", err
 			}
-			if total == 0 {
-				fmt.Fprintf(&b, "- no firings in covered segments\n")
-			}
-			fmt.Fprintf(&b, "\n")
 		}
 	}
 
@@ -172,6 +120,72 @@ func runBacktestReplay(ctx context.Context, opts *backtestReplayOptions) (string
 	return b.String(), nil
 }
 
+// writeCoverage writes how much of the window had telemetry, and returns the
+// caveats that follow from gaps in it.
+func writeCoverage(b *strings.Builder, segs []backtest.Segment, window time.Duration) (caveats []string) {
+	var covered time.Duration
+	for _, s := range segs {
+		covered += s.End.Sub(s.Start)
+	}
+	fmt.Fprintf(b, "- Coverage: %s of %s calendar window across %d segment(s)\n\n", covered, window, len(segs))
+	if covered < window {
+		caveats = append(caveats, fmt.Sprintf("telemetry covers %s of the %s window — verdicts apply to covered segments only", covered, window))
+	}
+	if len(segs) == 0 {
+		caveats = append(caveats, "no telemetry in the window: nothing was evaluated")
+	}
+	return caveats
+}
+
+// replayExpr is the expression to replay for an alerting rule. With
+// synthesize, recording rules the expression reads are inlined, so history
+// where they never ran still replays; an error means the rule cannot be
+// replayed. Without it, reading a recording rule that is not defined in the
+// files is a caveat: it returns nothing unless it ran historically.
+func replayExpr(rs backtest.RuleSet, r backtest.Rule, deps map[string][]backtest.Dependency, synthesize bool) (expr string, caveats []string, err error) {
+	if synthesize {
+		synth, synthCaveats, err := backtest.Synthesize(rs, r.Expr)
+		if err != nil {
+			return "", []string{fmt.Sprintf("%s skipped: %v", r.Name, err)}, err
+		}
+		return synth, synthCaveats, nil
+	}
+	for _, d := range deps[r.Name] {
+		if d.Kind == backtest.DepExternalRecording {
+			caveats = append(caveats, fmt.Sprintf("%s reads external recording rule %q — results are empty unless it ran historically (try --synthesize for defined rules)", r.Name, d.Series))
+		}
+	}
+	return r.Expr, caveats, nil
+}
+
+// writeFirings replays one rule through every covered segment and writes a
+// line per firing.
+func writeFirings(ctx context.Context, b *strings.Builder, eval backtest.EvalQuerier, rule backtest.Rule, segs []backtest.Segment, step time.Duration) error {
+	fmt.Fprintf(b, "## %s (for: %s)\n\n", rule.Name, rule.For)
+	total := 0
+	for _, seg := range segs {
+		firings, err := backtest.Replay(ctx, eval, rule, seg, step)
+		if err != nil {
+			return fmt.Errorf("replaying %s: %w", rule.Name, err)
+		}
+		for _, f := range firings {
+			total++
+			resolved := "unresolved at segment end"
+			if !f.ResolvedAt.IsZero() {
+				resolved = "resolved " + f.ResolvedAt.Format(time.RFC3339)
+			}
+			fmt.Fprintf(b, "- %s · active %s · fired %s · %s\n",
+				f.Series, f.ActiveAt.Format(time.RFC3339), f.FiredAt.Format(time.RFC3339), resolved)
+		}
+	}
+	if total == 0 {
+		fmt.Fprintf(b, "- no firings in covered segments\n")
+	}
+	fmt.Fprintf(b, "\n")
+	return nil
+}
+
+// dedupe drops repeated strings, keeping the first of each, in place.
 func dedupe(in []string) []string {
 	seen := map[string]bool{}
 	out := in[:0]

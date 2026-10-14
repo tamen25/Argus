@@ -46,7 +46,9 @@ straight into CI.`,
 			if err != nil {
 				return err
 			}
-			cmd.Print(backtest.RenderDiffMarkdown(d))
+			if err := writeOutput(cmd, "", []byte(backtest.RenderDiffMarkdown(d))); err != nil {
+				return err
+			}
 			if d.Regression {
 				return fmt.Errorf("%w: %d reason(s)", errBacktestRegression, len(d.Reasons))
 			}

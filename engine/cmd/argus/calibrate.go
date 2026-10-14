@@ -14,7 +14,6 @@ import (
 	"github.com/tamen25/Argus/engine/internal/calibrate"
 	"github.com/tamen25/Argus/engine/internal/report"
 	"github.com/tamen25/Argus/engine/internal/rules"
-	"github.com/tamen25/Argus/engine/internal/rules/builtin"
 	"github.com/tamen25/Argus/engine/internal/soak"
 	"github.com/tamen25/Argus/engine/internal/store"
 )
@@ -42,9 +41,11 @@ func newCalibrateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Print(md)
-			// path notice stays out of md: the proposal document must be
-			// byte-identical for a given snapshot set
+			if err := writeOutput(cmd, "", []byte(md)); err != nil {
+				return err
+			}
+			// The path notice goes to stderr, out of the proposal: the
+			// document must be byte-identical for a given snapshot set.
 			cmd.PrintErrf("\nOverride files written to %s — review and commit the ones you accept.\n", opts.outDir)
 			return nil
 		},
@@ -61,83 +62,125 @@ type calibrateOptions struct {
 	soakDir, rulesDir, outDir, storeDSN string
 }
 
+// runCalibrate gathers the evidence (soak aggregates, finding ratios from
+// soak reports and, optionally, Postgres history), proposes threshold
+// overrides, writes one override file per proposal, and returns the proposal
+// document. Disclosures about the evidence's quality travel with it.
 func runCalibrate(ctx context.Context, opts *calibrateOptions) (string, error) {
-	rs, err := builtin.Load()
+	rs, err := loadRules(opts.rulesDir)
 	if err != nil {
 		return "", err
 	}
-	if opts.rulesDir != "" {
-		custom, err := rules.LoadDir(opts.rulesDir)
-		if err != nil {
+	in := calibrate.Input{Rules: rs, Ratios: map[string][]float64{}}
+	if in.Aggregates, err = readSoakAggregates(opts.soakDir); err != nil {
+		return "", err
+	}
+
+	var disclosures []string
+	skipped, err := addSoakRatios(opts.soakDir, in.Ratios)
+	if err != nil {
+		return "", err
+	}
+	if skipped > 0 {
+		disclosures = append(disclosures, fmt.Sprintf("%d report-*.json file(s) in the soak dir are not score reports and were ignored", skipped))
+	}
+	if opts.storeDSN != "" {
+		if err := addStoredRatios(ctx, opts.storeDSN, in.Ratios); err != nil {
 			return "", err
 		}
-		rs = rules.Merge(rs, custom)
 	}
+	disclosures = append(disclosures, soakContinuity(opts.soakDir)...)
 
-	in := calibrate.Input{Rules: rs, Ratios: map[string][]float64{}}
-
-	aggFiles, err := filepath.Glob(filepath.Join(opts.soakDir, "aggregates-*.json"))
-	if err != nil || len(aggFiles) == 0 {
-		return "", fmt.Errorf("no aggregates-*.json in %q — point --soak-dir at a scripts/soak.sh output directory", opts.soakDir)
+	props := calibrate.Propose(in)
+	if err := writeOverrides(opts.outDir, rs, props); err != nil {
+		return "", err
 	}
-	sort.Strings(aggFiles)
-	for _, f := range aggFiles {
+	return calibrate.Render(props, disclosures...), nil
+}
+
+// readSoakAggregates reads every aggregates-*.json snapshot in the soak
+// directory, in name order. There must be at least one.
+func readSoakAggregates(soakDir string) ([]rules.AggregateRow, error) {
+	files, err := filepath.Glob(filepath.Join(soakDir, "aggregates-*.json"))
+	if err != nil || len(files) == 0 {
+		return nil, fmt.Errorf("no aggregates-*.json in %q — point --soak-dir at a scripts/soak.sh output directory", soakDir)
+	}
+	sort.Strings(files)
+	var all []rules.AggregateRow
+	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		var rows []rules.AggregateRow
 		if err := json.Unmarshal(data, &rows); err != nil {
-			return "", fmt.Errorf("%s: %w", f, err)
+			return nil, fmt.Errorf("%s: %w", f, err)
 		}
-		in.Aggregates = append(in.Aggregates, rows...)
+		all = append(all, rows...)
 	}
+	return all, nil
+}
 
-	repFiles, _ := filepath.Glob(filepath.Join(opts.soakDir, "report-*.json"))
-	sort.Strings(repFiles)
-	for _, f := range repFiles {
+// addSoakRatios adds every finding's ratio from the soak's report-*.json
+// files to ratios, by rule ID. A file that is not a score report is skipped
+// and counted, so the proposal can say so.
+func addSoakRatios(soakDir string, ratios map[string][]float64) (skipped int, err error) {
+	files, _ := filepath.Glob(filepath.Join(soakDir, "report-*.json"))
+	sort.Strings(files)
+	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
-			return "", err
+			return skipped, err
 		}
 		var rep report.Report
 		if err := json.Unmarshal(data, &rep); err != nil || rep.Snapshot == nil {
+			skipped++
 			continue
 		}
 		for _, s := range rep.Snapshot.Services {
 			for _, fd := range s.Findings {
-				in.Ratios[fd.RuleID] = append(in.Ratios[fd.RuleID], fd.Stats.Ratio)
+				ratios[fd.RuleID] = append(ratios[fd.RuleID], fd.Stats.Ratio)
 			}
 		}
 	}
+	return skipped, nil
+}
 
-	if opts.storeDSN != "" {
-		pg, err := store.Open(ctx, opts.storeDSN)
-		if err != nil {
-			return "", fmt.Errorf("store: %w", err)
-		}
-		defer pg.Close()
-		hist, err := pg.RuleRatios(ctx)
-		if err != nil {
-			return "", fmt.Errorf("store ratios: %w", err)
-		}
-		for id, vals := range hist {
-			in.Ratios[id] = append(in.Ratios[id], vals...)
-		}
+// addStoredRatios adds the finding ratios persisted in Postgres to ratios.
+func addStoredRatios(ctx context.Context, dsn string, ratios map[string][]float64) error {
+	pg, err := store.Open(ctx, dsn)
+	if err != nil {
+		return fmt.Errorf("store: %w", err)
 	}
-
-	// Evidence quality travels with the evidence: a segmented soak (daemon
-	// outages, engine restarts) under-represents steady state.
-	var disclosures []string
-	if samples, err := soak.ReadMetrics(filepath.Join(opts.soakDir, "metrics.csv")); err != nil {
-		disclosures = append(disclosures, "run continuity not verifiable — no readable metrics.csv in the soak dir")
-	} else if c := soak.CheckContinuity(samples); c.Segmented() {
-		disclosures = append(disclosures, "evidence from a "+c.String()+" soak run — distributions may under-represent steady state")
+	defer pg.Close()
+	hist, err := pg.RuleRatios(ctx)
+	if err != nil {
+		return fmt.Errorf("store ratios: %w", err)
 	}
+	for id, vals := range hist {
+		ratios[id] = append(ratios[id], vals...)
+	}
+	return nil
+}
 
-	props := calibrate.Propose(in)
-	if err := os.MkdirAll(opts.outDir, 0o755); err != nil {
-		return "", err
+// soakContinuity discloses a soak run that was not continuous: a segmented
+// soak (daemon outages, engine restarts) under-represents steady state.
+func soakContinuity(soakDir string) []string {
+	samples, err := soak.ReadMetrics(filepath.Join(soakDir, "metrics.csv"))
+	if err != nil {
+		return []string{"run continuity not verifiable — no readable metrics.csv in the soak dir"}
+	}
+	if c := soak.CheckContinuity(samples); c.Segmented() {
+		return []string{"evidence from a " + c.String() + " soak run — distributions may under-represent steady state"}
+	}
+	return nil
+}
+
+// writeOverrides writes one override YAML file per proposal, named after the
+// rule ID.
+func writeOverrides(outDir string, rs []*rules.Rule, props []calibrate.Proposal) error {
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return err
 	}
 	byID := map[string]*rules.Rule{}
 	for _, r := range rs {
@@ -146,13 +189,12 @@ func runCalibrate(ctx context.Context, opts *calibrateOptions) (string, error) {
 	for _, p := range props {
 		data, err := calibrate.OverrideYAML(byID[p.RuleID], p)
 		if err != nil {
-			return "", err
+			return err
 		}
 		name := strings.ToLower(p.RuleID) + ".yaml"
-		if err := os.WriteFile(filepath.Join(opts.outDir, name), data, 0o644); err != nil {
-			return "", err
+		if err := os.WriteFile(filepath.Join(outDir, name), data, 0o644); err != nil {
+			return err
 		}
 	}
-
-	return calibrate.Render(props, disclosures...), nil
+	return nil
 }

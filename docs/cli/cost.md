@@ -37,8 +37,9 @@ that would misleadingly read as `$0`.
 
 ## CI budget gate
 
-`--fail-over-monthly` exits non-zero when the modeled monthly total exceeds a
-budget — the cost analogue of `argus score --fail-below-score`:
+`--fail-over-monthly` exits **2** when the modeled monthly total exceeds a
+budget (1 on any other error), the cost analogue of
+`argus score --fail-below-score`:
 
 ```bash
 argus cost --pricing pricing/aws.yaml --mimir-url … --fail-over-monthly 5000

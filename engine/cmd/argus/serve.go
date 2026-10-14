@@ -26,7 +26,6 @@ import (
 	"github.com/tamen25/Argus/engine/internal/remediate"
 	"github.com/tamen25/Argus/engine/internal/report"
 	"github.com/tamen25/Argus/engine/internal/rules"
-	"github.com/tamen25/Argus/engine/internal/rules/builtin"
 	"github.com/tamen25/Argus/engine/internal/telemetry"
 )
 
@@ -259,20 +258,6 @@ func startScoring(ctx context.Context, cfg serveConfig, mux *http.ServeMux, reg 
 	}, nil
 }
 
-// loadRules returns the built-in rules, merged with a directory of custom ones
-// when rulesDir is set (custom rules override built-ins with the same ID).
-func loadRules(rulesDir string) ([]*rules.Rule, error) {
-	rs, err := builtin.Load()
-	if err != nil || rulesDir == "" {
-		return rs, err
-	}
-	custom, err := rules.LoadDir(rulesDir)
-	if err != nil {
-		return nil, err
-	}
-	return rules.Merge(rs, custom), nil
-}
-
 // otlpEndpointFromEnv is OTEL_EXPORTER_OTLP_ENDPOINT as host:port: the OTel
 // convention allows a URL, the gRPC exporter wants no scheme.
 func otlpEndpointFromEnv() string {
@@ -296,13 +281,7 @@ func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline
 func reportHandler(col *rules.Collector, pipe *ingest.Pipeline, specVersion string, window time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		snap := col.Snapshot()
-		var notes []string
-		if n := pipe.Evictions(); n > 0 {
-			notes = append(notes, fmt.Sprintf("aggregate trackers evicted %d entries (LRU) — estimates for evicted entries are lost", n))
-		}
-		if len(snap.Services) == 0 {
-			notes = append(notes, "no telemetry received on the OTLP listener during the window — the fleet score reflects an empty fleet, not healthy instrumentation")
-		}
+		notes := ingestNotes(pipe.Evictions(), len(snap.Services), true)
 		writeJSON(w, &report.Report{
 			GeneratedAt:     time.Now().UTC(),
 			ArgusVersion:    version,
@@ -420,17 +399,6 @@ func remediationHandler(col *rules.Collector, rs []*rules.Rule) http.HandlerFunc
 		}
 		http.Error(w, "no such finding in the current snapshot", http.StatusNotFound)
 	}
-}
-
-// remediationTemplate is the template name of the rule with this ID, or "" if
-// there is no such rule or it has no template.
-func remediationTemplate(rs []*rules.Rule, ruleID string) string {
-	for _, r := range rs {
-		if r.ID == ruleID {
-			return r.Remediation.Template
-		}
-	}
-	return ""
 }
 
 // writeJSON writes v as indented JSON. It encodes before writing anything, so

@@ -1,8 +1,9 @@
 # `argus score`
 
 Evaluates instrumentation quality and prints an Instrumentation Score report.
-One-shot: collect → evaluate → report → exit. Exit code is non-zero when
-`--fail-below-score` trips — the CI gate use case.
+One-shot: collect → evaluate → report → exit. The exit code is **2** when
+`--fail-below-score` trips (the CI gate use case) and **1** on any other error,
+so a pipeline can tell a failed gate from a broken run.
 
 ```bash
 # stream + poller, markdown to stdout, gate at 85

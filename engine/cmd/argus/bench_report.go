@@ -28,6 +28,22 @@ func validCondition(label string) error {
 	return nil
 }
 
+// parseCompare reads a "baseline,treatment" pair of condition labels, as
+// `bench report --compare` and /api/bench?compare= take it.
+func parseCompare(s string) (baseline, treatment string, err error) {
+	baseline, treatment, ok := strings.Cut(s, ",")
+	if !ok {
+		return "", "", fmt.Errorf("compare wants two conditions: baseline,treatment (got %q)", s)
+	}
+	baseline, treatment = strings.TrimSpace(baseline), strings.TrimSpace(treatment)
+	for _, label := range []string{baseline, treatment} {
+		if err := validCondition(label); err != nil {
+			return "", "", err
+		}
+	}
+	return baseline, treatment, nil
+}
+
 func newBenchReportCmd() *cobra.Command {
 	var compare, format, out string
 
@@ -61,15 +77,9 @@ recomputed by hand from the run reports: no model is involved.`,
 			}
 			var baseline, treatment string
 			if compare != "" {
-				var ok bool
-				if baseline, treatment, ok = strings.Cut(compare, ","); !ok {
-					return fmt.Errorf("--compare wants two conditions: baseline,treatment (got %q)", compare)
-				}
-				baseline, treatment = strings.TrimSpace(baseline), strings.TrimSpace(treatment)
-				for _, label := range []string{baseline, treatment} {
-					if err := validCondition(label); err != nil {
-						return err
-					}
+				var err error
+				if baseline, treatment, err = parseCompare(compare); err != nil {
+					return fmt.Errorf("--compare: %w", err)
 				}
 			}
 
@@ -77,28 +87,9 @@ recomputed by hand from the run reports: no model is involved.`,
 			if err != nil {
 				return err
 			}
-
-			var md string
-			var data any
-			if compare == "" {
-				lb, err := leaderboard.Build(reports)
-				if err != nil {
-					return err
-				}
-				md, data = leaderboard.RenderLeaderboardMarkdown(lb), lb
-			} else {
-				c, err := leaderboard.Compare(reports, baseline, treatment)
-				if err != nil {
-					return err
-				}
-				md, data = leaderboard.RenderComparisonMarkdown(c), c
-			}
-
-			payload := []byte(md)
-			if format == "json" {
-				if payload, err = leaderboard.RenderJSON(data); err != nil {
-					return err
-				}
+			payload, err := renderBenchTable(reports, baseline, treatment, format)
+			if err != nil {
+				return err
 			}
 
 			if out != "" {
@@ -118,6 +109,30 @@ recomputed by hand from the run reports: no model is involved.`,
 	fl.StringVar(&format, "format", "md", "output format: md | json")
 	fl.StringVar(&out, "out", "", "write the report to this file instead of stdout")
 	return cmd
+}
+
+// renderBenchTable renders the leaderboard, or with a baseline the comparison
+// of two conditions, as Markdown or JSON.
+func renderBenchTable(reports []orchestrator.Report, baseline, treatment, format string) ([]byte, error) {
+	var md string
+	var data any
+	if baseline == "" {
+		lb, err := leaderboard.Build(reports)
+		if err != nil {
+			return nil, err
+		}
+		md, data = leaderboard.RenderLeaderboardMarkdown(lb), lb
+	} else {
+		c, err := leaderboard.Compare(reports, baseline, treatment)
+		if err != nil {
+			return nil, err
+		}
+		md, data = leaderboard.RenderComparisonMarkdown(c), c
+	}
+	if format == "json" {
+		return leaderboard.RenderJSON(data)
+	}
+	return []byte(md), nil
 }
 
 // loadRunReports reads run reports from files and directories. It is strict:

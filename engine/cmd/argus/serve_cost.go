@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/cost"
@@ -53,33 +52,22 @@ type costEndpoint struct {
 	srcs    cost.Sources
 	store   cost.SnapshotStore
 	window  time.Duration
-	ttl     time.Duration
 	now     func() time.Time
-
-	mu       sync.Mutex
-	cached   *cost.Showback
-	cachedAt time.Time
+	cache   *ttlCache[cost.Showback]
 }
 
 func newCostEndpoint(pricing *cost.Pricing, srcs cost.Sources, store cost.SnapshotStore, window, ttl time.Duration) *costEndpoint {
-	return &costEndpoint{pricing: pricing, srcs: srcs, store: store, window: window, ttl: ttl, now: time.Now}
+	c := &costEndpoint{pricing: pricing, srcs: srcs, store: store, window: window, now: time.Now}
+	c.cache = newTTLCache[cost.Showback](ttl)
+	c.cache.now = func() time.Time { return c.now() } // one clock, swappable in tests
+	return c
 }
 
-// get returns a cached showback within the TTL, otherwise recomputes it.
-// Errors are not cached: a transient backend failure retries next request.
+// get returns the showback, recomputed once its cache entry is stale.
 func (c *costEndpoint) get(ctx context.Context) (*cost.Showback, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.cached != nil && c.now().Sub(c.cachedAt) < c.ttl {
-		return c.cached, nil
-	}
-	sb, err := cost.Assemble(ctx, c.pricing, c.srcs, c.window, c.store, c.now())
-	if err != nil {
-		return nil, err
-	}
-	c.cached = &sb
-	c.cachedAt = c.now()
-	return c.cached, nil
+	return c.cache.get(func() (cost.Showback, error) {
+		return cost.Assemble(ctx, c.pricing, c.srcs, c.window, c.store, c.now())
+	})
 }
 
 func (c *costEndpoint) handler() http.HandlerFunc {

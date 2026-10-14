@@ -87,3 +87,29 @@ func TestRunCalibrateRequiresData(t *testing.T) {
 		t.Error("want error for missing soak dir")
 	}
 }
+
+// A report-*.json that is not a score report used to be skipped silently; the
+// proposal now says how many were ignored, so a reviewer knows the evidence
+// is thinner than the directory suggests.
+func TestRunCalibrateDisclosesIgnoredReports(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"aggregates-000.json", "report-000.json"} {
+		data, err := os.ReadFile(filepath.Join("testdata", "calibrate-soak", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "report-001.json"), []byte(`{"not":"a report"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	md, err := runCalibrate(context.Background(), &calibrateOptions{soakDir: dir, outDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(md, "1 report-*.json file(s) in the soak dir are not score reports and were ignored") {
+		t.Errorf("missing the ignored-report disclosure:\n%s", md)
+	}
+}

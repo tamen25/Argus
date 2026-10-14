@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -15,7 +15,6 @@ import (
 	"github.com/tamen25/Argus/engine/internal/remediate/llm"
 	"github.com/tamen25/Argus/engine/internal/report"
 	"github.com/tamen25/Argus/engine/internal/rules"
-	"github.com/tamen25/Argus/engine/internal/rules/builtin"
 )
 
 func newRemediateCmd() *cobra.Command {
@@ -33,8 +32,7 @@ func newRemediateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Print(summary)
-			return nil
+			return writeOutput(cmd, "", []byte(summary))
 		},
 	}
 	cmd.Flags().StringVar(&opts.reportPath, "report", "", "JSON report file from `argus score --output json`")
@@ -64,65 +62,27 @@ type remediateOptions struct {
 	llmNoRedact  bool
 }
 
+// runRemediate renders the patch files for every finding of one rule in a
+// score report (optionally for one service), writes them to the output
+// directory, and returns a summary for the terminal.
 func runRemediate(ctx context.Context, opts *remediateOptions) (string, error) {
-	var explainer llm.Client
-	if opts.explain {
-		if opts.llmEndpoint == "" || opts.llmModel == "" {
-			return "", fmt.Errorf("--explain requires --llm-endpoint and --llm-model")
-		}
-		explainer = llm.NewOpenAI(llm.OpenAIConfig{
-			Endpoint:  opts.llmEndpoint,
-			Model:     opts.llmModel,
-			APIKey:    os.Getenv(opts.llmKeyEnv),
-			MaxTokens: opts.llmMaxTokens,
-			NoRedact:  opts.llmNoRedact,
-		})
-	}
-
-	data, err := os.ReadFile(opts.reportPath)
+	explainer, err := newExplainer(opts)
 	if err != nil {
 		return "", err
 	}
-	var rep report.Report
-	if err := json.Unmarshal(data, &rep); err != nil {
-		return "", fmt.Errorf("%s: %w", opts.reportPath, err)
-	}
-	if rep.Snapshot == nil {
-		return "", fmt.Errorf("%s: not a score report (no snapshot)", opts.reportPath)
-	}
-
-	rs, err := builtin.Load()
+	rep, err := readScoreReport(opts.reportPath)
 	if err != nil {
 		return "", err
 	}
-	if opts.rulesDir != "" {
-		custom, err := rules.LoadDir(opts.rulesDir)
-		if err != nil {
-			return "", err
-		}
-		rs = rules.Merge(rs, custom)
+	rs, err := loadRules(opts.rulesDir)
+	if err != nil {
+		return "", err
 	}
-	var tmpl string
-	for _, r := range rs {
-		if r.ID == opts.findingID {
-			tmpl = r.Remediation.Template
-		}
-	}
+	tmpl := remediationTemplate(rs, opts.findingID)
 	if tmpl == "" {
 		return "", fmt.Errorf("rule %q has no remediation template (or is unknown)", opts.findingID)
 	}
-
-	var found []rules.Finding
-	for _, s := range rep.Snapshot.Services {
-		if opts.service != "" && s.ServiceName != opts.service {
-			continue
-		}
-		for _, f := range s.Findings {
-			if f.RuleID == opts.findingID {
-				found = append(found, f)
-			}
-		}
-	}
+	found := findingsFor(rep, opts.findingID, opts.service)
 	if len(found) == 0 {
 		scope := ""
 		if opts.service != "" {
@@ -140,20 +100,12 @@ func runRemediate(ctx context.Context, opts *remediateOptions) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		for format, content := range outs {
-			name := fmt.Sprintf("%s-%s.%s", f.Service, tmpl, format)
-			if err := os.WriteFile(filepath.Join(opts.outDir, name), []byte(content), 0o644); err != nil {
-				return "", err
-			}
-			written++
+		if err := writePatches(opts.outDir, tmpl, f.Service, outs); err != nil {
+			return "", err
 		}
+		written += len(outs)
 		if explainer != nil {
-			text, err := explainer.Explain(ctx, explainInputFor(f, outs))
-			if err != nil {
-				return "", fmt.Errorf("llm explain for %s/%s: %w", f.RuleID, f.Service, err)
-			}
-			note := text + "\n\n---\nGenerated explanation — review; it never changes the patch or the score.\n"
-			if err := os.WriteFile(filepath.Join(opts.outDir, fmt.Sprintf("%s-%s.explanation.md", f.Service, tmpl)), []byte(note), 0o644); err != nil {
+			if err := writeExplanation(ctx, explainer, opts.outDir, tmpl, f, outs); err != nil {
 				return "", err
 			}
 			explained++
@@ -172,6 +124,78 @@ func runRemediate(ctx context.Context, opts *remediateOptions) (string, error) {
 	}
 	fmt.Fprintf(&b, "Review before applying — Argus never modifies your systems.\n")
 	return b.String(), nil
+}
+
+// newExplainer returns the LLM client --explain asks for, or nil without it.
+func newExplainer(opts *remediateOptions) (llm.Client, error) {
+	if !opts.explain {
+		return nil, nil
+	}
+	if opts.llmEndpoint == "" || opts.llmModel == "" {
+		return nil, fmt.Errorf("--explain requires --llm-endpoint and --llm-model")
+	}
+	return llm.NewOpenAI(llm.OpenAIConfig{
+		Endpoint:  opts.llmEndpoint,
+		Model:     opts.llmModel,
+		APIKey:    os.Getenv(opts.llmKeyEnv),
+		MaxTokens: opts.llmMaxTokens,
+		NoRedact:  opts.llmNoRedact,
+	}), nil
+}
+
+// findingsFor returns the report's findings for one rule, for every service
+// or only the named one.
+func findingsFor(rep *report.Report, ruleID, service string) []rules.Finding {
+	var found []rules.Finding
+	for _, s := range rep.Snapshot.Services {
+		if service != "" && s.ServiceName != service {
+			continue
+		}
+		for _, f := range s.Findings {
+			if f.RuleID == ruleID {
+				found = append(found, f)
+			}
+		}
+	}
+	return found
+}
+
+// writePatches writes a service's rendered patch, one file per format.
+func writePatches(outDir, tmpl, service string, outs map[string]string) error {
+	for format, content := range outs {
+		name := fmt.Sprintf("%s-%s.%s", fileSafe(service), tmpl, format)
+		if err := os.WriteFile(filepath.Join(outDir, name), []byte(content), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeExplanation asks the LLM to explain a finding's patch and writes the
+// answer next to it, marked as generated: it never changes the patch.
+func writeExplanation(ctx context.Context, explainer llm.Client, outDir, tmpl string, f rules.Finding, outs map[string]string) error {
+	text, err := explainer.Explain(ctx, explainInputFor(f, outs))
+	if err != nil {
+		return fmt.Errorf("llm explain for %s/%s: %w", f.RuleID, f.Service, err)
+	}
+	note := text + "\n\n---\nGenerated explanation — review; it never changes the patch or the score.\n"
+	name := fmt.Sprintf("%s-%s.explanation.md", fileSafe(f.Service), tmpl)
+	return os.WriteFile(filepath.Join(outDir, name), []byte(note), 0o644)
+}
+
+// unsafeFileChars is everything but letters, digits, dot, dash and underscore.
+var unsafeFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+// fileSafe turns a service name into a file-name component. Service names
+// come from telemetry (the service.name attribute an application sends), so
+// one named "../../x" must not choose where a patch is written: anything
+// outside [A-Za-z0-9._-] becomes "_", and a name of only dots becomes "_".
+func fileSafe(service string) string {
+	s := unsafeFileChars.ReplaceAllString(service, "_")
+	if strings.Trim(s, ".") == "" {
+		return "_"
+	}
+	return s
 }
 
 // explainInputFor maps a finding + its rendered patches into the LLM input.
