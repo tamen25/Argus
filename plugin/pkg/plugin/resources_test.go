@@ -186,7 +186,11 @@ func TestNormalizeEngineURL(t *testing.T) {
 			t.Errorf("normalizeEngineURL(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	for _, bad := range []string{"engine:8080", "ftp://engine", "http://", "file:///etc/passwd"} {
+	for _, bad := range []string{
+		"engine:8080", "ftp://engine", "http://", "file:///etc/passwd",
+		// R28: these would put credentials or a query in front of the API paths.
+		"http://user:pass@engine:8080", "http://engine:8080/?x=1", "http://engine:8080/#frag",
+	} {
 		if _, err := normalizeEngineURL(bad); err == nil {
 			t.Errorf("normalizeEngineURL(%q) accepted", bad)
 		}
@@ -282,5 +286,34 @@ func TestCheckHealthReportsARejectedToken(t *testing.T) {
 	r, err = tokenApp(t, engine.URL, "wrong").CheckHealth(context.Background(), nil)
 	if err != nil || r.Status != backend.HealthStatusError || !strings.Contains(r.Message, "rejected the API token") {
 		t.Errorf("wrong token: health = %+v err=%v", r, err)
+	}
+}
+
+// R28: an engine that answers with a redirect is not followed, so the bearer
+// token is never sent to the URL it names, and the page gets a 502.
+func TestEngineRedirectIsNotFollowed(t *testing.T) {
+	var sentToken string
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		sentToken = r.Header.Get("Authorization")
+	}))
+	defer elsewhere.Close()
+	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+r.URL.Path, http.StatusFound)
+	}))
+	defer engine.Close()
+
+	inst, err := NewApp(context.Background(), backend.AppInstanceSettings{
+		JSONData:                []byte(`{"engineUrl":"` + engine.URL + `"}`),
+		DecryptedSecureJSONData: map[string]string{apiTokenKey: "secret"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := callResource(t, inst.(*App), "/scores")
+	if res.Status != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502", res.Status)
+	}
+	if sentToken != "" {
+		t.Errorf("the redirect target received %q", sentToken)
 	}
 }

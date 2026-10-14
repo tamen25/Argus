@@ -24,6 +24,7 @@ import (
 
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/httpclient"
 )
 
 // Config configures the OpenAI-compatible endpoint used for judging.
@@ -54,7 +55,7 @@ type LLMJudge struct {
 func New(cfg Config) *LLMJudge {
 	h := cfg.HTTP
 	if h == nil {
-		h = &http.Client{Timeout: cmp.Or(cfg.Timeout, DefaultJudgeTimeout)}
+		h = httpclient.New(cmp.Or(cfg.Timeout, DefaultJudgeTimeout))
 	}
 	if cfg.MaxTokens <= 0 {
 		cfg.MaxTokens = 512

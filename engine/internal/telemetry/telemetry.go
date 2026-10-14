@@ -27,9 +27,11 @@ import (
 
 // Config controls the engine's self-instrumentation.
 type Config struct {
-	// Endpoint is the OTLP gRPC target (host:port, insecure — the sampled
-	// mirror path). Empty disables all export.
-	Endpoint       string
+	// Endpoint is the OTLP gRPC target, host:port. Empty disables all export.
+	Endpoint string
+	// Insecure sends in plaintext; otherwise the connection uses TLS with the
+	// system's root certificates.
+	Insecure       bool
 	ServiceName    string
 	ServiceVersion string
 	Environment    string
@@ -77,8 +79,14 @@ func Setup(ctx context.Context, cfg Config) (*Telemetry, error) {
 		return nil, err
 	}
 
-	traceExp, err := otlptracegrpc.New(ctx,
-		otlptracegrpc.WithEndpoint(cfg.Endpoint), otlptracegrpc.WithInsecure())
+	traceOpts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(cfg.Endpoint)}
+	metricOpts := []otlpmetricgrpc.Option{otlpmetricgrpc.WithEndpoint(cfg.Endpoint)}
+	if cfg.Insecure {
+		traceOpts = append(traceOpts, otlptracegrpc.WithInsecure())
+		metricOpts = append(metricOpts, otlpmetricgrpc.WithInsecure())
+	}
+
+	traceExp, err := otlptracegrpc.New(ctx, traceOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -87,9 +95,11 @@ func Setup(ctx context.Context, cfg Config) (*Telemetry, error) {
 		sdktrace.WithBatcher(traceExp, sdktrace.WithBatchTimeout(cfg.ExportInterval)),
 	)
 
-	metricExp, err := otlpmetricgrpc.New(ctx,
-		otlpmetricgrpc.WithEndpoint(cfg.Endpoint), otlpmetricgrpc.WithInsecure())
+	metricExp, err := otlpmetricgrpc.New(ctx, metricOpts...)
 	if err != nil {
+		// The tracer provider is already running its batcher: stop it, or a
+		// failed setup leaves a goroutine and a connection behind.
+		_ = tp.Shutdown(ctx)
 		return nil, err
 	}
 	mp := sdkmetric.NewMeterProvider(
@@ -102,6 +112,7 @@ func Setup(ctx context.Context, cfg Config) (*Telemetry, error) {
 		metric.WithUnit("1"),
 		metric.WithDescription("Score export cycles completed by this engine."))
 	if err != nil {
+		_ = errors.Join(tp.Shutdown(ctx), mp.Shutdown(ctx))
 		return nil, err
 	}
 

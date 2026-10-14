@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/httpclient"
 )
 
 // Client talks to Loki's query API.
@@ -25,7 +26,7 @@ type Client struct {
 
 // New builds a client for the given base URL and optional tenant.
 func New(base, tenant string) *Client {
-	return &Client{base: base, tenant: tenant, http: &http.Client{Timeout: 30 * time.Second}, label: "service_name"}
+	return &Client{base: base, tenant: tenant, http: httpclient.New(30 * time.Second), label: "service_name"}
 }
 
 // WithServiceLabel overrides the stream label used to attribute bytes.

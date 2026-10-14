@@ -36,6 +36,7 @@ func TestSetupExportsScorableTelemetry(t *testing.T) {
 	ctx := context.Background()
 	tel, err := Setup(ctx, Config{
 		Endpoint:       lis.Addr().String(),
+		Insecure:       true, // the test receiver speaks plaintext
 		ServiceName:    "argus-engine",
 		ServiceVersion: "test",
 		Environment:    "ci",

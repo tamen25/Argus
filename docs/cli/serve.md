@@ -96,3 +96,11 @@ answers, which can take minutes.
 
 The engine exports its own telemetry when `OTEL_EXPORTER_OTLP_ENDPOINT` is
 set; CI points it at a second engine that scores the first (the dogfood gate).
+The scheme chooses the transport: `https://` uses TLS with the system's root
+certificates; `http://` or a bare `host:port` is plaintext, the usual setting
+inside a cluster. `OTEL_EXPORTER_OTLP_INSECURE=true` forces plaintext.
+
+Outbound HTTP clients (Mimir, Loki, Tempo, model endpoints) do not follow
+redirects: some send credentials in custom headers (`X-Scope-OrgID`,
+`x-api-key`), which a redirect would hand to the host it names. Configure the
+URL a redirect points to instead.

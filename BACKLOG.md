@@ -126,9 +126,9 @@ fixed; a finding that does not hold is marked so here, with the reason.
   `--addr` defaults to every interface. Done in #113: without a token, `serve` refuses a non-loopback `--addr` unless `--insecure-no-auth` is given (kind and the demo pass it, with a comment).
 - [x] **R26** — the OTLP receiver's trust boundary (no auth, network policy
   allows every port) is undocumented. Done in #113: the trust boundary is documented (`docs/cli/serve.md`); the chart's NetworkPolicy opens the API and OTLP ports to separate namespace lists, and an empty OTLP list renders no rule rather than an open one; the receiver caps message size and concurrent streams explicitly.
-- [ ] **R27** — an `https://` self-telemetry endpoint is sent in plaintext.
-- [ ] **R28** — HTTP clients follow redirects with custom credentials
-  (`x-api-key`, `X-Scope-OrgID`).
+- [x] **R27** — an `https://` self-telemetry endpoint is sent in plaintext. Done in #114: the scheme chooses the transport (`https://` is TLS), `OTEL_EXPORTER_OTLP_INSECURE=true` forces plaintext, and a failed setup shuts down what it started.
+- [x] **R28** — HTTP clients follow redirects with custom credentials
+  (`x-api-key`, `X-Scope-OrgID`). Done in #114: every engine client comes from `internal/httpclient.New`, which refuses redirects, and so does the plugin backend's; the plugin refuses engine URLs with credentials, a query or a fragment.
 - [x] **R29** — unbounded response decoding and subprocess output capture. Done in #111: backend and model responses are read through `internal/bounded` (an error past the limit, never a cut prefix); subprocess output is captured in capped buffers; a tool answer over 256 KiB is cut before the model sees it and logged as `cut`. Still open: redacting query text in bench reports.
 - [x] **R30** — the MCP transport and tool arguments need size and range limits. Done in #111: line framing capped at 1 MiB; a bad line costs one message; `jsonrpc` must be "2.0"; cancellation interrupts a blocked read; no trailing data in arguments; ranges, steps, points and limits checked before the backend. Request cancellation is documented as unsupported (requests are sequential).
 - [x] **R31** — an empty snapshot sends `services: null`, which crashes the

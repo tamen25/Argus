@@ -11,6 +11,7 @@ import (
 
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/httpclient"
 )
 
 // AnthropicConfig configures an Anthropic Messages API agent. It is a second
@@ -46,7 +47,7 @@ const (
 func NewAnthropic(cfg AnthropicConfig) *AnthropicAgent {
 	h := cfg.HTTP
 	if h == nil {
-		h = &http.Client{Timeout: cmp.Or(cfg.Timeout, DefaultAgentTimeout)}
+		h = httpclient.New(cmp.Or(cfg.Timeout, DefaultAgentTimeout))
 	}
 	if cfg.Endpoint == "" {
 		cfg.Endpoint = defaultAnthropicEndpoint
