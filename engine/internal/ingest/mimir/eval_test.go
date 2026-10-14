@@ -87,3 +87,37 @@ func TestPresenceSource(t *testing.T) {
 		t.Errorf("HasData = %v, %v — want false", ok, err)
 	}
 }
+
+// The adapters pass through to the client: EvalSource as the replay port,
+// SeriesSource with "service_name" as its default label. A non-vector result
+// is refused, since replay evaluates alert conditions.
+func TestAdapters(t *testing.T) {
+	var label string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/prometheus/api/v1/cardinality/label_values":
+			label = r.URL.Query().Get("label_names[]")
+			_, _ = w.Write([]byte(`{"labels":[{"label_name":"service_name","cardinality":[{"label_value":"cart","series_count":7}]}]}`))
+		case "/prometheus/api/v1/query":
+			if r.URL.Query().Get("query") == "scalar(1)" {
+				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"scalar","result":[]}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"job":"cart"},"value":[0,"2"]}]}}`))
+		}
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "")
+
+	series, err := SeriesSource{Client: c}.ActiveSeriesByService(context.Background())
+	if err != nil || label != "service_name" || series["cart"] != 7 {
+		t.Errorf("series = %v, label = %q, err = %v", series, label, err)
+	}
+	vals, err := EvalSource{Client: c}.Eval(context.Background(), "up", time.Unix(0, 0))
+	if err != nil || vals[`{job="cart"}`] != 2 {
+		t.Errorf("eval = %v, err = %v", vals, err)
+	}
+	if _, err := c.Query(context.Background(), "scalar(1)", time.Unix(0, 0)); err == nil {
+		t.Error("a scalar result was accepted")
+	}
+}

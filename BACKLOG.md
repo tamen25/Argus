@@ -129,6 +129,10 @@ Not defects. Tracked here so nothing is lost between sessions.
   SIGINT/SIGTERM cancel the run, cleanup runs on a detached context with its own
   limit, no partial report is written, and `agent_timeout` is recorded and
   caveated by `--compare` when it differs.
+- [x] **B-58** (#102) — found reviewing `internal/ingest`: exemplar coverage
+  (ARG-MET-001) was counted for the engine's lifetime, so in `argus serve` one
+  exemplar at startup passed the rule forever and an exemplar bridge that broke
+  later was never caught. The counts are windowed like the sketches now.
 - [x] **B-57** (#100) — security review. Found: the engine never checked the
   API token the Helm chart generates and §5.3 requires, so a "token-protected"
   API was open to anything that could reach it. Now `/api/` requires

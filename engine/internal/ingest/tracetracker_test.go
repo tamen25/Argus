@@ -227,3 +227,61 @@ func TestSketchTrackerNamedAggregates(t *testing.T) {
 		t.Errorf("fields = %v", f)
 	}
 }
+
+// A trace with no root and no dangling reference (every parent arrived, as in
+// a loop, or the span cap cut the root off) has no break point to blame, so
+// every participant carries the missing root: an honest upper bound.
+func TestTraceTrackerRootlessWithoutBreakBlamesEveryone(t *testing.T) {
+	now := time.Unix(0, 0)
+	tt := NewTraceTracker(100, time.Hour, func() time.Time { return now })
+	tt.ObserveTraces(mkTrace("a", 1, []spanSpec{{name: "x", id: 1, parent: 2}}))
+	tt.ObserveTraces(mkTrace("b", 1, []spanSpec{{name: "y", id: 2, parent: 1}}))
+
+	now = now.Add(61 * time.Minute)
+	rows := tt.Rows()
+	for _, svc := range []string{"a", "b"} {
+		f := rowsFor(rows, "trace_health", svc)
+		if f == nil || f["missing_root_ratio"].(float64) != 1 || f["orphan_ratio"].(float64) != 0 {
+			t.Errorf("%s: trace_health = %v, want rootless 1, orphaned 0", svc, f)
+		}
+	}
+}
+
+// Past maxServicesPerTrace a service's spans still resolve parent references,
+// but carry no caller attribution: no edge from an overflow service.
+func TestTraceTrackerServiceCap(t *testing.T) {
+	now := time.Unix(0, 0)
+	tt := NewTraceTracker(100, time.Hour, func() time.Time { return now })
+	// services s0…s64 each add one span to trace 1; s64 is past the cap.
+	for i := 0; i <= maxServicesPerTrace; i++ {
+		tt.ObserveTraces(mkTrace(fmt.Sprintf("s%d", i), 1, []spanSpec{{name: "op", id: byte(i + 1)}}))
+	}
+	// callee's span points at the overflow service's span (id 65) and at s0's
+	// span (id 1): both resolve, but only s0 becomes a caller.
+	tt.ObserveTraces(mkTrace("callee", 1, []spanSpec{
+		{name: "a", id: 100, parent: maxServicesPerTrace + 1},
+		{name: "b", id: 101, parent: 1},
+	}))
+
+	now = now.Add(61 * time.Minute)
+	rows := tt.Rows()
+	var callers []string
+	for _, r := range rows {
+		if r.Aggregate == "service_dependency" {
+			callers = append(callers, r.Service)
+		}
+	}
+	if len(callers) != 1 || callers[0] != "s0" {
+		t.Errorf("dependency callers = %v, want only s0 (the overflow service is unattributed)", callers)
+	}
+	// Both parents resolved, so no service has an orphan. (callee itself is
+	// past the cap, so it is not counted as a participant at all.)
+	for _, r := range rows {
+		if r.Aggregate == "trace_health" && r.Fields["orphan_ratio"].(float64) != 0 {
+			t.Errorf("%s orphan_ratio = %v: an overflow parent still resolves", r.Service, r.Fields["orphan_ratio"])
+		}
+	}
+	if rowsFor(rows, "trace_health", "callee") != nil {
+		t.Error("callee is past the service cap and should not be counted")
+	}
+}
