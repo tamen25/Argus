@@ -58,6 +58,103 @@ Needs the user: B-35 (catalog submission status).
 
 ---
 
+## Review 2026-10-14
+
+An external code, security and maintainability review of `e1a6d5e`, kept
+verbatim in `docs/reviews/2026-10-14-code-review.md`, which has the evidence,
+the change asked for and the validation for each finding. Its IDs (R01–R38,
+C01–C16) are stable: reference them in commits and PRs like backlog IDs
+(`Closes R03`). Each finding is re-checked against the code before it is
+fixed; a finding that does not hold is marked so here, with the reason.
+
+**P1** — before relying on scores, costs, security or bench results:
+
+- [ ] **R01** — npm advisories: triage the audit, update what is compatible, add
+  an audit step to CI. Overlaps B-21.
+- [ ] **R02** — `rules.Collector` keeps per-service state for every service
+  name ever seen: no admission limit, no expiry.
+- [ ] **R03** — a CEL evaluation error on an item rule leaves the rule passing:
+  the error is dropped and the score can be 100.
+- [ ] **R04** — collector observations and violations are lifetime counters:
+  one old violation fails a service forever in `serve`, and aggregate ticks are
+  counted again on every export.
+- [ ] **R05** — the Mimir cardinality client reads a field the API does not
+  return (`distinct_label_values_count`); its test fixture invents it.
+- [ ] **R06** — cost attribution uses Mimir's default top-20 label values and
+  in-memory counting, so larger fleets lose services silently.
+- [ ] **R07** — LLM redaction strips evidence values but sends the service name
+  and the rendered patch, both telemetry-derived.
+- [ ] **R08** — remediation templates interpolate raw metric and attribute
+  names into OTTL strings, and the high-cardinality patch is not scoped to the
+  service.
+- [ ] **R09** — zero or negative step, stride and interval values hang replay
+  or panic `serve` (`time.NewTicker`).
+- [ ] **R10** — bench cleanup errors are discarded; a failed restore leaves the
+  next repeat on a contaminated cluster.
+- [ ] **R11** — reset sweeps argus-managed faults cluster-wide, so parallel
+  runners delete each other's faults.
+- [ ] **R12** — the Helm chart and the demo compose start `serve` without OTLP
+  ingest, expose an unimplemented OTLP HTTP port, and health-check with
+  `argus version`.
+
+**P2** — correctness, availability and privacy:
+
+- [ ] **R13** — the plugin proxy times out at 10s while a backtest replay can
+  take minutes, and the cancelled request prevents the cache from filling.
+- [ ] **R14** — `argus score`'s 60s default never completes a trace window, so
+  the trace rules are skipped while reported as evaluated.
+- [ ] **R15** — the score gate passes an empty fleet (score 100).
+- [ ] **R16** — attribute values are truncated to 256 bytes before cardinality
+  hashing and service identity.
+- [ ] **R17** — trace cap overflow can give a zero denominator (an infinite
+  ratio JSON cannot encode) and a random set of graph edges.
+- [ ] **R18** — cardinality verification keeps one outcome per service and rule,
+  so a passing pair can overwrite a failing one; queries are not service-scoped.
+- [ ] **R19** — `PriceFindings` is not called on the score or serve paths, and
+  reads verified quantities from the wrong key.
+- [ ] **R20** — the week-over-week trend compares against the latest earlier
+  snapshot, not one a week old.
+- [x] **R21** — recording-rule synthesis at the root, and cycles. Done in #106
+  (B-60). Still open from R21: recording-rule output labels and `offset`/`@`.
+- [ ] **R22** — `backtest diff` compares total coverage only: different windows
+  with the same covered duration are accepted, and zero coverage passes.
+- [ ] **R23** — the presence probe (`target_info`) shows backend availability,
+  not coverage of each rule's input series.
+- [ ] **R24** — replay ignores a rule's static labels, group interval and
+  `keep_firing_for`.
+- [ ] **R25** — the engine API is open when `ARGUS_API_TOKEN` is unset, and
+  `--addr` defaults to every interface.
+- [ ] **R26** — the OTLP receiver's trust boundary (no auth, network policy
+  allows every port) is undocumented.
+- [ ] **R27** — an `https://` self-telemetry endpoint is sent in plaintext.
+- [ ] **R28** — HTTP clients follow redirects with custom credentials
+  (`x-api-key`, `X-Scope-OrgID`).
+- [ ] **R29** — unbounded response decoding and subprocess output capture.
+- [ ] **R30** — the MCP transport and tool arguments need size and range limits.
+- [ ] **R31** — an empty snapshot sends `services: null`, which crashes the
+  plugin's Overview and Scores pages.
+- [ ] **R32** — the service graph measures its width before it has mounted.
+- [ ] **R33** — plugin pages never refresh, a failed comparison hides the Bench
+  page, and settings errors only reach the console.
+- [ ] **R34** — `stats.Percentile` rounds where nearest-rank takes the ceiling,
+  and NaN passes range checks.
+- [ ] **R35** — `bench-matrix.sh` loses quoted agent flags, and port-forwards
+  ignore `ARGUS_KUBE_CONTEXT`.
+- [ ] **R36** — bench provenance does not hash referenced scripts or manifests,
+  the tool surface, or the judge config.
+- [ ] **R37** — reports are written in place (a partial file looks complete),
+  and `fileSafe` maps `a/b` and `a_b` to the same patch file.
+- [ ] **R38** — CI never runs the plugin's Go tests, Playwright, the Postgres
+  integration tests, or a formatter check.
+
+**Cleanups** (C01–C16, the table in the review): Prettier on six plugin files,
+comment trimming, stale phase claims (the backtest one is done, #106),
+`errors.Is(err, io.EOF)` in the rules loader, template parsing once, the
+numeric helper in remediate, deterministic float sums, typed API responses,
+pinned release tools, narrower gosec exclusions, and client ownership.
+
+---
+
 ## Phase 4 scope still open
 
 Not defects. Tracked here so nothing is lost between sessions.
