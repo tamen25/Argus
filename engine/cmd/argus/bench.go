@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bench/agent"
@@ -107,64 +108,75 @@ so a scenario is never scored against an environment that was never faulted.
 The judge model must differ from the agent model: a model that misreads its
 own output the same way twice would launder that error into the score.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			sc, err := bench.LoadScenario(f.scenario)
-			if err != nil {
-				return err
-			}
-			if f.condition != "" {
-				if err := validCondition(f.condition); err != nil {
-					return err
-				}
-			}
-			categories, err := loadCategories(f, sc)
-			if err != nil {
-				return err
-			}
-			if err := enforceDistinctJudge(f.model, f.judgeModel); err != nil {
-				return err
-			}
-			ag, err := buildAgent(f)
-			if err != nil {
-				return err
-			}
-			tools, err := buildTools(f)
-			if err != nil {
-				return err
-			}
-			inj, err := buildInjector(f, sc)
-			if err != nil {
-				return err
-			}
-
-			opts := orchestrator.Options{
-				Repeats:       f.repeats,
-				Budget:        agent.Budget{MaxToolCalls: f.maxToolCalls, MaxTokens: f.maxTokens},
-				Normalizers:   buildNormalizers(f),
-				Seed:          f.seed,
-				EnvDigest:     f.envDigest,
-				Condition:     f.condition,
-				Categories:    categories,
-				Model:         modelInfo(f),
-				AgentTimeout:  f.agentTimeout,
-				MaxTurnTokens: turnCap(f),
-			}
-
-			// An interrupt (Ctrl-C, or a matrix being stopped) cancels the run,
-			// and the orchestrator still cleans up the fault it injected. Without
-			// this the process died with the fault in place.
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			rep, err := orchestrator.Run(ctx, sc, ag, tools, inj, buildProbe(f, sc), opts)
-			if err != nil {
-				// No report on interruption: a partial one would look like a
-				// finished cell to a matrix that resumes by skipping reports.
-				return err
-			}
-			return writeBenchReport(cmd, f, rep)
+			return runBenchScenario(cmd, f)
 		},
 	}
+	f.register(cmd.Flags())
+	_ = cmd.MarkFlagRequired("scenario")
+	return cmd
+}
 
-	fl := cmd.Flags()
+// runBenchScenario runs one scenario against one agent, with the repeats and
+// budgets the flags give, and writes the report.
+func runBenchScenario(cmd *cobra.Command, f benchFlags) error {
+	sc, err := bench.LoadScenario(f.scenario)
+	if err != nil {
+		return err
+	}
+	if f.condition != "" {
+		if err := validCondition(f.condition); err != nil {
+			return err
+		}
+	}
+	categories, err := loadCategories(f, sc)
+	if err != nil {
+		return err
+	}
+	if err := enforceDistinctJudge(f.model, f.judgeModel); err != nil {
+		return err
+	}
+	ag, err := buildAgent(f)
+	if err != nil {
+		return err
+	}
+	tools, err := buildTools(f)
+	if err != nil {
+		return err
+	}
+	inj, err := buildInjector(f, sc)
+	if err != nil {
+		return err
+	}
+
+	opts := orchestrator.Options{
+		Repeats:       f.repeats,
+		Budget:        agent.Budget{MaxToolCalls: f.maxToolCalls, MaxTokens: f.maxTokens},
+		Normalizers:   buildNormalizers(f),
+		Seed:          f.seed,
+		EnvDigest:     f.envDigest,
+		Condition:     f.condition,
+		Categories:    categories,
+		Model:         modelInfo(f),
+		AgentTimeout:  f.agentTimeout,
+		MaxTurnTokens: turnCap(f),
+	}
+
+	// An interrupt (Ctrl-C, or a matrix being stopped) cancels the run, and the
+	// orchestrator still cleans up the fault it injected. Without this the
+	// process died with the fault in place.
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	rep, err := orchestrator.Run(ctx, sc, ag, tools, inj, buildProbe(f, sc), opts)
+	if err != nil {
+		// No report on interruption: a partial one would look like a finished
+		// cell to a matrix that resumes by skipping reports.
+		return err
+	}
+	return writeBenchReport(cmd, f, rep)
+}
+
+// register declares the `bench run` flags.
+func (f *benchFlags) register(fl *pflag.FlagSet) {
 	fl.StringVar(&f.scenario, "scenario", "", "scenario YAML (argus/v1alpha1 BenchScenario)")
 	fl.StringVar(&f.agentKind, "agent", "openai", "agent adapter: openai | anthropic | shell")
 	fl.StringVar(&f.endpoint, "endpoint", "", "chat endpoint URL (openai: full chat-completions URL)")
@@ -222,9 +234,6 @@ own output the same way twice would launder that error into the score.`,
 
 	fl.StringVar(&f.format, "format", "md", "output format: md | json")
 	fl.StringVar(&f.out, "out", "", "write the report to this file instead of stdout")
-
-	_ = cmd.MarkFlagRequired("scenario")
-	return cmd
 }
 
 // ErrJudgeSameModel is returned when the LLM judge would grade its own model.
@@ -337,11 +346,7 @@ func buildTools(f benchFlags) (agent.Tools, error) {
 		return nil, err
 	}
 	if useKubectl {
-		// The bench's own fault objects carry the sweep label; hide them. They
-		// are the apparatus, and a Deployment named argus-fault-cardinality
-		// would hand the agent the answer.
-		exclude := strings.Replace(kube.ManagedBy, "=", "!=", 1)
-		b.Topology = backend.NewKubeTopology(f.kubeContext, exclude, mimir)
+		b.Topology = backend.NewKubeTopology(f.kubeContext, hideBenchFaults, mimir)
 	}
 	reg, err := mcp.NewServer(b)
 	if err != nil {
@@ -426,13 +431,13 @@ func buildInjector(f benchFlags, sc bench.Scenario) (orchestrator.Injector, erro
 		return orchestrator.NoopInjector{}, nil
 	case "script":
 		return orchestrator.ScriptInjector{
-			Dir:           filepath.Dir(f.scenario),
+			Dir:           dir,
 			ResetScript:   f.resetScript,
 			CleanupScript: f.cleanupScript,
 			Timeout:       5 * time.Minute,
 		}, nil
 	case "kubectl":
-		return kube.New(filepath.Dir(f.scenario), f.injectNamespace, f.kubeContext), nil
+		return kube.New(dir, f.injectNamespace, f.kubeContext), nil
 	default:
 		return nil, fmt.Errorf("unknown --inject %q (want auto, script, kubectl or none)", f.inject)
 	}
@@ -495,7 +500,7 @@ func writeBenchReport(cmd *cobra.Command, f benchFlags, rep orchestrator.Report)
 	}
 
 	if f.out != "" {
-		if err := os.WriteFile(f.out, payload, 0o600); err != nil {
+		if err := os.WriteFile(f.out, payload, 0o644); err != nil {
 			return err
 		}
 		_, err := fmt.Fprintf(cmd.OutOrStdout(), "bench report written: %s\n", f.out)

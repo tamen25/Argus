@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -58,11 +57,7 @@ Every report carries the fidelity caveats that applied (docs/backtest-fidelity.m
 			default:
 				return fmt.Errorf("unknown output format %q (want md or json)", opts.output)
 			}
-			if opts.outPath != "" {
-				return os.WriteFile(opts.outPath, []byte(out), 0o644)
-			}
-			cmd.Print(out)
-			return nil
+			return writeOutput(cmd, opts.outPath, []byte(out))
 		},
 	}
 	f := cmd.Flags()
@@ -87,34 +82,17 @@ Every report carries the fidelity caveats that applied (docs/backtest-fidelity.m
 }
 
 func runBacktestRun(ctx context.Context, opts *backtestRunOptions) (backtest.Report, error) {
-	from, err := time.Parse(time.RFC3339, opts.from)
+	from, to, err := parseWindow(opts.from, opts.to)
 	if err != nil {
-		return backtest.Report{}, fmt.Errorf("--from: %w", err)
-	}
-	to, err := time.Parse(time.RFC3339, opts.to)
-	if err != nil {
-		return backtest.Report{}, fmt.Errorf("--to: %w", err)
-	}
-	if !to.After(from) {
-		return backtest.Report{}, fmt.Errorf("--to must be after --from")
+		return backtest.Report{}, err
 	}
 
 	rs, err := backtest.LoadRuleFiles(opts.rules...)
 	if err != nil {
 		return backtest.Report{}, err
 	}
-	if opts.slo != "" {
-		policies, err := backtest.LoadSLOPolicies(opts.slo)
-		if err != nil {
-			return backtest.Report{}, err
-		}
-		// burn-rate simulation IS the replay pipeline over generated rules —
-		// same for:-state semantics, same caveats, no second evaluator
-		for _, p := range policies {
-			rs.Groups = append(rs.Groups, backtest.Group{
-				Name: "slo:" + p.Name, Interval: opts.step, Rules: backtest.BurnRateRules(p),
-			})
-		}
+	if err := addSLORules(&rs, opts.slo, opts.step); err != nil {
+		return backtest.Report{}, err
 	}
 	reg, err := backtest.LoadIncidents(opts.incidents)
 	if err != nil {

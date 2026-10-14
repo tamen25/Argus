@@ -129,6 +129,13 @@ Not defects. Tracked here so nothing is lost between sessions.
   SIGINT/SIGTERM cancel the run, cleanup runs on a detached context with its own
   limit, no partial report is written, and `agent_timeout` is recorded and
   caveated by `--compare` when it differs.
+- [x] **B-59** (#103) — found reviewing `cmd/argus`: (1) `cost`, `backtest`,
+  `calibrate` and `remediate` printed reports with cobra's `cmd.Print`, which
+  writes to **stderr**, so `argus cost > report.md` produced an empty file;
+  (2) `score --help` promised exit code 2 for a tripped gate, but every error
+  exited 1; now every CI gate exits 2 and any other error 1; (3) `remediate`
+  named patch files after the service, which comes from telemetry, so a
+  service named `../x` could write outside `--out`.
 - [x] **B-58** (#102) — found reviewing `internal/ingest`: exemplar coverage
   (ARG-MET-001) was counted for the engine's lifetime, so in `argus serve` one
   exemplar at startup passed the rule forever and an exemplar bridge that broke

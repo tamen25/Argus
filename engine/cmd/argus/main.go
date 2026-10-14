@@ -1,11 +1,10 @@
-// Command argus is the Argus CLI and engine entrypoint.
-//
-// Phase 1 scope: `argus score` (stream + poller evaluation, reports, CI gate)
-// and `argus serve` (OTLP receiver + Prometheus score export). Later phases
-// add cost, backtest, bench, mcp, and devtools behind this same entrypoint.
+// Command argus is the Argus CLI and engine entrypoint: `serve` runs the
+// engine; `score`, `cost`, `backtest`, `bench`, `remediate`, `rules`, `mcp`
+// and `devtools` are the command-line tools.
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -18,8 +17,21 @@ var version = "dev"
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "argus:", err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
+}
+
+// exitCode is 2 when a CI gate tripped (--fail-below-score,
+// --fail-over-monthly, a backtest diff regression): the run worked and the
+// answer is "no". Anything else is 1, an error. A pipeline can then tell a
+// regression from a broken run, and retry only the second.
+func exitCode(err error) int {
+	for _, gate := range []error{errBelowThreshold, errOverBudget, errBacktestRegression} {
+		if errors.Is(err, gate) {
+			return 2
+		}
+	}
+	return 1
 }
 
 // newRootCmd builds the command tree. Constructed per call (not package-level

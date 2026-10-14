@@ -15,7 +15,6 @@ import (
 	"github.com/tamen25/Argus/engine/internal/ingest/mimir"
 	"github.com/tamen25/Argus/engine/internal/report"
 	"github.com/tamen25/Argus/engine/internal/rules"
-	"github.com/tamen25/Argus/engine/internal/rules/builtin"
 	"github.com/tamen25/Argus/engine/internal/store"
 )
 
@@ -47,7 +46,7 @@ func newScoreCmd() *cobra.Command {
 		Long: `Collects a window of sampled OTLP telemetry (--listen-otlp) and/or polls
 backends (--mimir-url), evaluates the built-in and custom rules, and reports
 per-service Instrumentation Scores. Exit code 2 when --fail-below-score trips
-(the CI gate use case).`,
+(the CI gate use case), 1 on any other error.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			rep, err := runScore(cmd.Context(), opts)
 			if err != nil {
@@ -57,12 +56,8 @@ per-service Instrumentation Scores. Exit code 2 when --fail-below-score trips
 			if err != nil {
 				return err
 			}
-			if opts.outPath != "" {
-				if err := os.WriteFile(opts.outPath, out, 0o644); err != nil {
-					return err
-				}
-			} else {
-				_, _ = cmd.OutOrStdout().Write(out)
+			if err := writeOutput(cmd, opts.outPath, out); err != nil {
+				return err
 			}
 			if opts.failBelow > 0 && rep.Snapshot.FleetScore < opts.failBelow {
 				return fmt.Errorf("%w: %.2f < %.2f", errBelowThreshold, rep.Snapshot.FleetScore, opts.failBelow)
@@ -84,18 +79,13 @@ per-service Instrumentation Scores. Exit code 2 when --fail-below-score trips
 	return cmd
 }
 
-// runScore executes one collection+evaluation cycle.
+// runScore executes one collection+evaluation cycle: receive the sampled OTLP
+// mirror for the window, verify what Mimir can see, and build the report
+// (persisting it when a store is configured).
 func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
-	rs, err := builtin.Load()
+	rs, err := loadRules(opts.rulesDir)
 	if err != nil {
-		return nil, fmt.Errorf("loading built-in rules: %w", err)
-	}
-	if opts.rulesDir != "" {
-		custom, err := rules.LoadDir(opts.rulesDir)
-		if err != nil {
-			return nil, err
-		}
-		rs = rules.Merge(rs, custom)
+		return nil, fmt.Errorf("loading rules: %w", err)
 	}
 	eng, err := rules.NewEngine(rs)
 	if err != nil {
@@ -104,37 +94,13 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 	col := rules.NewCollector(eng)
 	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{})
 
-	var notes []string
-
-	// Stream path: receive the sampled OTLP mirror for the window.
-	lis := opts.listener
-	if lis == nil && opts.listenOTLP != "" {
-		lis, err = new(net.ListenConfig).Listen(ctx, "tcp", opts.listenOTLP)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if lis != nil {
-		srv := ingest.NewGRPCServer(pipe)
-		done := make(chan struct{})
-		go func() { _ = srv.Serve(lis); close(done) }()
-		select {
-		case <-time.After(opts.window):
-		case <-ctx.Done():
-		}
-		srv.GracefulStop()
-		<-done
+	listened, err := receiveOTLP(ctx, opts, pipe)
+	if err != nil {
+		return nil, err
 	}
 	pipe.AggregateRows()
-	if n := pipe.Evictions(); n > 0 {
-		notes = append(notes, fmt.Sprintf("aggregate trackers evicted %d entries (LRU) — estimates for evicted entries are lost", n))
-	}
-	if lis != nil && len(col.Snapshot().Services) == 0 {
-		// an empty fleet scores a vacuous 100 and would pass any gate silently
-		notes = append(notes, "no telemetry received on the OTLP listener during the window — the fleet score reflects an empty fleet, not healthy instrumentation")
-	}
+	notes := ingestNotes(pipe.Evictions(), len(col.Snapshot().Services), listened)
 
-	// Poller path: verify what the backend can see.
 	if opts.mimirURL != "" {
 		var services []string
 		for _, s := range col.Snapshot().Services {
@@ -142,7 +108,7 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 		}
 		poller := ingest.NewPoller(mimir.New(opts.mimirURL, opts.mimirTenant), eng)
 		if err := poller.Run(ctx, col, services); err != nil {
-			// verification failure downgrades nothing; sampled results stand
+			// A failed verification downgrades nothing: the sampled results stand.
 			notes = append(notes, fmt.Sprintf("poller verification incomplete: %v", err))
 		}
 	}
@@ -152,24 +118,70 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 		ArgusVersion:    version,
 		SpecVersion:     readSpecVersion(opts.specVersionFile),
 		Window:          opts.window.String(),
-		RuleSetComplete: false, // Phase 1 implements a subset of official rules
+		RuleSetComplete: false, // the official rule set is implemented in part
 		Notes:           notes,
 		Snapshot:        col.Snapshot(),
 	}
-
 	if opts.storeDSN != "" {
-		st, err := store.Open(ctx, opts.storeDSN)
-		if err != nil {
-			return nil, fmt.Errorf("opening store: %w", err)
-		}
-		defer st.Close()
-		if _, err := st.SaveSnapshot(ctx, rep.Snapshot, store.Meta{
-			TakenAt: rep.GeneratedAt, SpecVersion: rep.SpecVersion, ArgusVersion: version,
-		}); err != nil {
-			return nil, fmt.Errorf("persisting snapshot: %w", err)
+		if err := persistSnapshot(ctx, opts.storeDSN, rep); err != nil {
+			return nil, err
 		}
 	}
 	return rep, nil
+}
+
+// receiveOTLP serves the OTLP receiver for the window (or until ctx ends),
+// feeding the pipeline. It reports whether a listener ran at all: without
+// --listen-otlp, scoring relies on the poller alone.
+func receiveOTLP(ctx context.Context, opts *scoreOptions, pipe *ingest.Pipeline) (listened bool, err error) {
+	lis := opts.listener
+	if lis == nil && opts.listenOTLP != "" {
+		if lis, err = new(net.ListenConfig).Listen(ctx, "tcp", opts.listenOTLP); err != nil {
+			return false, err
+		}
+	}
+	if lis == nil {
+		return false, nil
+	}
+	srv := ingest.NewGRPCServer(pipe)
+	done := make(chan struct{})
+	go func() { _ = srv.Serve(lis); close(done) }()
+	select {
+	case <-time.After(opts.window):
+	case <-ctx.Done():
+	}
+	srv.GracefulStop()
+	<-done
+	return true, nil
+}
+
+// ingestNotes are the report notes about the ingest itself, shared by `score`
+// and `serve`: lost estimates, and an empty fleet, which scores a vacuous 100
+// and would pass any gate silently.
+func ingestNotes(evictions int64, services int, listened bool) []string {
+	var notes []string
+	if evictions > 0 {
+		notes = append(notes, fmt.Sprintf("aggregate trackers evicted %d entries (LRU) — estimates for evicted entries are lost", evictions))
+	}
+	if listened && services == 0 {
+		notes = append(notes, "no telemetry received on the OTLP listener during the window — the fleet score reflects an empty fleet, not healthy instrumentation")
+	}
+	return notes
+}
+
+// persistSnapshot saves the report's snapshot to Postgres.
+func persistSnapshot(ctx context.Context, dsn string, rep *report.Report) error {
+	st, err := store.Open(ctx, dsn)
+	if err != nil {
+		return fmt.Errorf("opening store: %w", err)
+	}
+	defer st.Close()
+	if _, err := st.SaveSnapshot(ctx, rep.Snapshot, store.Meta{
+		TakenAt: rep.GeneratedAt, SpecVersion: rep.SpecVersion, ArgusVersion: version,
+	}); err != nil {
+		return fmt.Errorf("persisting snapshot: %w", err)
+	}
+	return nil
 }
 
 func renderReport(rep *report.Report, format string) ([]byte, error) {

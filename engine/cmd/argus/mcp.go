@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/tamen25/Argus/engine/internal/bench/inject/kube"
 	"github.com/tamen25/Argus/engine/internal/mcp"
 	"github.com/tamen25/Argus/engine/internal/mcp/backend"
 )
@@ -54,7 +56,7 @@ Point an MCP-capable client at:  argus mcp --mimir-url URL [--loki-url URL] [--t
 				if mimirURL != "" {
 					m = backend.NewMimir(mimirURL, tenant)
 				}
-				b.Topology = backend.NewKubeTopology(kubeContext, "", m)
+				b.Topology = backend.NewKubeTopology(kubeContext, hideBenchFaults, m)
 			}
 			reg, err := mcp.NewServer(b)
 			if err != nil {
@@ -73,3 +75,10 @@ Point an MCP-capable client at:  argus mcp --mimir-url URL [--loki-url URL] [--t
 	cmd.Flags().StringVar(&kubeContext, "kube-context", "", "kube context for get_k8s_topology (empty = current)")
 	return cmd
 }
+
+// hideBenchFaults is the label selector get_k8s_topology lists workloads with:
+// everything except the bench's own fault objects. They are apparatus, never
+// workloads, and one named argus-fault-cardinality would hand an agent the
+// answer. `argus bench run` hid them; `argus mcp` did not, which matters once
+// an external agent reaches the tools through it.
+var hideBenchFaults = strings.Replace(kube.ManagedBy, "=", "!=", 1)

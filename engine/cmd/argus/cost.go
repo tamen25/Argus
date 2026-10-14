@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -44,12 +43,8 @@ trends. Costs are modeled from your rates, not billed.`,
 			if err != nil {
 				return err
 			}
-			if opts.outPath != "" {
-				if err := os.WriteFile(opts.outPath, []byte(out), 0o644); err != nil {
-					return err
-				}
-			} else {
-				cmd.Print(out)
+			if err := writeOutput(cmd, opts.outPath, []byte(out)); err != nil {
+				return err
 			}
 			if opts.failOver > 0 && sb.Report.TotalMonthly > opts.failOver {
 				return fmt.Errorf("%w: %.2f > %.2f", errOverBudget, sb.Report.TotalMonthly, opts.failOver)

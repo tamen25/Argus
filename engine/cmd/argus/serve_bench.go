@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/tamen25/Argus/engine/internal/bench/leaderboard"
+	"github.com/tamen25/Argus/engine/internal/bench/orchestrator"
 )
 
 // serveBenchConfig holds the /api/bench wiring for serve.
@@ -60,16 +60,10 @@ func benchHandler(dir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var baseline, treatment string
 		if compare := r.URL.Query().Get("compare"); compare != "" {
-			var ok bool
-			if baseline, treatment, ok = strings.Cut(compare, ","); !ok {
-				http.Error(w, "compare wants two conditions: baseline,treatment", http.StatusBadRequest)
+			var err error
+			if baseline, treatment, err = parseCompare(compare); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
-			}
-			for _, label := range []string{baseline, treatment} {
-				if err := validCondition(label); err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
 			}
 		}
 
@@ -92,14 +86,7 @@ func benchHandler(dir string) http.HandlerFunc {
 			return
 		}
 		resp.Reports = len(reports)
-		seen := map[string]bool{}
-		for _, rep := range reports {
-			if !seen[rep.Condition] {
-				seen[rep.Condition] = true
-				resp.Conditions = append(resp.Conditions, rep.Condition)
-			}
-		}
-		sort.Strings(resp.Conditions)
+		resp.Conditions = conditionsOf(reports)
 
 		lb, err := leaderboard.Build(reports)
 		if err != nil {
@@ -118,4 +105,19 @@ func benchHandler(dir string) http.HandlerFunc {
 		}
 		writeJSON(w, resp)
 	}
+}
+
+// conditionsOf lists the telemetry conditions the reports carry, sorted and
+// once each ("" is an unlabeled run).
+func conditionsOf(reports []orchestrator.Report) []string {
+	seen := map[string]bool{}
+	conds := []string{}
+	for _, rep := range reports {
+		if !seen[rep.Condition] {
+			seen[rep.Condition] = true
+			conds = append(conds, rep.Condition)
+		}
+	}
+	sort.Strings(conds)
+	return conds
 }

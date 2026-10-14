@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/backtest"
@@ -40,6 +39,8 @@ func registerBacktestEndpoint(mux *http.ServeMux, cfg serveBacktestConfig) error
 		return fmt.Errorf("backtest config: %w", err)
 	}
 	ep := &backtestEndpoint{cfg: cfg, now: time.Now}
+	ep.cache = newTTLCache[backtest.Report](cfg.cacheTTL)
+	ep.cache.now = func() time.Time { return ep.now() }
 	mux.HandleFunc("GET /api/backtest", ep.handler())
 	return nil
 }
@@ -47,40 +48,26 @@ func registerBacktestEndpoint(mux *http.ServeMux, cfg serveBacktestConfig) error
 // backtestEndpoint serves /api/backtest, caching the report for cacheTTL so
 // the plugin's polling never re-runs the (expensive) replay on every scrape.
 type backtestEndpoint struct {
-	cfg serveBacktestConfig
-	now func() time.Time
-
-	mu       sync.Mutex
-	cached   *backtest.Report
-	cachedAt time.Time
+	cfg   serveBacktestConfig
+	now   func() time.Time
+	cache *ttlCache[backtest.Report]
 }
 
-// get returns a cached report within the TTL, else recomputes over the
-// rolling window. Files are reloaded each recompute so editing incidents.yaml
-// or the rules is reflected without a restart. Errors are not cached.
+// get returns the report over the rolling window, recomputed once its cache
+// entry is stale. The files are reloaded on each recompute, so editing
+// incidents.yaml or the rules shows without a restart.
 func (e *backtestEndpoint) get(ctx context.Context) (*backtest.Report, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.cached != nil && e.now().Sub(e.cachedAt) < e.cfg.cacheTTL {
-		return e.cached, nil
-	}
-	in, err := loadBacktestInputs(e.cfg)
-	if err != nil {
-		return nil, err
-	}
-	to := e.now().UTC()
-	in.From = to.Add(-e.cfg.window)
-	in.To = to
-
-	client := mimir.New(e.cfg.mimirURL, e.cfg.mimirTenant)
-	rep, err := backtest.Run(ctx, mimir.EvalSource{Client: client},
-		mimir.PresenceSource{Client: client, Expr: e.cfg.probeExpr}, in)
-	if err != nil {
-		return nil, err
-	}
-	e.cached = &rep
-	e.cachedAt = e.now()
-	return e.cached, nil
+	return e.cache.get(func() (backtest.Report, error) {
+		in, err := loadBacktestInputs(e.cfg)
+		if err != nil {
+			return backtest.Report{}, err
+		}
+		in.To = e.now().UTC()
+		in.From = in.To.Add(-e.cfg.window)
+		client := mimir.New(e.cfg.mimirURL, e.cfg.mimirTenant)
+		return backtest.Run(ctx, mimir.EvalSource{Client: client},
+			mimir.PresenceSource{Client: client, Expr: e.cfg.probeExpr}, in)
+	})
 }
 
 func (e *backtestEndpoint) handler() http.HandlerFunc {
@@ -101,16 +88,8 @@ func loadBacktestInputs(cfg serveBacktestConfig) (backtest.RunInput, error) {
 	if err != nil {
 		return backtest.RunInput{}, err
 	}
-	if cfg.sloPath != "" {
-		policies, err := backtest.LoadSLOPolicies(cfg.sloPath)
-		if err != nil {
-			return backtest.RunInput{}, err
-		}
-		for _, p := range policies {
-			rs.Groups = append(rs.Groups, backtest.Group{
-				Name: "slo:" + p.Name, Interval: cfg.step, Rules: backtest.BurnRateRules(p),
-			})
-		}
+	if err := addSLORules(&rs, cfg.sloPath, cfg.step); err != nil {
+		return backtest.RunInput{}, err
 	}
 	reg, err := backtest.LoadIncidents(cfg.incidentsPath)
 	if err != nil {
@@ -126,4 +105,24 @@ func loadBacktestInputs(cfg serveBacktestConfig) (backtest.RunInput, error) {
 // 404 the plugin renders as "not configured", never an empty report.
 func notConfiguredBacktestHandler(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "backtest is not configured (start the engine with --backtest-rules and --backtest-mimir-url)", http.StatusNotFound)
+}
+
+// addSLORules appends the burn-rate alerting rules generated from an SLO
+// policy file (if one is given) to the rule set, one group per policy.
+// Burn-rate simulation is the replay pipeline over generated rules: the same
+// for:-state semantics and caveats, no second evaluator.
+func addSLORules(rs *backtest.RuleSet, sloPath string, step time.Duration) error {
+	if sloPath == "" {
+		return nil
+	}
+	policies, err := backtest.LoadSLOPolicies(sloPath)
+	if err != nil {
+		return err
+	}
+	for _, p := range policies {
+		rs.Groups = append(rs.Groups, backtest.Group{
+			Name: "slo:" + p.Name, Interval: step, Rules: backtest.BurnRateRules(p),
+		})
+	}
+	return nil
 }

@@ -41,61 +41,7 @@ the fault was applied to. Waiter objects (restarted or rescaled workloads) are
 collateral and are never treated as root cause. A scenario whose ground truth
 cannot be derived is refused, not emitted with an empty answer key.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			files, err := itbenchInputs(in)
-			if err != nil {
-				return err
-			}
-			if err := os.MkdirAll(out, 0o750); err != nil {
-				return err
-			}
-
-			var written, skipped int
-			var categories []bench.Category
-			for _, f := range files {
-				sc, err := itbench.ConvertFile(f)
-				if err != nil {
-					if skipInvalid {
-						skipped++
-						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "skipped: %v\n", err)
-						continue
-					}
-					return err
-				}
-				b, err := yaml.Marshal(sc)
-				if err != nil {
-					return err
-				}
-				dst := filepath.Join(out, sc.Metadata.Name+".yaml")
-				header := fmt.Sprintf("# Imported from %s (ITBench, Apache-2.0).\n"+
-					"# SCORE-ONLY: stage the environment with ITBench, then run with --inject=none.\n",
-					sc.Metadata.Source)
-				if err := os.WriteFile(dst, append([]byte(header), b...), 0o600); err != nil {
-					return err
-				}
-				written++
-				categories = append(categories, bench.Category{
-					Name:        sc.Spec.GroundTruth.Category,
-					Description: "ITBench fault " + strings.ReplaceAll(sc.Spec.GroundTruth.Category, "+", " combined with "),
-				})
-			}
-
-			// Every agent is shown the fault categories it is scored against. For
-			// imported scenarios that list is the set of ITBench faults imported so
-			// far; importing more scenarios into the same directory extends it.
-			listed, err := bench.AddCategories(filepath.Join(out, "categories.yaml"), categories)
-			if err != nil {
-				return err
-			}
-			if listed < bench.MinCategories {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-					"note: %s lists %d fault categories; `bench run` needs at least %d, so that the list does not give "+
-						"the answer away. Import more ITBench scenarios into this directory, or pass --categories.\n",
-					filepath.Join(out, "categories.yaml"), listed, bench.MinCategories)
-			}
-
-			_, err = fmt.Fprintf(cmd.OutOrStdout(),
-				"imported %d ITBench scenario(s) into %s (%d skipped)\n", written, out, skipped)
-			return err
+			return runImportITBench(cmd, in, out, skipInvalid)
 		},
 	}
 
@@ -105,6 +51,72 @@ cannot be derived is refused, not emitted with an empty answer key.`,
 		"skip scenarios that cannot be converted (e.g. no derivable ground truth) instead of failing")
 	_ = cmd.MarkFlagRequired("in")
 	return cmd
+}
+
+// runImportITBench converts every ITBench scenario under in into an Argus
+// scenario file in out, and extends out/categories.yaml with their faults.
+func runImportITBench(cmd *cobra.Command, in, out string, skipInvalid bool) error {
+	files, err := itbenchInputs(in)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		return err
+	}
+
+	var written, skipped int
+	var categories []bench.Category
+	for _, f := range files {
+		sc, err := itbench.ConvertFile(f)
+		if err != nil {
+			if !skipInvalid {
+				return err
+			}
+			skipped++
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "skipped: %v\n", err)
+			continue
+		}
+		if err := writeImportedScenario(out, sc); err != nil {
+			return err
+		}
+		written++
+		categories = append(categories, bench.Category{
+			Name:        sc.Spec.GroundTruth.Category,
+			Description: "ITBench fault " + strings.ReplaceAll(sc.Spec.GroundTruth.Category, "+", " combined with "),
+		})
+	}
+
+	// Every agent is shown the fault categories it is scored against. For
+	// imported scenarios that list is the set of ITBench faults imported so
+	// far; importing more scenarios into the same directory extends it.
+	listed, err := bench.AddCategories(filepath.Join(out, "categories.yaml"), categories)
+	if err != nil {
+		return err
+	}
+	if listed < bench.MinCategories {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+			"note: %s lists %d fault categories; `bench run` needs at least %d, so that the list does not give "+
+				"the answer away. Import more ITBench scenarios into this directory, or pass --categories.\n",
+			filepath.Join(out, "categories.yaml"), listed, bench.MinCategories)
+	}
+
+	_, err = fmt.Fprintf(cmd.OutOrStdout(),
+		"imported %d ITBench scenario(s) into %s (%d skipped)\n", written, out, skipped)
+	return err
+}
+
+// writeImportedScenario writes one converted scenario, headed with where it
+// came from and how it must be run. Its name is itbench-sre-<numeric id>
+// (itbench.Name), so the file lands in out whatever the input file says.
+func writeImportedScenario(out string, sc bench.Scenario) error {
+	b, err := yaml.Marshal(sc)
+	if err != nil {
+		return err
+	}
+	header := fmt.Sprintf("# Imported from %s (ITBench, Apache-2.0).\n"+
+		"# SCORE-ONLY: stage the environment with ITBench, then run with --inject=none.\n",
+		sc.Metadata.Source)
+	return os.WriteFile(filepath.Join(out, sc.Metadata.Name+".yaml"), append([]byte(header), b...), 0o644)
 }
 
 // itbenchInputs resolves --in to a sorted list of JSON files, so a directory
