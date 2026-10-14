@@ -163,47 +163,78 @@ func (r *Rule) validate() error {
 	if !r.Impact.valid() {
 		return fmt.Errorf("rule %q: invalid impact %q", r.ID, r.Impact)
 	}
-	switch r.Evaluation.Mode {
+	// The blocks below say what is wrong; the rule ID is added once, here.
+	for _, err := range []error{
+		r.Evaluation.validate(),
+		r.ServiceViolation.validate(),
+		r.Calibration.validate(r.Params),
+		r.Cost.validate(),
+	} {
+		if err != nil {
+			return fmt.Errorf("rule %q: %w", r.ID, err)
+		}
+	}
+	return nil
+}
+
+func (e Evaluation) validate() error {
+	switch e.Mode {
 	case ModeItem:
-		if r.Evaluation.Aggregate != "" {
-			return fmt.Errorf("rule %q: aggregate name is only valid in aggregate mode", r.ID)
+		if e.Aggregate != "" {
+			return fmt.Errorf("aggregate name is only valid in aggregate mode")
 		}
 	case ModeAggregate:
-		if r.Evaluation.Aggregate == "" {
-			return fmt.Errorf("rule %q: aggregate mode requires an aggregate name", r.ID)
+		if e.Aggregate == "" {
+			return fmt.Errorf("aggregate mode requires an aggregate name")
 		}
 	default:
-		return fmt.Errorf("rule %q: invalid evaluation mode %q", r.ID, r.Evaluation.Mode)
+		return fmt.Errorf("invalid evaluation mode %q", e.Mode)
 	}
-	if r.Evaluation.Criteria == "" {
-		return fmt.Errorf("rule %q: evaluation.criteria is required", r.ID)
+	if e.Criteria == "" {
+		return fmt.Errorf("evaluation.criteria is required")
 	}
-	if r.ServiceViolation.ThresholdRatio < 0 || r.ServiceViolation.ThresholdRatio >= 1 {
-		return fmt.Errorf("rule %q: service_violation.threshold_ratio must be in [0,1)", r.ID)
+	return nil
+}
+
+func (s ServiceViolation) validate() error {
+	if s.ThresholdRatio < 0 || s.ThresholdRatio >= 1 {
+		return fmt.Errorf("service_violation.threshold_ratio must be in [0,1)")
 	}
-	if c := r.Calibration; c.Param != "" {
-		// The param target is a params key, or the one non-params numeric
-		// knob a rule has: the item-rollup threshold.
-		if _, ok := r.Params[c.Param]; !ok && c.Param != ServiceViolationParam {
-			return fmt.Errorf("rule %q: calibration.param %q not present in params", r.ID, c.Param)
-		}
-		if !validCalibrationSources[c.Source] {
-			return fmt.Errorf("rule %q: invalid calibration.source %q", r.ID, c.Source)
-		}
-		if !validCalibrationKinds[c.Kind] {
-			return fmt.Errorf("rule %q: invalid calibration.kind %q", r.ID, c.Kind)
-		}
-		if c.Source == "aggregate" && (c.Aggregate == "" || c.Field == "") {
-			return fmt.Errorf("rule %q: calibration.source=aggregate requires aggregate and field", r.ID)
-		}
+	return nil
+}
+
+// validate checks a calibration block, if the rule has one.
+func (c CalibrationSpec) validate(params map[string]any) error {
+	if c.Param == "" {
+		return nil
 	}
-	if d := r.Cost.Driver; d != "" {
-		if !validCostDrivers[d] {
-			return fmt.Errorf("rule %q: invalid cost.driver %q", r.ID, d)
-		}
-		if r.Cost.QuantityField == "" {
-			return fmt.Errorf("rule %q: cost.driver requires cost.quantity_field", r.ID)
-		}
+	// The param target is a params key, or the one non-params numeric knob a
+	// rule has: the item-rollup threshold.
+	if _, ok := params[c.Param]; !ok && c.Param != ServiceViolationParam {
+		return fmt.Errorf("calibration.param %q not present in params", c.Param)
+	}
+	if !validCalibrationSources[c.Source] {
+		return fmt.Errorf("invalid calibration.source %q", c.Source)
+	}
+	if !validCalibrationKinds[c.Kind] {
+		return fmt.Errorf("invalid calibration.kind %q", c.Kind)
+	}
+	if c.Source == "aggregate" && (c.Aggregate == "" || c.Field == "") {
+		return fmt.Errorf("calibration.source=aggregate requires aggregate and field")
+	}
+	return nil
+}
+
+// validate checks a cost block, if the rule has one.
+func (c CostSpec) validate() error {
+	if c.Driver == "" {
+		return nil
+	}
+	if !validCostDrivers[c.Driver] {
+		return fmt.Errorf("invalid cost.driver %q", c.Driver)
+	}
+	if c.QuantityField == "" {
+		return fmt.Errorf("cost.driver requires cost.quantity_field")
 	}
 	return nil
 }

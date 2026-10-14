@@ -49,7 +49,7 @@ func TestGolden(t *testing.T) {
 		}
 		t.Run(dir.Name(), func(t *testing.T) {
 			base := filepath.Join("testdata", "golden", dir.Name())
-			c := rules.NewCollector(eng)
+			c := rules.NewCollector(eng, rules.CollectorOptions{})
 
 			now := time.Unix(1_700_000_000, 0) // fixed epoch: goldens stay deterministic
 			pipe := ingest.NewPipeline(c, ingest.TrackerOpts{
@@ -81,20 +81,20 @@ func TestGolden(t *testing.T) {
 				}
 				pipe.ConsumeLogs(ld)
 			}
+			// Fixture rows stand in for trackers the sample telemetry cannot
+			// drive; they are evaluated together with the pipeline's own rows,
+			// as one export, because each evaluation replaces the last.
+			var rows []rules.AggregateRow
 			if b, err := os.ReadFile(filepath.Join(base, "aggregates.json")); err == nil {
-				var rows []rules.AggregateRow
 				if err := json.Unmarshal(b, &rows); err != nil {
 					t.Fatalf("aggregates.json: %v", err)
-				}
-				for _, row := range rows {
-					c.ObserveAggregate(row)
 				}
 			}
 
 			// cross one window boundary: completed-window aggregates
 			// (trace_health) judge the finished generation
 			now = now.Add(61 * time.Minute)
-			pipe.AggregateRows()
+			c.ObserveAggregates(append(rows, pipe.CurrentRows()...))
 
 			got, err := json.MarshalIndent(c.Snapshot(), "", "  ")
 			if err != nil {

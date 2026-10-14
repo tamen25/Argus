@@ -71,13 +71,13 @@ fixed; a finding that does not hold is marked so here, with the reason.
 
 - [ ] **R01** — npm advisories: triage the audit, update what is compatible, add
   an audit step to CI. Overlaps B-21.
-- [ ] **R02** — `rules.Collector` keeps per-service state for every service
-  name ever seen: no admission limit, no expiry.
-- [ ] **R03** — a CEL evaluation error on an item rule leaves the rule passing:
-  the error is dropped and the score can be 100.
-- [ ] **R04** — collector observations and violations are lifetime counters:
+- [x] **R02** — `rules.Collector` keeps per-service state for every service
+  name ever seen: no admission limit, no expiry. Done in #108: at most 2000 services (`CollectorOptions.MaxServices`); past it, observations are dropped and counted (`rejected_observations`, a report note); a service with no outcome left is dropped.
+- [x] **R03** — a CEL evaluation error on an item rule leaves the rule passing:
+  the error is dropped and the score can be 100. Done in #108: a failed evaluation counts as a violation, and `eval_errors` is on every rule result.
+- [x] **R04** — collector observations and violations are lifetime counters:
   one old violation fails a service forever in `serve`, and aggregate ticks are
-  counted again on every export.
+  counted again on every export. Done in #108: item outcomes are windowed like the trackers, and each aggregate export replaces the last evaluation.
 - [ ] **R05** — the Mimir cardinality client reads a field the API does not
   return (`distinct_label_values_count`); its test fixture invents it.
 - [ ] **R06** — cost attribution uses Mimir's default top-20 label values and
@@ -103,7 +103,7 @@ fixed; a finding that does not hold is marked so here, with the reason.
   take minutes, and the cancelled request prevents the cache from filling.
 - [ ] **R14** — `argus score`'s 60s default never completes a trace window, so
   the trace rules are skipped while reported as evaluated.
-- [ ] **R15** — the score gate passes an empty fleet (score 100).
+- [x] **R15** — the score gate passes an empty fleet (score 100). Done in #108: `--fail-below-score` exits 2 when no service was observed.
 - [ ] **R16** — attribute values are truncated to 256 bytes before cardinality
   hashing and service identity.
 - [ ] **R17** — trace cap overflow can give a zero denominator (an infinite
@@ -131,8 +131,8 @@ fixed; a finding that does not hold is marked so here, with the reason.
   (`x-api-key`, `X-Scope-OrgID`).
 - [ ] **R29** — unbounded response decoding and subprocess output capture.
 - [ ] **R30** — the MCP transport and tool arguments need size and range limits.
-- [ ] **R31** — an empty snapshot sends `services: null`, which crashes the
-  plugin's Overview and Scores pages.
+- [x] **R31** — an empty snapshot sends `services: null`, which crashes the
+  plugin's Overview and Scores pages. Done in #108: the snapshot's `services` and the trend's `lines` encode as `[]`.
 - [ ] **R32** — the service graph measures its width before it has mounted.
 - [ ] **R33** — plugin pages never refresh, a failed comparison hides the Bench
   page, and settings errors only reach the console.
@@ -149,8 +149,8 @@ fixed; a finding that does not hold is marked so here, with the reason.
 
 **Cleanups** (C01–C16, the table in the review): Prettier on six plugin files,
 comment trimming, stale phase claims (the backtest one is done, #106),
-`errors.Is(err, io.EOF)` in the rules loader, template parsing once, the
-numeric helper in remediate, deterministic float sums, typed API responses,
+`errors.Is(err, io.EOF)` in the rules loader (done, #108), template parsing once, the
+numeric helper in remediate, deterministic float sums (the trend sort, done in #108), typed API responses,
 pinned release tools, narrower gosec exclusions, and client ownership.
 
 ---

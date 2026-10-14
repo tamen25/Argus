@@ -27,7 +27,7 @@ func testAPIState(t *testing.T) (*http.ServeMux, *ingest.Pipeline) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	col := rules.NewCollector(eng)
+	col := rules.NewCollector(eng, rules.CollectorOptions{})
 	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{})
 	mux := http.NewServeMux()
 	registerAPI(mux, col, pipe, rs, "test-spec-sha", time.Minute)
@@ -128,7 +128,7 @@ func TestAPIServiceGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	col := rules.NewCollector(eng)
+	col := rules.NewCollector(eng, rules.CollectorOptions{})
 	// controllable clock: edges come from the completed trace generation
 	now := time.Unix(1_700_000_000, 0)
 	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{Window: time.Minute, Now: func() time.Time { return now }})

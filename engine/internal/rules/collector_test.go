@@ -1,7 +1,10 @@
 package rules
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/tamen25/Argus/engine/internal/model"
 )
@@ -12,7 +15,7 @@ func spanItem(svc string, res map[string]any) model.Item {
 
 func TestCollectorRollupAndFindings(t *testing.T) {
 	eng := mustEngine(t, validRule)
-	c := NewCollector(eng)
+	c := NewCollector(eng, CollectorOptions{})
 
 	good := spanItem("checkout", map[string]any{"service.name": "checkout"})
 	bad := spanItem(model.UnknownService, map[string]any{})
@@ -50,7 +53,7 @@ func TestCollectorRollupAndFindings(t *testing.T) {
 
 func TestCollectorEvidenceCappedAndTruncated(t *testing.T) {
 	eng := mustEngine(t, validRule)
-	c := NewCollector(eng)
+	c := NewCollector(eng, CollectorOptions{})
 	bad := spanItem(model.UnknownService, map[string]any{"k": "v"})
 	for i := 0; i < 50; i++ {
 		c.ObserveItem(bad)
@@ -80,7 +83,7 @@ service_violation:
   threshold_ratio: 0.5
 `
 	eng := mustEngine(t, tolerant)
-	c := NewCollector(eng)
+	c := NewCollector(eng, CollectorOptions{})
 	dbg := model.Item{Kind: model.KindLogRecord, Service: "s", Resource: map[string]any{},
 		Log: &model.LogRecord{SeverityText: "DEBUG"}}
 	info := model.Item{Kind: model.KindLogRecord, Service: "s", Resource: map[string]any{},
@@ -125,11 +128,11 @@ params:
   max_cardinality: 10000
 `
 	eng := mustEngine(t, validRule, agg)
-	c := NewCollector(eng)
+	c := NewCollector(eng, CollectorOptions{})
 
 	c.ObserveItem(spanItem("ad", map[string]any{"service.name": "ad"}))
-	c.ObserveAggregate(AggregateRow{Service: "ad", Aggregate: "metric_attribute_cardinality",
-		Fields: map[string]any{"metric": "m", "attribute": "user_id", "cardinality": 50000}})
+	c.ObserveAggregates([]AggregateRow{{Service: "ad", Aggregate: "metric_attribute_cardinality",
+		Fields: map[string]any{"metric": "m", "attribute": "user_id", "cardinality": 50000}}})
 
 	rep := c.Snapshot().Service("ad")
 	// critical passed (weight 40), important failed (weight 30): 40/70
@@ -160,13 +163,7 @@ params:
 	}
 }
 
-// Bounded memory (architecture rule 3) holds for aggregate rules under a
-// long-running serve loop: re-evaluating the same violating row every export
-// tick must not grow retained state — the 2.5h soak caught RSS +38% from
-// exactly this. Counts keep counting; evidence stays capped at MaxEvidence
-// (latest rows win — a day-old cardinality estimate is not evidence).
-func TestCollectorAggregateStateBoundedAcrossTicks(t *testing.T) {
-	agg := `
+const aggRule = `
 schema: argus.rules/v1
 id: MET-001
 source: spec
@@ -181,36 +178,129 @@ evaluation:
 params:
   max_cardinality: 10000
 `
-	eng := mustEngine(t, agg)
-	c := NewCollector(eng)
 
-	const ticks = 1000
-	for i := 0; i < ticks; i++ {
-		c.ObserveAggregate(AggregateRow{Service: "ad", Aggregate: "metric_attribute_cardinality",
-			Fields: map[string]any{"metric": "m", "attribute": "user_id", "cardinality": 40000 + i}})
+func cardinalityRow(service string, cardinality int) AggregateRow {
+	return AggregateRow{Service: service, Aggregate: "metric_attribute_cardinality",
+		Fields: map[string]any{"metric": "m", "attribute": "user_id", "cardinality": cardinality}}
+}
+
+// Each export evaluates the trackers' current state, and replaces the last
+// evaluation. Re-reporting the same violating row every tick used to count it
+// again each time, so a serve loop ran up 1000/1000 (and, before evidence was
+// capped, grew without bound: the soak caught RSS +38%).
+func TestCollectorAggregatesReplacePerExport(t *testing.T) {
+	c := NewCollector(mustEngine(t, aggRule), CollectorOptions{})
+	for i := 0; i < 1000; i++ {
+		c.ObserveAggregates([]AggregateRow{cardinalityRow("ad", 40000+i)})
 	}
-
 	f := c.Snapshot().Service("ad").Findings[0]
-	if f.Stats.Observed != ticks || f.Stats.Violations != ticks || f.Stats.Ratio != 1 {
-		t.Errorf("stats = %+v, want %d/%d", f.Stats, ticks, ticks)
+	if f.Stats.Observed != 1 || f.Stats.Violations != 1 {
+		t.Errorf("stats = %+v, want the latest evaluation only (1/1)", f.Stats)
 	}
-	if len(f.Evidence) > MaxEvidence {
-		t.Fatalf("evidence = %d entries, want <= %d", len(f.Evidence), MaxEvidence)
+	if len(f.Evidence) != 1 || f.Evidence[0].Attrs["cardinality"] != 40999 {
+		t.Errorf("evidence = %+v, want the latest row", f.Evidence)
 	}
-	// latest evidence retained: the last tick's cardinality must be present
-	found := false
-	for _, e := range f.Evidence {
-		if e.Attrs["cardinality"] == 40000+ticks-1 {
-			found = true
-		}
+}
+
+// R04: a service whose aggregate recovers passes at the next export, and one
+// whose aggregate disappears is no longer reported on it.
+func TestCollectorAggregateRecovery(t *testing.T) {
+	c := NewCollector(mustEngine(t, aggRule), CollectorOptions{})
+	c.ObserveAggregates([]AggregateRow{cardinalityRow("ad", 50000), cardinalityRow("cart", 50000)})
+	c.ObserveAggregates([]AggregateRow{cardinalityRow("ad", 20)})
+
+	snap := c.Snapshot()
+	if ad := snap.Service("ad"); ad == nil || len(ad.Findings) != 0 || ad.SpecScore != 100 {
+		t.Errorf("ad = %+v, want passing once its cardinality recovered", ad)
 	}
-	if !found {
-		t.Errorf("evidence holds stale rows only: %+v", f.Evidence)
+	if snap.Service("cart") != nil {
+		t.Errorf("cart is still reported with no aggregate left: %+v", snap.Service("cart"))
+	}
+}
+
+// R04: item outcomes count over the window, the current and the previous
+// one, so a violation stops failing a service two windows later, and a
+// service that went quiet is dropped.
+func TestCollectorItemOutcomesExpireWithTheWindow(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	c := NewCollector(mustEngine(t, validRule), CollectorOptions{
+		Window: time.Hour, Now: func() time.Time { return now },
+	})
+	c.ObserveItem(spanItem("bad", map[string]any{})) // no service.name: a violation
+	c.ObserveItem(spanItem("quiet", map[string]any{"service.name": "quiet"}))
+
+	now = now.Add(61 * time.Minute) // the violation is in the previous window
+	c.ObserveItem(spanItem("bad", map[string]any{"service.name": "bad"}))
+	if f := c.Snapshot().Service("bad").Findings; len(f) != 1 {
+		t.Errorf("one window on: findings = %+v, want the violation still counted", f)
 	}
 
-	// white-box: retained state per rule is the counters + capped evidence
-	if got := len(c.svc["ad"].aggEvidence["MET-001"]); got > MaxEvidence {
-		t.Errorf("retained aggregate evidence = %d, want <= %d", got, MaxEvidence)
+	now = now.Add(61 * time.Minute) // two windows on: it has aged out
+	c.ObserveItem(spanItem("bad", map[string]any{"service.name": "bad"}))
+	snap := c.Snapshot()
+	if f := snap.Service("bad").Findings; len(f) != 0 {
+		t.Errorf("two windows on: findings = %+v, want none", f)
+	}
+	if snap.Service("quiet") != nil {
+		t.Error("a service with nothing observed for two windows is still reported")
+	}
+}
+
+// R03: a rule that fails to evaluate has not passed. The error is counted as
+// a violation, and shows on the result.
+func TestCollectorEvalErrorFailsTheRule(t *testing.T) {
+	reads := `
+schema: argus.rules/v1
+id: ARG-TEST-001
+source: argus
+name: reads an attribute without checking for it
+description: test
+target: span
+impact: important
+evaluation:
+  mode: item
+  criteria: "span.attrs['http.route'] != ''"
+`
+	c := NewCollector(mustEngine(t, reads), CollectorOptions{})
+	c.ObserveItem(spanItem("ad", map[string]any{"service.name": "ad"}))
+
+	rep := c.Snapshot().Service("ad")
+	if rep.ExtensionScore == nil || *rep.ExtensionScore != 0 {
+		t.Errorf("extension score = %v, want 0: the only rule could not be evaluated", rep.ExtensionScore)
+	}
+	if len(rep.Results) != 1 || rep.Results[0].EvalErrors != 1 {
+		t.Errorf("results = %+v, want one eval error reported", rep.Results)
+	}
+	if len(rep.Findings) != 1 || rep.Findings[0].Details["eval_errors"] != int64(1) {
+		t.Errorf("findings = %+v, want the eval error in the finding", rep.Findings)
+	}
+}
+
+// R02: past MaxServices, a new service is turned away and counted; known
+// services keep being observed.
+func TestCollectorCapsServices(t *testing.T) {
+	c := NewCollector(mustEngine(t, validRule), CollectorOptions{MaxServices: 2})
+	for _, svc := range []string{"a", "b", "c", "d", "a"} {
+		c.ObserveItem(spanItem(svc, map[string]any{"service.name": svc}))
+	}
+	snap := c.Snapshot()
+	if len(snap.Services) != 2 || snap.Service("a") == nil || snap.Service("b") == nil {
+		t.Errorf("services = %d, want a and b only", len(snap.Services))
+	}
+	if snap.RejectedObservations != 2 {
+		t.Errorf("rejected = %d, want 2 (c and d)", snap.RejectedObservations)
+	}
+}
+
+// R31: an empty fleet encodes its lists as [], never null; the plugin reads
+// them as arrays.
+func TestSnapshotEmptyFleetEncodesArrays(t *testing.T) {
+	b, err := json.Marshal(NewCollector(mustEngine(t, validRule), CollectorOptions{}).Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"services":[]`) {
+		t.Errorf("snapshot = %s, want services as []", b)
 	}
 }
 
@@ -228,7 +318,7 @@ evaluation:
   criteria: "!('service.name' in resource) || !string(resource['service.name']).startsWith('unknown_service')"
 `
 	eng := mustEngine(t, validRule, ext)
-	c := NewCollector(eng)
+	c := NewCollector(eng, CollectorOptions{})
 	// service.name present (spec rule passes) but SDK-default (extension fails)
 	c.ObserveItem(spanItem("unknown_service:java", map[string]any{"service.name": "unknown_service:java"}))
 
@@ -246,7 +336,7 @@ evaluation:
 
 func TestSnapshotFleetScore(t *testing.T) {
 	eng := mustEngine(t, validRule)
-	c := NewCollector(eng)
+	c := NewCollector(eng, CollectorOptions{})
 	c.ObserveItem(spanItem("a", map[string]any{"service.name": "a"}))
 	c.ObserveItem(spanItem(model.UnknownService, map[string]any{}))
 	snap := c.Snapshot()

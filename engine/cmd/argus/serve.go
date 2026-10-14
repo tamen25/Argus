@@ -204,7 +204,7 @@ func startScoring(ctx context.Context, cfg serveConfig, mux *http.ServeMux, reg 
 	if err != nil {
 		return nil, err
 	}
-	col := rules.NewCollector(eng)
+	col := rules.NewCollector(eng, rules.CollectorOptions{Window: cfg.window})
 	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{MaxPairs: cfg.maxPairs, Window: cfg.window})
 	export.RegisterAggregateStats(reg, pipe.PairsTracked, pipe.Evictions)
 	export.RegisterItemStats(reg, pipe.ItemsConsumed)
@@ -281,7 +281,7 @@ func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline
 func reportHandler(col *rules.Collector, pipe *ingest.Pipeline, specVersion string, window time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		snap := col.Snapshot()
-		notes := ingestNotes(pipe.Evictions(), len(snap.Services), true)
+		notes := ingestNotes(pipe.Evictions(), snap, true)
 		writeJSON(w, &report.Report{
 			GeneratedAt:     time.Now().UTC(),
 			ArgusVersion:    version,
