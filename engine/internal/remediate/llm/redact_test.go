@@ -1,6 +1,9 @@
 package llm
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Redaction is the privacy backstop (architecture rule 8, llm.redact defaults
 // on): attribute VALUES are stripped before anything reaches the LLM, keys are
@@ -37,9 +40,42 @@ func TestRedactStripsEvidenceValues(t *testing.T) {
 	if ev.Summary != "" {
 		t.Errorf("evidence summary = %q, want empty (free text may carry values)", ev.Summary)
 	}
-	// structural fields (rule id, service, description) are not user data — kept
-	if out.RuleID != "MET-001" || out.Service != "checkout" || out.Description != "high cardinality" {
-		t.Errorf("structural fields were altered: %+v", out)
+	// the rule's own fields are Argus's text, kept; the service name is not
+	if out.RuleID != "MET-001" || out.Description != "high cardinality" {
+		t.Errorf("the rule's fields were altered: %+v", out)
+	}
+	if out.Service != redactedPlaceholder {
+		t.Errorf("service = %q, want it redacted: service names come from telemetry", out.Service)
+	}
+}
+
+// R07: the patch names the service, the metric and the attribute, so the one
+// rendered from the real finding is never sent with redaction on; the
+// telemetry-free rendering is.
+func TestRedactSendsTheRedactedPatch(t *testing.T) {
+	in := ExplainInput{
+		Service:       "payments-eu",
+		Patch:         `delete_key(attributes, "card_number") where resource.attributes["service.name"] == "payments-eu"`,
+		RedactedPatch: `delete_key(attributes, "REPLACE_WITH_ATTRIBUTE_KEY") where resource.attributes["service.name"] == "REPLACE_WITH_SERVICE_NAME"`,
+	}
+	out := Redact(in)
+	if out.Patch != in.RedactedPatch || out.RedactedPatch != "" {
+		t.Errorf("patch = %q, want the redacted rendering only", out.Patch)
+	}
+	prompt, err := RenderPrompt(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leak := range []string{"payments-eu", "card_number"} {
+		if strings.Contains(prompt, leak) {
+			t.Errorf("prompt contains %q:\n%s", leak, prompt)
+		}
+	}
+
+	// No redacted rendering: no patch is sent at all, and the prompt says so.
+	prompt, _ = RenderPrompt(Redact(ExplainInput{Patch: in.Patch}))
+	if strings.Contains(prompt, "card_number") || !strings.Contains(prompt, "patch is not shown") {
+		t.Errorf("without a redacted patch the prompt is:\n%s", prompt)
 	}
 }
 

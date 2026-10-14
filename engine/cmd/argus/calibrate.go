@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/tamen25/Argus/engine/internal/atomicfile"
 	"github.com/tamen25/Argus/engine/internal/calibrate"
 	"github.com/tamen25/Argus/engine/internal/report"
 	"github.com/tamen25/Argus/engine/internal/rules"
@@ -192,7 +193,7 @@ func writeOverrides(outDir string, rs []*rules.Rule, props []calibrate.Proposal)
 			return err
 		}
 		name := strings.ToLower(p.RuleID) + ".yaml"
-		if err := os.WriteFile(filepath.Join(outDir, name), data, 0o644); err != nil {
+		if err := atomicfile.Write(filepath.Join(outDir, name), data, 0o644); err != nil {
 			return err
 		}
 	}

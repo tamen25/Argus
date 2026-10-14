@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/tamen25/Argus/engine/internal/atomicfile"
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bench/itbench"
 )
@@ -116,7 +117,7 @@ func writeImportedScenario(out string, sc bench.Scenario) error {
 	header := fmt.Sprintf("# Imported from %s (ITBench, Apache-2.0).\n"+
 		"# SCORE-ONLY: stage the environment with ITBench, then run with --inject=none.\n",
 		sc.Metadata.Source)
-	return os.WriteFile(filepath.Join(out, sc.Metadata.Name+".yaml"), append([]byte(header), b...), 0o644)
+	return atomicfile.Write(filepath.Join(out, sc.Metadata.Name+".yaml"), append([]byte(header), b...), 0o644)
 }
 
 // itbenchInputs resolves --in to a sorted list of JSON files, so a directory

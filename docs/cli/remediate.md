@@ -17,7 +17,7 @@ argus remediate --report report.json --finding ARG-LOG-001 --service checkout
 | `--finding` | *(required)* | rule ID to remediate (all failing services unless `--service`) |
 | `--service` | *(all)* | scope to one service |
 | `--rules` | *(built-ins)* | extra rule dir (same override semantics as `score`) |
-| `--out` | `remediations` | output directory: `<service>-<template>.alloy.river` / `.collector.yaml` |
+| `--out` | `remediations` | output directory: `<service>-<template>.alloy.river` / `.collector.yaml`. A service name that is not a safe file name is sanitized and suffixed with a short hash of the original, so two services never share a file. Files are written atomically. |
 | `--explain` | off | also write an LLM prose explanation per finding (needs `--llm-endpoint`) |
 | `--llm-endpoint` | | OpenAI-compatible chat completions URL |
 | `--llm-model` | | model name |
@@ -28,6 +28,22 @@ Rendering is deterministic and template substitution uses only the
 finding's own evidence (metric/attribute names, observed cardinality,
 violation ratio). Where evidence lacks a value the patch says
 `REPLACE_WITH_…` rather than guessing.
+
+Names in a patch come from telemetry, so they are handled with care:
+
+- A metric name or attribute key is written into configuration only if it
+  uses the characters OpenTelemetry allows in instrument names (letters,
+  digits, `_ . - / :`). Anything else, such as a quote, a backtick or a
+  newline, becomes `REPLACE_WITH_…`: it could otherwise end an OTTL string or
+  an Alloy raw string and change what the patch does.
+- In comments, values are quoted on one line, so a newline in a service name
+  cannot start a configuration line.
+- Patches that change a metric (`high-cardinality-attribute`,
+  `missing-metric-unit`, `unit-in-metric-name`) are scoped to the service with
+  `resource.attributes["service.name"] == "<service>"`, so on a shared
+  collector they leave other services emitting the same metric alone. For a
+  service without a usable name (`unknown_service…`), the scope is
+  `REPLACE_WITH_SERVICE_NAME` for you to fill in.
 
 ## Templates
 
@@ -71,9 +87,12 @@ already-generated deterministic patch and **never changes the patch or the
 score**. Any OpenAI-compatible endpoint works — a remote API or a self-hosted
 compatible server.
 
-**Redaction is on by default** (rule 8): attribute *values* are stripped
-before anything reaches the endpoint (keys are kept so the model sees the
-shape), and free-text evidence summaries are dropped. `--llm-no-redact` opts
+**Redaction is on by default** (rule 8): nothing from your telemetry reaches
+the endpoint. The service name is replaced, attribute *values* are stripped
+(keys are kept so the model sees the shape), free-text evidence summaries are
+dropped, and the patch sent is rendered a second time without telemetry
+values: the service, metric and attribute names in it are placeholders. The
+patch written to disk is the real one. `--llm-no-redact` opts
 out explicitly and is reported in the run summary. Prompt *templates* are
 versioned with golden tests; model *output* is never tested — it's prose, not a
 control signal.

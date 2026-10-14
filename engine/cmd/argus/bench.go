@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/tamen25/Argus/engine/internal/atomicfile"
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bench/agent"
 	"github.com/tamen25/Argus/engine/internal/bench/inject/kube"
@@ -500,7 +501,7 @@ func writeBenchReport(cmd *cobra.Command, f benchFlags, rep orchestrator.Report)
 	}
 
 	if f.out != "" {
-		if err := os.WriteFile(f.out, payload, 0o644); err != nil {
+		if err := atomicfile.Write(f.out, payload, 0o644); err != nil {
 			return err
 		}
 		_, err := fmt.Fprintf(cmd.OutOrStdout(), "bench report written: %s\n", f.out)

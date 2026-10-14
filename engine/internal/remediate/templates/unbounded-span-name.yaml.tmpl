@@ -1,4 +1,4 @@
-# Argus remediation: unbounded-span-name — {{.RuleID}} on "{{.Service}}"
+# Argus remediation: unbounded-span-name — {{.RuleID}} on {{q .Service}}
 {{- if .Cardinality}}
 # ~{{.Cardinality}} distinct span names observed in the window.
 {{- end}}

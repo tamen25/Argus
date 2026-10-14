@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/tamen25/Argus/engine/internal/atomicfile"
 )
 
 // writeOutput writes a rendered report to path, or to standard output when
@@ -20,7 +21,7 @@ func writeOutput(cmd *cobra.Command, path string, report []byte) error {
 		_, err := cmd.OutOrStdout().Write(report)
 		return err
 	}
-	return os.WriteFile(path, report, 0o644)
+	return atomicfile.Write(path, report, 0o644)
 }
 
 // parseWindow reads a --from/--to pair of RFC 3339 times; to must be after

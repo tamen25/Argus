@@ -19,6 +19,7 @@ func sampleInput() ExplainInput {
 		Description: "Attribute keys on metrics must have fewer than 10,000 unique values.",
 		Patch:       "// alloy.river\notelcol.processor.attributes \"drop_high_card\" {\n  action { key = \"request_id\" action = \"delete\" }\n}",
 		Evidence:    []Evidence{{Attrs: map[string]any{"metric": "<redacted>", "attribute": "<redacted>", "cardinality": "<redacted>"}}},
+		Redacted:    true,
 	}
 }
 

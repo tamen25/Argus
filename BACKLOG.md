@@ -82,11 +82,11 @@ fixed; a finding that does not hold is marked so here, with the reason.
   return (`distinct_label_values_count`); its test fixture invents it. Done in #109: `label_values_count`, with fixtures from the documented response; a listed label without its count is an error, not 0.
 - [x] **R06** — cost attribution uses Mimir's default top-20 label values and
   in-memory counting, so larger fleets lose services silently. Done in #109: `count_method=active`, `limit=500`, and the remainder past the list and series without the label attributed to named lines, so the total is complete. Still open: one `--service-label` serves both Mimir (`job`) and Loki (`service_name`).
-- [ ] **R07** — LLM redaction strips evidence values but sends the service name
-  and the rendered patch, both telemetry-derived.
-- [ ] **R08** — remediation templates interpolate raw metric and attribute
+- [x] **R07** — LLM redaction strips evidence values but sends the service name
+  and the rendered patch, both telemetry-derived. Done in #110: redaction replaces the service name, and sends a patch rendered without telemetry values (`RedactedPatch`); a test checks the whole outbound request.
+- [x] **R08** — remediation templates interpolate raw metric and attribute
   names into OTTL strings, and the high-cardinality patch is not scoped to the
-  service.
+  service. Done in #110: names reach configuration only if config-safe, else `REPLACE_WITH_…`; comments quote values on one line; metric-changing patches are scoped to `service.name`.
 - [ ] **R09** — zero or negative step, stride and interval values hang replay
   or panic `serve` (`time.NewTicker`).
 - [ ] **R10** — bench cleanup errors are discarded; a failed restore leaves the
@@ -142,15 +142,15 @@ fixed; a finding that does not hold is marked so here, with the reason.
   ignore `ARGUS_KUBE_CONTEXT`.
 - [ ] **R36** — bench provenance does not hash referenced scripts or manifests,
   the tool surface, or the judge config.
-- [ ] **R37** — reports are written in place (a partial file looks complete),
-  and `fileSafe` maps `a/b` and `a_b` to the same patch file.
+- [x] **R37** — reports are written in place (a partial file looks complete),
+  and `fileSafe` maps `a/b` and `a_b` to the same patch file. Done in #110: artifacts are written atomically (`internal/atomicfile`), and `fileSafe` adds a hash when it changes a name. Still open: `bench-matrix.sh` validating a report before treating a cell as done (with R35/R36).
 - [ ] **R38** — CI never runs the plugin's Go tests, Playwright, the Postgres
   integration tests, or a formatter check.
 
 **Cleanups** (C01–C16, the table in the review): Prettier on six plugin files,
 comment trimming, stale phase claims (the backtest one is done, #106),
-`errors.Is(err, io.EOF)` in the rules loader (done, #108), template parsing once, the
-numeric helper in remediate, deterministic float sums (the trend sort, done in #108), typed API responses,
+`errors.Is(err, io.EOF)` in the rules loader (done, #108), template parsing once (done, #110), the
+numeric helper in remediate (done, #110), deterministic float sums (the trend sort, done in #108), typed API responses,
 pinned release tools, narrower gosec exclusions, and client ownership.
 
 ---

@@ -1,4 +1,4 @@
-# Argus remediation: log-severity-unset — {{.RuleID}} on "{{.Service}}"
+# Argus remediation: log-severity-unset — {{.RuleID}} on {{q .Service}}
 {{- if .RatioPct}}
 # {{.RatioPct}} of observed log records carried no severity.
 {{- end}}
