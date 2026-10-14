@@ -3,6 +3,7 @@ package bench
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -177,5 +178,15 @@ spec:
 				t.Errorf("expected error, got nil")
 			}
 		})
+	}
+}
+
+// R34: YAML reads .nan as a float, and NaN passed "w < 0 || w > 1".
+func TestLoadScenario_RejectsNaNWeights(t *testing.T) {
+	for _, field := range []string{"categoryWeight", "decoyPenalty"} {
+		body := strings.Replace(validScenario, "partialCredit: true", "partialCredit: true\n    "+field+": .nan", 1)
+		if _, err := LoadScenario(writeTemp(t, body)); err == nil {
+			t.Errorf("%s: .nan accepted", field)
+		}
 	}
 }

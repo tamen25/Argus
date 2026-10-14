@@ -3,6 +3,7 @@ package bench
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -115,6 +116,11 @@ func (s SteadyState) validate() error {
 	}
 	if s.Min == nil && s.Max == nil {
 		return fmt.Errorf("at least one of min or max is required")
+	}
+	for _, bound := range []*float64{s.Min, s.Max} {
+		if bound != nil && (math.IsNaN(*bound) || math.IsInf(*bound, 0)) {
+			return fmt.Errorf("min and max must be finite numbers, got %v", *bound)
+		}
 	}
 	if s.Min != nil && s.Max != nil && *s.Min > *s.Max {
 		return fmt.Errorf("min %v is above max %v", *s.Min, *s.Max)
@@ -310,10 +316,12 @@ func (s ScoringSpec) validate() error {
 	default:
 		return fmt.Errorf("entityMatch %q, want %q or %q", s.EntityMatch, MatchJaccard, MatchExact)
 	}
-	if w := s.CategoryWeight; w != nil && (*w < 0 || *w > 1) {
+	// !(0 <= w <= 1) rather than w < 0 || w > 1, so NaN fails too: every
+	// comparison with NaN is false.
+	if w := s.CategoryWeight; w != nil && !(*w >= 0 && *w <= 1) {
 		return fmt.Errorf("categoryWeight %v out of [0,1]", *w)
 	}
-	if p := s.DecoyPenalty; p != nil && (*p < 0 || *p > 1) {
+	if p := s.DecoyPenalty; p != nil && !(*p >= 0 && *p <= 1) {
 		return fmt.Errorf("decoyPenalty %v out of [0,1]", *p)
 	}
 	return nil
