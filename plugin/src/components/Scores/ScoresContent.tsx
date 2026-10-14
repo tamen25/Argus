@@ -32,10 +32,13 @@ export function ScoresContent() {
 
   const withFindings = report.snapshot.services.filter((svc) => (svc.findings?.length ?? 0) > 0);
   if (withFindings.length === 0) {
-    return <Alert title="No findings" severity="success">Every observed service passes every evaluated rule in this window.</Alert>;
+    return (
+      <Alert title="No findings" severity="success">
+        Every observed service passes every evaluated rule in this window.
+      </Alert>
+    );
   }
-  const current =
-    withFindings.find((svc) => svc.service === selected) ?? withFindings[0];
+  const current = withFindings.find((svc) => svc.service === selected) ?? withFindings[0];
 
   return (
     <div data-testid={testIds.scores.container}>
@@ -92,6 +95,11 @@ function FindingCard({ finding }: { finding: Finding }) {
         observed {finding.stats.observed} · violations {finding.stats.violations} ·{' '}
         {(finding.stats.ratio * 100).toFixed(0)}%
       </p>
+      {finding.estimated_monthly_cost !== undefined && (
+        <p className={s.stats} data-testid={testIds.scores.cost}>
+          Estimated cost: {finding.estimated_monthly_cost.toFixed(2)} {finding.cost_currency ?? ''} per month
+        </p>
+      )}
       {(finding.evidence ?? []).map((e, i) => (
         <pre key={i} className={s.evidence}>
           {e.summary ?? JSON.stringify(e.attrs)}
@@ -140,9 +148,7 @@ function RemediationPanel({ rem }: { rem: Remediation }) {
           <pre className={s.patchBody}>{rem.formats[format]}</pre>
         </div>
       ))}
-      <p className={s.footnote}>
-        Generated file — review before applying. Argus never modifies your systems.
-      </p>
+      <p className={s.footnote}>Generated file — review before applying. Argus never modifies your systems.</p>
     </div>
   );
 }

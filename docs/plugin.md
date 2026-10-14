@@ -43,7 +43,9 @@ Answers: *what exactly is wrong per service, how sure is Argus, and what
 patch fixes it?* Service picker → finding cards with impact, evidence
 samples, violation stats, and a **confidence badge** — `verified` (green,
 poller-confirmed against unsampled backend data) vs `sampled` (orange,
-mirror-only). Each finding's remediation panel renders the actual patch
+mirror-only). When the engine runs with `--cost-pricing`, a finding whose rule
+declares a `cost:` block also shows its estimated monthly cost; an unpriced
+finding shows none. Each finding's remediation panel renders the actual patch
 from the engine (both Alloy River and Collector YAML) with a copy button,
 plus the standing notice: generated file, review before applying.
 

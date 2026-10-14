@@ -1,6 +1,7 @@
 package cost_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/tamen25/Argus/engine/internal/cost"
@@ -48,28 +49,51 @@ func TestPriceFindingsActiveSeries(t *testing.T) {
 	}
 	rls := []*rules.Rule{{
 		ID:   "MET-001",
-		Cost: rules.CostSpec{Driver: "active_series", QuantityField: "series"},
+		Cost: rules.CostSpec{Driver: "active_series", QuantityField: "cardinality"},
 	}}
-	series := 500_000.0
 	snap := &rules.Snapshot{Services: []rules.ServiceReport{{
 		ServiceName: "checkout",
 		Findings: []rules.Finding{{
 			RuleID:  "MET-001",
 			Service: "checkout",
-			// poller-verified path records the true series count in Details
-			Details: map[string]any{"series": series},
+			// The sampled estimate undercounts; the poller measured the
+			// unsampled stream, in the shape the poller records.
+			Evidence: []rules.Evidence{{Attrs: map[string]any{"cardinality": 20_000}}},
+			Details: map[string]any{"poller": map[string]any{
+				"check": "mimir_label_cardinality",
+				"pairs": []map[string]any{
+					{"metric": "requests_total", "attribute": "user_id", "cardinality": int64(500_000)},
+					{"metric": "requests_total", "attribute": "session_id", "cardinality": int64(30_000)},
+				},
+			}},
 		}},
 	}}}
 
 	cost.PriceFindings(snap, rls, p)
 
-	got := snap.Services[0].Findings[0].EstimatedMonthlyCost
-	if got == nil {
+	f := snap.Services[0].Findings[0]
+	if f.EstimatedMonthlyCost == nil {
 		t.Fatal("finding not priced")
 	}
-	// 500_000 / 1e6 × 8.00 = 4.00 / month
-	if !approx(*got, 4.00) {
-		t.Errorf("estimated_monthly_cost = %v, want 4.00", *got)
+	// the largest verified pair: 500_000 / 1e6 × 8.00 = 4.00 / month
+	if !approx(*f.EstimatedMonthlyCost, 4.00) || f.CostCurrency != "USD" {
+		t.Errorf("cost = %v %s, want 4.00 USD from the verified count", *f.EstimatedMonthlyCost, f.CostCurrency)
+	}
+}
+
+// A report read back from JSON holds the verified pairs as []any; they are
+// still found.
+func TestPriceFindingsReadsVerifiedPairsFromJSON(t *testing.T) {
+	p := &cost.Pricing{Schema: cost.PricingSchema, Currency: "EUR", ActiveSeries: cost.ActiveSeries{PerMillion: 10}}
+	rls := []*rules.Rule{{ID: "MET-001", Cost: rules.CostSpec{Driver: "active_series", QuantityField: "cardinality"}}}
+	var f rules.Finding
+	if err := json.Unmarshal([]byte(`{"rule_id":"MET-001","details":{"poller":{"pairs":[{"cardinality":100000}]}}}`), &f); err != nil {
+		t.Fatal(err)
+	}
+	snap := &rules.Snapshot{Services: []rules.ServiceReport{{ServiceName: "ad", Findings: []rules.Finding{f}}}}
+	cost.PriceFindings(snap, rls, p)
+	if got := snap.Services[0].Findings[0].EstimatedMonthlyCost; got == nil || !approx(*got, 1.00) {
+		t.Errorf("cost = %v, want 1.00 (100_000 / 1e6 × 10)", got)
 	}
 }
 

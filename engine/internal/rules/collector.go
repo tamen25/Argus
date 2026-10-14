@@ -51,8 +51,9 @@ type Finding struct {
 	Evidence    []Evidence     `json:"evidence,omitempty"`
 	Details     map[string]any `json:"details,omitempty"`
 	// EstimatedMonthlyCost is set by the cost engine when the finding can be
-	// priced.
+	// priced, in CostCurrency.
 	EstimatedMonthlyCost *float64 `json:"estimated_monthly_cost,omitempty"`
+	CostCurrency         string   `json:"cost_currency,omitempty"`
 }
 
 // PollerResult is a backend-verified rule outcome for a service. It overrides

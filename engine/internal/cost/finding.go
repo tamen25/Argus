@@ -33,6 +33,7 @@ func PriceFindings(snap *rules.Snapshot, rls []*rules.Rule, p *Pricing) {
 				continue
 			}
 			f.EstimatedMonthlyCost = &monthly
+			f.CostCurrency = p.Currency
 		}
 	}
 }
@@ -49,16 +50,45 @@ func priceQuantity(p *Pricing, driver string, qty float64) (float64, bool) {
 	}
 }
 
-// findingQuantity extracts the cost-bearing quantity: the poller-verified
-// value in Details wins (it saw the unsampled stream); otherwise the worst
-// (max) truncated evidence sample, so cost is never understated.
+// findingQuantity extracts the cost-bearing quantity: the largest value a
+// poller verified (it saw the unsampled stream), or else the largest sampled
+// evidence value, so cost is never understated.
 func findingQuantity(f *rules.Finding, field string) (float64, bool) {
-	if v, ok := rules.AsFloat(f.Details[field]); ok {
+	if v, ok := largest(verifiedPairs(f), field); ok {
 		return v, true
 	}
-	best, found := 0.0, false
+	samples := make([]map[string]any, 0, len(f.Evidence))
 	for _, ev := range f.Evidence {
-		if v, ok := rules.AsFloat(ev.Attrs[field]); ok && (!found || v > best) {
+		samples = append(samples, ev.Attrs)
+	}
+	return largest(samples, field)
+}
+
+// verifiedPairs returns what a cardinality poller measured for the finding:
+// Details["poller"]["pairs"], one map per (metric, attribute). A report read
+// back from JSON holds the same shape as []any, so both are accepted.
+func verifiedPairs(f *rules.Finding) []map[string]any {
+	poller, _ := f.Details["poller"].(map[string]any)
+	switch pairs := poller["pairs"].(type) {
+	case []map[string]any:
+		return pairs
+	case []any:
+		out := make([]map[string]any, 0, len(pairs))
+		for _, p := range pairs {
+			if m, ok := p.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// largest is the largest numeric value of field among the rows.
+func largest(rows []map[string]any, field string) (float64, bool) {
+	best, found := 0.0, false
+	for _, row := range rows {
+		if v, ok := rules.AsFloat(row[field]); ok && (!found || v > best) {
 			best, found = v, true
 		}
 	}

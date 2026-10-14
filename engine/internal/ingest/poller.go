@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/tamen25/Argus/engine/internal/rules"
@@ -13,9 +14,17 @@ import (
 type MimirAPI interface {
 	// LabelValues returns all values of a label across the tenant.
 	LabelValues(ctx context.Context, label string) ([]string, error)
-	// LabelCardinality returns the series-count contribution of a label on a
-	// metric (Mimir cardinality API) — an upper bound on distinct values.
-	LabelCardinality(ctx context.Context, metric, label string) (int64, error)
+	// LabelCardinality returns how many distinct values label has among the
+	// series the selector matches, or 0 when it matches none (Mimir
+	// cardinality API).
+	LabelCardinality(ctx context.Context, selector, label string) (int64, error)
+}
+
+// serviceSelector selects one metric's series for one service. Mimir carries
+// the service in job, as "<namespace>/<service>" or "<service>" (see
+// verifyServicePresence), so the match allows either.
+func serviceSelector(metric, service string) string {
+	return fmt.Sprintf(`{__name__=%q, job=~%q}`, metric, "(.+/)?"+regexp.QuoteMeta(service))
 }
 
 // Poller runs backend verification for rules that declare a
@@ -85,51 +94,63 @@ func (p *Poller) verifyServicePresence(ctx context.Context, col *rules.Collector
 	return nil
 }
 
-// verifyCardinality re-checks flagged (metric, attribute) pairs against the
-// Mimir cardinality API, which sees the unsampled stream.
+// verifyCardinality re-checks each service's flagged (metric, attribute)
+// pairs against the Mimir cardinality API, which sees the unsampled stream.
+//
+// One result is recorded per service, combining its pairs: the rule fails if
+// any pair Mimir measured is over the limit. Recording a result per pair
+// instead let the last pair checked overwrite the others, so a passing pair
+// could hide a failing one. A pair Mimir has no series for (a metric only on
+// the sampled stream, or named differently in Mimir) is not measured, and a
+// service with no measured pair keeps its sampled result.
 func (p *Poller) verifyCardinality(ctx context.Context, col *rules.Collector, r *rules.Rule, services []string) error {
 	limit := int64(10000)
 	if v, ok := rules.AsFloat(r.Params["max_cardinality"]); ok {
 		limit = int64(v)
 	}
 
+	flagged := flaggedPairs(col.Snapshot(), r.ID, services)
 	var firstErr error
-	for _, pair := range flaggedPairs(col.Snapshot(), r.ID, services) {
-		n, err := p.api.LabelCardinality(ctx, pair.metric, pair.attribute)
-		switch {
-		case err != nil:
-			if firstErr == nil {
-				firstErr = err
+	for _, svc := range services {
+		passed, measured := true, []map[string]any{}
+		for _, pair := range flagged[svc] {
+			n, err := p.api.LabelCardinality(ctx, serviceSelector(pair.metric, svc), pair.attribute)
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
 			}
-		case n == 0:
-			// Mimir has no series for this pair (e.g. the metric only exists
-			// on the sampled stream): nothing to verify, so the sampled
-			// finding stands.
-		default:
-			col.RecordPollerResult(rules.PollerResult{
-				Service: pair.service, RuleID: r.ID, Passed: n < limit,
-				Details: map[string]any{
-					"check": "mimir_label_cardinality", "metric": pair.metric,
-					"attribute": pair.attribute, "series": n,
-				},
-			})
+			if n == 0 {
+				continue
+			}
+			passed = passed && n < limit
+			measured = append(measured, map[string]any{"metric": pair.metric, "attribute": pair.attribute, "cardinality": n})
 		}
+		if len(measured) == 0 {
+			continue
+		}
+		col.RecordPollerResult(rules.PollerResult{
+			Service: svc, RuleID: r.ID, Passed: passed,
+			Details: map[string]any{"check": "mimir_label_cardinality", "pairs": measured},
+		})
 	}
 	return firstErr
 }
 
-// flaggedPair is one (metric, attribute) a cardinality finding named.
-type flaggedPair struct{ service, metric, attribute string }
+// metricAttribute is one (metric, attribute) pair a cardinality finding named.
+type metricAttribute struct{ metric, attribute string }
 
-// flaggedPairs lists the (metric, attribute) pairs that rule ruleID's findings
-// name as evidence, for the given services.
-func flaggedPairs(snap *rules.Snapshot, ruleID string, services []string) []flaggedPair {
-	var pairs []flaggedPair
+// flaggedPairs lists, per service, the distinct (metric, attribute) pairs
+// that rule ruleID's findings name as evidence, in evidence order.
+func flaggedPairs(snap *rules.Snapshot, ruleID string, services []string) map[string][]metricAttribute {
+	out := map[string][]metricAttribute{}
 	for _, svc := range services {
 		rep := snap.Service(svc)
 		if rep == nil {
 			continue
 		}
+		seen := map[metricAttribute]bool{}
 		for _, f := range rep.Findings {
 			if f.RuleID != ruleID {
 				continue
@@ -137,11 +158,13 @@ func flaggedPairs(snap *rules.Snapshot, ruleID string, services []string) []flag
 			for _, ev := range f.Evidence {
 				metric, _ := ev.Attrs["metric"].(string)
 				attr, _ := ev.Attrs["attribute"].(string)
-				if metric != "" && attr != "" {
-					pairs = append(pairs, flaggedPair{svc, metric, attr})
+				pair := metricAttribute{metric, attr}
+				if metric != "" && attr != "" && !seen[pair] {
+					seen[pair] = true
+					out[svc] = append(out[svc], pair)
 				}
 			}
 		}
 	}
-	return pairs
+	return out
 }

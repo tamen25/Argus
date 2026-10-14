@@ -56,7 +56,7 @@ report as complete.
 
 | Source | Backend | Query | Feeds |
 |---|---|---|---|
-| `SeriesSource` | Mimir | cardinality API, series per `service_name` | active-series cost (metrics) |
+| `SeriesSource` | Mimir | cardinality API (`count_method=active`), series per `--service-label` value | active-series cost (metrics) |
 | `LogBytesSource` | Loki | `sum by (service_name) (bytes_over_time(…[window]))` | log ingest cost |
 | `StorageSource` | S3 / MinIO | object inventory by storage class | storage cost |
 
@@ -64,6 +64,14 @@ Metric **ingest-byte** attribution is deliberately not inferred from the
 sampled mirror; metrics cost is attributed through active series (Mimir's real
 driver), which the cardinality API reports exactly. Trace-byte attribution
 lands with the storage inventory.
+
+The cardinality API lists at most 500 values of the label. The series of any
+values past that are reported as one `(other: N more values)` line, and series
+that do not carry the label at all as `(no <label> label)`, so the active
+series always add up to the tenant's total. A large `(no … label)` line usually
+means the label is wrong for your metrics: with OTLP ingestion, Mimir carries
+the service in `job` (`<namespace>/<service>` or `<service>`), while Loki uses
+`service_name`. The flag is shared by both sources today.
 
 ## How usage becomes cost
 
@@ -85,8 +93,10 @@ every report.
 
 ## Pricing findings — the signature move
 
-Every quality finding that has a cost dimension is priced: `argus score`
-attaches an `estimated_monthly_cost` so the report reads *"score 61, and here's
+Every quality finding that has a cost dimension is priced when pricing is
+configured (`argus score --pricing`, or `argus serve --cost-pricing` for
+`/api/report`): the finding gets `estimated_monthly_cost` and `cost_currency`,
+the Scores page shows it, and the report reads *"score 61, and here's
 the invoice for why."*
 
 Which findings are priced is **data, not code** — a rule declares a `cost:`
@@ -103,8 +113,9 @@ cost:
 For `MET-001` (bounded metric-attribute cardinality), each distinct value of a
 high-cardinality label drives roughly one active series for the metric, so the
 observed cardinality × the active-series rate is that label's monthly cost.
-The pricer reads the quantity from the finding (poller-verified `Details`
-first, else the worst truncated evidence sample, so cost is never understated)
+The pricer reads the quantity from the finding (the largest value the
+poller verified, in `details.poller.pairs`, else the largest sampled evidence
+value, so cost is never understated)
 and leaves any finding it can't price **unset** — never a fabricated `$0`.
 
 This is an honest **lower bound**: label combinations multiply series further,

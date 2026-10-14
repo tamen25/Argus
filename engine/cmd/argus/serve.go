@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 
+	"github.com/tamen25/Argus/engine/internal/cost"
 	"github.com/tamen25/Argus/engine/internal/export"
 	"github.com/tamen25/Argus/engine/internal/ingest"
 	"github.com/tamen25/Argus/engine/internal/remediate"
@@ -208,7 +209,15 @@ func startScoring(ctx context.Context, cfg serveConfig, mux *http.ServeMux, reg 
 	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{MaxPairs: cfg.maxPairs, Window: cfg.window})
 	export.RegisterAggregateStats(reg, pipe.PairsTracked, pipe.Evictions)
 	export.RegisterItemStats(reg, pipe.ItemsConsumed)
-	registerAPI(mux, col, pipe, rs, readSpecVersion(cfg.specVersionFile), cfg.window)
+	api := scoringAPI{col: col, pipe: pipe, rules: rs, specVersion: readSpecVersion(cfg.specVersionFile), window: cfg.window}
+	if cfg.cost.pricingPath != "" {
+		// Already validated by registerCostEndpoint; loaded again here so the
+		// report can price its findings.
+		if api.pricing, err = cost.LoadPricing(cfg.cost.pricingPath); err != nil {
+			return nil, err
+		}
+	}
+	registerAPI(mux, api)
 
 	lis, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.otlpAddr)
 	if err != nil {
@@ -269,24 +278,38 @@ func otlpEndpointFromEnv() string {
 // registerAPI mounts the JSON endpoints backing the soak harness and the
 // Grafana plugin. All of them are read-only: none may evaluate anything into
 // the collector.
-func registerAPI(mux *http.ServeMux, col *rules.Collector, pipe *ingest.Pipeline, rs []*rules.Rule, specVersion string, window time.Duration) {
-	mux.HandleFunc("GET /api/report", reportHandler(col, pipe, specVersion, window))
-	mux.HandleFunc("GET /api/aggregates", aggregatesHandler(pipe))
-	mux.HandleFunc("GET /api/servicegraph", serviceGraphHandler(col, pipe, window))
-	mux.HandleFunc("GET /api/remediation", remediationHandler(col, rs))
+func registerAPI(mux *http.ServeMux, api scoringAPI) {
+	mux.HandleFunc("GET /api/report", reportHandler(api))
+	mux.HandleFunc("GET /api/aggregates", aggregatesHandler(api.pipe))
+	mux.HandleFunc("GET /api/servicegraph", serviceGraphHandler(api.col, api.pipe, api.window))
+	mux.HandleFunc("GET /api/remediation", remediationHandler(api.col, api.rules))
+}
+
+// scoringAPI is what the live-scoring endpoints read.
+type scoringAPI struct {
+	col         *rules.Collector
+	pipe        *ingest.Pipeline
+	rules       []*rules.Rule
+	specVersion string
+	window      time.Duration
+	// pricing, when set, prices the report's findings (--cost-pricing).
+	pricing *cost.Pricing
 }
 
 // reportHandler serves /api/report: the same envelope the score CLI writes,
 // built from live state. The soak harness snapshots it hourly.
-func reportHandler(col *rules.Collector, pipe *ingest.Pipeline, specVersion string, window time.Duration) http.HandlerFunc {
+func reportHandler(api scoringAPI) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		snap := col.Snapshot()
-		notes := ingestNotes(pipe.Evictions(), snap, true)
+		snap := api.col.Snapshot()
+		if api.pricing != nil {
+			cost.PriceFindings(snap, api.rules, api.pricing)
+		}
+		notes := ingestNotes(api.pipe.Evictions(), snap, true)
 		writeJSON(w, &report.Report{
 			GeneratedAt:     time.Now().UTC(),
 			ArgusVersion:    version,
-			SpecVersion:     specVersion,
-			Window:          window.String(),
+			SpecVersion:     api.specVersion,
+			Window:          api.window.String(),
 			RuleSetComplete: false, // the official rule set is implemented in part
 			Notes:           notes,
 			Snapshot:        snap,

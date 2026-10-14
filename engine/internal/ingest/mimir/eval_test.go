@@ -97,7 +97,7 @@ func TestAdapters(t *testing.T) {
 		switch r.URL.Path {
 		case "/prometheus/api/v1/cardinality/label_values":
 			label = r.URL.Query().Get("label_names[]")
-			_, _ = w.Write([]byte(`{"labels":[{"label_name":"service_name","cardinality":[{"label_value":"cart","series_count":7}]}]}`))
+			_, _ = w.Write([]byte(`{"series_count_total":7,"labels":[{"label_name":"service_name","label_values_count":1,"series_count":7,"cardinality":[{"label_value":"cart","series_count":7}]}]}`))
 		case "/prometheus/api/v1/query":
 			if r.URL.Query().Get("query") == "scalar(1)" {
 				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"scalar","result":[]}}`))

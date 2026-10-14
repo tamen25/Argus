@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/tamen25/Argus/engine/internal/cost"
 	"github.com/tamen25/Argus/engine/internal/ingest"
 	"github.com/tamen25/Argus/engine/internal/ingest/mimir"
 	"github.com/tamen25/Argus/engine/internal/report"
@@ -33,6 +34,7 @@ type scoreOptions struct {
 	failBelow       float64
 	storeDSN        string
 	specVersionFile string
+	pricingPath     string
 
 	// test seam: pre-bound listener overrides listenOTLP
 	listener net.Listener
@@ -73,6 +75,7 @@ per-service Instrumentation Scores. Exit code 2 when --fail-below-score trips
 	f.Float64Var(&opts.failBelow, "fail-below-score", 0, "exit non-zero when fleet score is below this value (CI gate)")
 	f.StringVar(&opts.storeDSN, "store-dsn", "", "Postgres DSN; when set, snapshot and findings are persisted")
 	f.StringVar(&opts.specVersionFile, "spec-version-file", ".instrumentation-score-version", "file holding the pinned spec version")
+	f.StringVar(&opts.pricingPath, "pricing", "", "pricing.yaml: price each finding whose rule declares a cost block (estimated_monthly_cost)")
 	return cmd
 }
 
@@ -126,6 +129,15 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 		}
 	}
 
+	snap := col.Snapshot()
+	if opts.pricingPath != "" {
+		pricing, err := cost.LoadPricing(opts.pricingPath)
+		if err != nil {
+			return nil, fmt.Errorf("pricing: %w", err)
+		}
+		cost.PriceFindings(snap, rs, pricing)
+	}
+
 	rep := &report.Report{
 		GeneratedAt:     time.Now().UTC(),
 		ArgusVersion:    version,
@@ -133,7 +145,7 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 		Window:          opts.window.String(),
 		RuleSetComplete: false, // the official rule set is implemented in part
 		Notes:           notes,
-		Snapshot:        col.Snapshot(),
+		Snapshot:        snap,
 	}
 	if opts.storeDSN != "" {
 		if err := persistSnapshot(ctx, opts.storeDSN, rep); err != nil {
