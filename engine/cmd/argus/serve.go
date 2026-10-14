@@ -36,6 +36,7 @@ func newServeCmd() *cobra.Command {
 		otlpAddr    string
 		rulesDir    string
 		specVerFile string
+		noAuth      bool
 		interval    time.Duration
 		maxPairs    int
 		window      time.Duration
@@ -49,13 +50,15 @@ func newServeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return serve(cmd.Context(), serveConfig{
 				addr: addr, otlpAddr: otlpAddr, rulesDir: rulesDir,
-				specVersionFile: specVerFile,
-				interval:        interval, maxPairs: maxPairs, window: window,
+				specVersionFile: specVerFile, insecureNoAuth: noAuth,
+				interval: interval, maxPairs: maxPairs, window: window,
 				cost: cost, backtest: bt, bench: bn,
 			})
 		},
 	}
 	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (/healthz, /metrics, /api/report, /api/aggregates, /api/servicegraph, /api/cost, /api/backtest, /api/bench)")
+	cmd.Flags().BoolVar(&noAuth, "insecure-no-auth", false,
+		"serve /api without "+apiTokenEnv+" on a non-loopback --addr (only where the network itself keeps callers out)")
 	cmd.Flags().StringVar(&specVerFile, "spec-version-file", ".instrumentation-score-version", "file with the pinned Instrumentation Score spec version, echoed in reports")
 	cmd.Flags().StringVar(&otlpAddr, "otlp-grpc", "", "OTLP gRPC listen address (e.g. :4317); empty disables ingest")
 	cmd.Flags().StringVar(&rulesDir, "rules", "", "extra rule YAML directory overriding/extending built-ins")
@@ -115,12 +118,14 @@ type serveCostConfig struct {
 type serveConfig struct {
 	addr, otlpAddr, rulesDir string
 	specVersionFile          string
-	interval                 time.Duration
-	maxPairs                 int
-	window                   time.Duration
-	cost                     serveCostConfig
-	backtest                 serveBacktestConfig
-	bench                    serveBenchConfig
+	// insecureNoAuth allows an open API on a non-loopback address.
+	insecureNoAuth bool
+	interval       time.Duration
+	maxPairs       int
+	window         time.Duration
+	cost           serveCostConfig
+	backtest       serveBacktestConfig
+	bench          serveBenchConfig
 }
 
 // validate checks the duration flags. They are checked whether or not the
@@ -183,13 +188,44 @@ func serve(ctx context.Context, cfg serveConfig) error {
 		}
 		defer stopScoring()
 	}
-	return serveHTTP(ctx, cfg.addr, requireAPIToken(mux, os.Getenv(apiTokenEnv)))
+	token := os.Getenv(apiTokenEnv)
+	if err := checkAuthBoundary(cfg.addr, token, cfg.insecureNoAuth); err != nil {
+		return err
+	}
+	return serveHTTP(ctx, cfg.addr, requireAPIToken(mux, token))
 }
 
 // apiTokenEnv names the variable holding the engine API's bearer token. The
 // Helm chart sets it from a generated Secret (master plan §5.3: the API
 // requires a token; the plugin backend is its only documented caller).
 const apiTokenEnv = "ARGUS_API_TOKEN" //nolint:gosec // the variable's name, not a credential
+
+// checkAuthBoundary refuses to serve the API without a token on an address
+// other machines can reach. The API returns findings, evidence and cost data,
+// and the master plan requires a token for it. Without one, serve still runs
+// on loopback (a laptop, the CI dogfood gate), and anywhere else only with
+// --insecure-no-auth: an open API should be a choice someone made.
+func checkAuthBoundary(addr, token string, insecureNoAuth bool) error {
+	if token != "" || insecureNoAuth || isLoopback(addr) {
+		return nil
+	}
+	return fmt.Errorf("%s is not set and --addr %s accepts connections from other machines: "+
+		"set the token, listen on 127.0.0.1, or pass --insecure-no-auth to serve the API open on purpose", apiTokenEnv, addr)
+}
+
+// isLoopback reports whether a listen address only accepts local connections.
+// ":8080" (no host) listens on every interface, so it is not.
+func isLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
 
 // requireAPIToken guards every /api/ route with the bearer token. /healthz
 // and /metrics stay open for probes and Prometheus; they carry no findings.

@@ -5,7 +5,7 @@ description: >-
   your alerts, and benchmarks whether an AI agent can diagnose incidents from it.
 type: application
 version: 0.1.0
-appVersion: "0.0.1"
+appVersion: "1.0.0"
 home: https://github.com/tamen25/Argus
 sources:
   - https://github.com/tamen25/Argus
