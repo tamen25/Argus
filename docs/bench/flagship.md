@@ -24,8 +24,11 @@ One line per agent, `label | argus bench run flags`:
 # agents.txt
 claude-sonnet | --agent anthropic --model claude-sonnet-5-5 --api-key-env ANTHROPIC_API_KEY
 gpt-budget    | --agent openai --endpoint https://api.openai.com/v1/chat/completions --model <budget-model> --api-key-env OPENAI_API_KEY
-holmesgpt     | --agent shell --shell-command holmes --shell-arg ask
+holmesgpt     | --agent shell --shell-command holmes --shell-arg ask --shell-arg "what broke?"
 ```
+
+Flags are split the way a shell splits words, so a quoted argument stays one
+argument; nothing in the file is expanded or run. Labels must be unique.
 
 The plan asks for at least one frontier model, one budget model and HolmesGPT.
 The v1.0 flagship ran one open-weights model on a server the maintainer runs
@@ -72,8 +75,11 @@ returned to the baseline condition at the end, even on failure.
 
 ### In sessions
 
-The matrix does not have to run in one sitting. A cell whose report exists is
-skipped, so the same command resumes where the last one stopped, and
+The matrix does not have to run in one sitting. A cell whose report exists, and
+was made with the same condition, repeats and budget, is skipped, so the same
+command resumes where the last one stopped. A report made with other settings
+stops the matrix (delete it, or use its flags), and one that is not valid JSON
+is set aside as `.invalid` and its cell runs again.
 `--stop-after <minutes>` ends a session on time (the cell running then finishes
 first). Ctrl-C is safe too: the run in progress removes its fault and writes no
 report, so that cell runs again next time.

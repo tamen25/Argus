@@ -303,9 +303,20 @@ at no model cost.
 ## Output
 
 `--format md` (default) renders a human report; `--format json` is CI-friendly.
-Every report carries the reproducibility record — scenario hash, agent, env
-digest, seed, budget — plus the standing caveats, which cannot be stripped from
-a rendering.
+Every report carries the reproducibility record, plus the standing caveats,
+which cannot be stripped from a rendering. The record holds:
+
+- the **scenario hash**, which covers the scenario YAML and the contents of
+  every manifest and script it references, so a changed fault script changes
+  the hash;
+- the agent, its model and endpoint, and its limits;
+- the env digest and the budget;
+- the **harness** (`harness`): the Argus build, the injector, the tools
+  offered, the normalization methods, the judge model, and a shell agent's
+  command. The leaderboard flags an agent whose reports come from different
+  harnesses;
+- the seed. It is a label only: no adapter passes it to a model, so it does
+  not make a model's answers repeatable.
 
 Each run also records its **tool log**: every tool call the agent made, with its
 arguments (truncated) and whether it returned an error. The answers are not kept

@@ -138,12 +138,12 @@ fixed; a finding that does not hold is marked so here, with the reason.
   page, and settings errors only reach the console. Done in #115: every page refreshes every minute, says when it was updated and when a refresh failed (keeping the last data), and ignores stale or late responses; a failed Bench comparison is shown beside the picker and the leaderboard stays; settings show why a save failed; an empty engine URL saves as the default.
 - [x] **R34** — `stats.Percentile` rounds where nearest-rank takes the ceiling,
   and NaN passes range checks. Done in #117: `Percentile` takes the ceiling of the rank; pricing, scenario weights, steady-state bounds and synth specs reject NaN and infinity; synth specs also reject duplicate services and incident IDs, negative rates, jitter of 1 or more, and an explicit non-positive step.
-- [ ] **R35** — `bench-matrix.sh` loses quoted agent flags, and port-forwards
-  ignore `ARGUS_KUBE_CONTEXT`.
-- [ ] **R36** — bench provenance does not hash referenced scripts or manifests,
-  the tool surface, or the judge config.
+- [x] **R35** — `bench-matrix.sh` loses quoted agent flags, and port-forwards
+  ignore `ARGUS_KUBE_CONTEXT`. Done in #121: agent flags are split like shell words (quotes kept, nothing run); duplicate labels, unbalanced quotes and non-numeric budgets are rejected; port-forwards use `ARGUS_KUBE_CONTEXT` and every one must answer before a cell starts.
+- [x] **R36** — bench provenance does not hash referenced scripts or manifests,
+  the tool surface, or the judge config. Done in #121: the scenario hash covers referenced manifests and scripts; reports record the harness (build, injector, tools, normalizers, judge, shell command) and the leaderboard flags differing harnesses; the matrix env digest is the cluster context and version, not a date; the seed is documented as a label.
 - [x] **R37** — reports are written in place (a partial file looks complete),
-  and `fileSafe` maps `a/b` and `a_b` to the same patch file. Done in #110: artifacts are written atomically (`internal/atomicfile`), and `fileSafe` adds a hash when it changes a name. Still open: `bench-matrix.sh` validating a report before treating a cell as done (with R35/R36).
+  and `fileSafe` maps `a/b` and `a_b` to the same patch file. Done in #110: artifacts are written atomically (`internal/atomicfile`), and `fileSafe` adds a hash when it changes a name. The matrix half is done in #121: a cell counts as done only if its report matches the cell's condition, repeats and budget.
 - [ ] **R38** — CI never runs the plugin's Go tests, Playwright, the Postgres
   integration tests, or a formatter check. Partly done in #115: CI runs the plugin backend's Go tests (with -race), the typecheck, a Prettier check, and the Postgres integration tests (testcontainers); `test:ci` no longer passes with no tests; `make test` runs the plugin backend's tests. Still open: a Playwright job against a running Grafana.
 

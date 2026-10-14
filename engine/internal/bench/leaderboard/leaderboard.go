@@ -392,6 +392,7 @@ func settingCaveats(reports []orchestrator.Report) []string {
 	budgets := variants{} // agent → budgets
 	limits := variants{}  // agent → per-call timeout and turn cap
 	models := variants{}  // agent → model and endpoint
+	harness := variants{} // agent → Argus build, injector, tools, normalization
 	for _, r := range reports {
 		hashes.add(r.Scenario, short(r.ScenarioHash))
 		budgets.add(r.Agent, budget(r.Budget))
@@ -399,6 +400,7 @@ func settingCaveats(reports []orchestrator.Report) []string {
 		if r.Model != nil {
 			models.add(r.Agent, strings.TrimSuffix(r.Model.Model+" at "+r.Model.Endpoint, " at "))
 		}
+		harness.add(r.Agent, harnessLabel(r.Harness))
 	}
 
 	var out []string
@@ -410,7 +412,22 @@ func settingCaveats(reports []orchestrator.Report) []string {
 		"Agent `%s` ran with %d different per-call limits (timeout, output cap per turn: %s). A run a tighter limit ended has no diagnosis, and might have answered under a looser one.")...)
 	out = append(out, models.caveats("; ",
 		"Agent `%s` was served by %d different models or endpoints (%s). Those are different subjects under one name.")...)
+	out = append(out, harness.caveats("; ",
+		"Agent `%s` ran under %d different harnesses (%s): a different build, injector, tool set or normalization can change a result.")...)
 	return out
+}
+
+// harnessLabel summarizes what a report records about its harness.
+func harnessLabel(h *orchestrator.HarnessInfo) string {
+	if h == nil {
+		return "harness not recorded"
+	}
+	label := fmt.Sprintf("argus %s, inject %s, tools %s, normalization %s",
+		h.ArgusVersion, h.Injector, strings.Join(h.Tools, "+"), strings.Join(h.Normalizers, "+"))
+	if h.Judge != nil {
+		label += ", judge " + h.Judge.Model
+	}
+	return label
 }
 
 // categoryListCaveats flags runs that were offered different category lists,
