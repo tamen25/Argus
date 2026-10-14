@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/tamen25/Argus/engine/internal/atomicfile"
 	"github.com/tamen25/Argus/engine/internal/bench/leaderboard"
 	"github.com/tamen25/Argus/engine/internal/bench/orchestrator"
 )
@@ -93,7 +94,7 @@ recomputed by hand from the run reports: no model is involved.`,
 			}
 
 			if out != "" {
-				if err := os.WriteFile(out, payload, 0o600); err != nil {
+				if err := atomicfile.Write(out, payload, 0o600); err != nil {
 					return err
 				}
 				_, err := fmt.Fprintf(cmd.OutOrStdout(), "bench report written: %s\n", out)

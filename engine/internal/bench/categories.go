@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/tamen25/Argus/engine/internal/atomicfile"
 )
 
 // CategoriesKind is the kind of a category list file.
@@ -158,7 +160,7 @@ func AddCategories(path string, add []Category) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := os.WriteFile(path, out, 0o600); err != nil {
+	if err := atomicfile.Write(path, out, 0o600); err != nil {
 		return 0, err
 	}
 	return len(list.Categories), nil

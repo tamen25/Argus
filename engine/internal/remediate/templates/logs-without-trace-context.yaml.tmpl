@@ -1,4 +1,4 @@
-# Argus remediation: logs-without-trace-context — {{.RuleID}} on "{{.Service}}"
+# Argus remediation: logs-without-trace-context — {{.RuleID}} on {{q .Service}}
 {{- if .RatioPct}}
 # {{.RatioPct}} of observed log volume carried no trace_id.
 {{- end}}

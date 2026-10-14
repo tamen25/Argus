@@ -7,7 +7,7 @@ Finding: {{.RuleName}} ({{.RuleID}})
 Service: {{.Service}}
 Impact: {{.Impact}}
 Description: {{.Description}}
-{{if .Evidence}}Evidence (attribute values redacted):
+{{if .Evidence}}Evidence{{if .Redacted}} (attribute values redacted){{end}}:
 {{range .Evidence}}{{range $k, $v := .Attrs}}  - {{$k}}: {{$v}}
-{{end}}{{end}}{{end}}Generated remediation patch:
-{{.Patch}}
+{{end}}{{end}}{{end}}{{if .Patch}}Generated remediation patch{{if .Redacted}} (names from telemetry replaced){{end}}:
+{{.Patch}}{{else}}The generated patch is not shown.{{end}}

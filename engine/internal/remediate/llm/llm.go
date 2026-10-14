@@ -23,9 +23,10 @@ type Evidence struct {
 	Attrs   map[string]any
 }
 
-// ExplainInput is everything the LLM sees about a finding. Structural fields
-// (rule id/name, service, impact, description) are Argus's own text; only the
-// evidence carries user telemetry, and Redact scrubs it.
+// ExplainInput is everything the LLM sees about a finding. The rule's own
+// fields (ID, name, impact, description) are Argus's text. The service name,
+// the evidence, and the patch (which names the service, metric and
+// attribute) come from user telemetry, and Redact replaces them.
 type ExplainInput struct {
 	RuleID      string
 	RuleName    string
@@ -34,29 +35,41 @@ type ExplainInput struct {
 	Description string
 	// Patch is the deterministic remediation Argus already generated; the LLM
 	// explains it, never replaces it.
-	Patch    string
-	Evidence []Evidence
+	Patch string
+	// RedactedPatch is the same patch rendered from the finding with its
+	// service and evidence values replaced, so it holds no telemetry value.
+	// Redact sends it in place of Patch; empty, no patch is sent.
+	RedactedPatch string
+	Evidence      []Evidence
+	// Redacted records that Redact ran, so the prompt says so.
+	Redacted bool
 }
 
-// Client turns a finding into a human-readable explanation. Implementations
-// live only in this package (openai.go, and the Anthropic-native client).
+// Client turns a finding into a human-readable explanation. The one
+// implementation is the OpenAI-compatible client in openai.go.
 type Client interface {
 	Explain(ctx context.Context, in ExplainInput) (string, error)
 }
 
-// Redact returns a deep copy of in with every evidence attribute value
-// replaced by redactedPlaceholder and every free-text summary dropped. The
-// caller's input is never mutated. Keys are preserved so the model still sees
-// the shape (which metric, which attribute) without the values.
+// Redact returns a copy of in with nothing from user telemetry left in it:
+// the service name becomes redactedPlaceholder, every evidence attribute
+// value too, free-text summaries are dropped, and the patch is the one
+// rendered without telemetry values (RedactedPatch). Evidence keys are kept,
+// so the model still sees the shape (a metric, an attribute) without the
+// values. The caller's input is never mutated.
 func Redact(in ExplainInput) ExplainInput {
-	out := in // structural fields copy by value
+	out := in // the rule's own fields copy by value
+	out.Service = redactedPlaceholder
+	out.Patch = in.RedactedPatch
+	out.RedactedPatch = ""
+	out.Redacted = true
 	out.Evidence = make([]Evidence, len(in.Evidence))
 	for i, ev := range in.Evidence {
 		attrs := make(map[string]any, len(ev.Attrs))
 		for k := range ev.Attrs {
 			attrs[k] = redactedPlaceholder
 		}
-		out.Evidence[i] = Evidence{Summary: "", Attrs: attrs}
+		out.Evidence[i] = Evidence{Attrs: attrs}
 	}
 	return out
 }

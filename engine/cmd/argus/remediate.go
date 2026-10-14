@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/tamen25/Argus/engine/internal/atomicfile"
 	"github.com/tamen25/Argus/engine/internal/remediate"
 	"github.com/tamen25/Argus/engine/internal/remediate/llm"
 	"github.com/tamen25/Argus/engine/internal/report"
@@ -164,7 +167,7 @@ func findingsFor(rep *report.Report, ruleID, service string) []rules.Finding {
 func writePatches(outDir, tmpl, service string, outs map[string]string) error {
 	for format, content := range outs {
 		name := fmt.Sprintf("%s-%s.%s", fileSafe(service), tmpl, format)
-		if err := os.WriteFile(filepath.Join(outDir, name), []byte(content), 0o644); err != nil {
+		if err := atomicfile.Write(filepath.Join(outDir, name), []byte(content), 0o644); err != nil {
 			return err
 		}
 	}
@@ -174,13 +177,17 @@ func writePatches(outDir, tmpl, service string, outs map[string]string) error {
 // writeExplanation asks the LLM to explain a finding's patch and writes the
 // answer next to it, marked as generated: it never changes the patch.
 func writeExplanation(ctx context.Context, explainer llm.Client, outDir, tmpl string, f rules.Finding, outs map[string]string) error {
-	text, err := explainer.Explain(ctx, explainInputFor(f, outs))
+	in, err := explainInputFor(f, tmpl, outs)
+	if err != nil {
+		return err
+	}
+	text, err := explainer.Explain(ctx, in)
 	if err != nil {
 		return fmt.Errorf("llm explain for %s/%s: %w", f.RuleID, f.Service, err)
 	}
 	note := text + "\n\n---\nGenerated explanation — review; it never changes the patch or the score.\n"
 	name := fmt.Sprintf("%s-%s.explanation.md", fileSafe(f.Service), tmpl)
-	return os.WriteFile(filepath.Join(outDir, name), []byte(note), 0o644)
+	return atomicfile.Write(filepath.Join(outDir, name), []byte(note), 0o644)
 }
 
 // unsafeFileChars is everything but letters, digits, dot, dash and underscore.
@@ -190,28 +197,32 @@ var unsafeFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 // come from telemetry (the service.name attribute an application sends), so
 // one named "../../x" must not choose where a patch is written: anything
 // outside [A-Za-z0-9._-] becomes "_", and a name of only dots becomes "_".
+//
+// When that changes the name, a short hash of the original is appended:
+// "a/b" and "a_b" would otherwise share one file, and one service's patch
+// would overwrite the other's.
 func fileSafe(service string) string {
 	s := unsafeFileChars.ReplaceAllString(service, "_")
 	if strings.Trim(s, ".") == "" {
-		return "_"
+		s = "_"
 	}
-	return s
+	if s == service {
+		return s
+	}
+	sum := sha256.Sum256([]byte(service))
+	return s + "-" + hex.EncodeToString(sum[:4])
 }
 
-// explainInputFor maps a finding + its rendered patches into the LLM input.
+// explainInputFor maps a finding and its rendered patches into the LLM input.
 // The patch is the deterministic remediation the LLM explains (alloy.river
-// preferred, else the first format by name for a stable choice).
-func explainInputFor(f rules.Finding, outs map[string]string) llm.ExplainInput {
-	patch := outs["alloy.river"]
-	if patch == "" {
-		formats := make([]string, 0, len(outs))
-		for k := range outs {
-			formats = append(formats, k)
-		}
-		sort.Strings(formats)
-		if len(formats) > 0 {
-			patch = outs[formats[0]]
-		}
+// preferred, else the first format by name for a stable choice). The same
+// template is rendered a second time from the finding with its service and
+// evidence values replaced: that copy holds no telemetry, and it is the one
+// sent when redaction is on.
+func explainInputFor(f rules.Finding, tmpl string, outs map[string]string) (llm.ExplainInput, error) {
+	redacted, err := remediate.Render(tmpl, remediate.Context{Service: redactedValue, Finding: withoutTelemetry(f)})
+	if err != nil {
+		return llm.ExplainInput{}, err
 	}
 	ev := make([]llm.Evidence, 0, len(f.Evidence))
 	for _, e := range f.Evidence {
@@ -219,8 +230,46 @@ func explainInputFor(f rules.Finding, outs map[string]string) llm.ExplainInput {
 	}
 	return llm.ExplainInput{
 		RuleID: f.RuleID, RuleName: f.RuleName, Service: f.Service,
-		Impact: string(f.Impact), Description: f.Description, Patch: patch, Evidence: ev,
+		Impact: string(f.Impact), Description: f.Description,
+		Patch: preferredPatch(outs), RedactedPatch: preferredPatch(redacted), Evidence: ev,
+	}, nil
+}
+
+// preferredPatch picks the format the LLM is shown: alloy.river, else the
+// first format by name.
+func preferredPatch(outs map[string]string) string {
+	if p, ok := outs["alloy.river"]; ok {
+		return p
 	}
+	formats := make([]string, 0, len(outs))
+	for k := range outs {
+		formats = append(formats, k)
+	}
+	sort.Strings(formats)
+	if len(formats) == 0 {
+		return ""
+	}
+	return outs[formats[0]]
+}
+
+// redactedValue stands in for every telemetry value in the redacted patch.
+// It is not a valid name, so the templates write their placeholders instead.
+const redactedValue = "<redacted>"
+
+// withoutTelemetry is a copy of the finding with the service and every
+// evidence value replaced, the input for the patch that is safe to send.
+func withoutTelemetry(f rules.Finding) rules.Finding {
+	out := f
+	out.Service = redactedValue
+	out.Evidence = make([]rules.Evidence, len(f.Evidence))
+	for i, e := range f.Evidence {
+		attrs := make(map[string]any, len(e.Attrs))
+		for k := range e.Attrs {
+			attrs[k] = redactedValue
+		}
+		out.Evidence[i] = rules.Evidence{Kind: e.Kind, Attrs: attrs}
+	}
+	return out
 }
 
 func redactState(noRedact bool) string {

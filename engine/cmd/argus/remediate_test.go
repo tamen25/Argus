@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -150,23 +152,67 @@ func TestRunRemediateKeepsPatchesInsideOutDir(t *testing.T) {
 	if escaped, _ := filepath.Glob(filepath.Join(dir, "escaped*")); len(escaped) > 0 {
 		t.Fatalf("a patch escaped the output directory: %v", escaped)
 	}
-	if _, err := os.Stat(filepath.Join(out, ".._escaped-logs-without-trace-context.alloy.river")); err != nil {
-		t.Errorf("the patch for the hostile name is not where it should be: %v", err)
+	if found, _ := filepath.Glob(filepath.Join(out, ".._escaped-*-logs-without-trace-context.alloy.river")); len(found) != 1 {
+		t.Errorf("the patch for the hostile name is not where it should be: %v", found)
 	}
 }
 
+// A safe name is kept as it is. Any other is made safe and given a hash of
+// the original, so two names that sanitize alike still get two files.
 func TestFileSafe(t *testing.T) {
-	for in, want := range map[string]string{
-		"checkout":      "checkout",
-		"cart.v2_x-y":   "cart.v2_x-y",
-		"../../etc/x":   ".._.._etc_x",
-		`a/b\c`:         "a_b_c",
-		"..":            "_",
-		"":              "_",
-		"svc with spcs": "svc_with_spcs",
-	} {
-		if got := fileSafe(in); got != want {
-			t.Errorf("fileSafe(%q) = %q, want %q", in, got, want)
+	for _, keep := range []string{"checkout", "cart.v2_x-y"} {
+		if got := fileSafe(keep); got != keep {
+			t.Errorf("fileSafe(%q) = %q, want it unchanged", keep, got)
+		}
+	}
+	safe := regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	seen := map[string]string{}
+	for _, in := range []string{"../../etc/x", `a/b\c`, "..", "", "svc with spcs", "a/b", "a_b", "a b"} {
+		got := fileSafe(in)
+		if !safe.MatchString(got) || strings.Trim(got, ".") == "" || strings.Contains(got, "/") {
+			t.Errorf("fileSafe(%q) = %q, not a safe file-name component", in, got)
+		}
+		if other, dup := seen[got]; dup {
+			t.Errorf("fileSafe(%q) and fileSafe(%q) are both %q: one patch would overwrite the other", in, other, got)
+		}
+		seen[got] = in
+	}
+}
+
+// R07: with redaction on (the default) nothing from the service's telemetry
+// reaches the endpoint, in any field: not the service name, and not the patch,
+// which names the service in its comments and block labels. With
+// --llm-no-redact it does, which shows the check can fail.
+func TestRunRemediateExplainSendsNoTelemetry(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("testdata", "calibrate-soak", "report-000.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	reportPath := filepath.Join(dir, "report.json")
+	if err := os.WriteFile(reportPath, []byte(strings.ReplaceAll(string(src), `"checkout"`, `"zz-svc-marker"`)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, noRedact := range []bool{false, true} {
+		var body string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			body = string(b)
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"explained"}}]}`))
+		}))
+		_, err := runRemediate(context.Background(), &remediateOptions{
+			reportPath: reportPath, findingID: "ARG-LOG-001", service: "zz-svc-marker",
+			outDir: filepath.Join(dir, fmt.Sprint(noRedact)), explain: true,
+			llmEndpoint: srv.URL, llmModel: "m", llmMaxTokens: 100, llmNoRedact: noRedact,
+		})
+		srv.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		leaked := strings.Contains(body, "zz-svc-marker") || strings.Contains(body, "zz_svc_marker")
+		if leaked != noRedact {
+			t.Errorf("no-redact=%v: service name in the request = %v\n%s", noRedact, leaked, body)
 		}
 	}
 }

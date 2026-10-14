@@ -211,3 +211,72 @@ func TestRemediatedConditionIsTheRenderedTemplate(t *testing.T) {
 			"Regenerate it from the template.\n--- file ---\n%s\n--- template ---\n%s", body, want)
 	}
 }
+
+// Telemetry chooses metric names, attribute keys and service names. None of
+// them may change the shape of a patch: a quote, a backtick or a newline in a
+// name would otherwise end an OTTL string, an Alloy raw string or a comment,
+// and write configuration the reviewer did not ask for.
+func TestRenderHostileNames(t *testing.T) {
+	hostile := Context{
+		Service: "svc\nexporters: {evil: {}}",
+		Finding: rules.Finding{
+			RuleID: "MET-001",
+			Evidence: []rules.Evidence{{Kind: "aggregate", Attrs: map[string]any{
+				"metric":      "m\") or true or (\"",
+				"attribute":   "user_id`\n  zz_marker = true",
+				"cardinality": int64(48000), // as the engine hands it over, not float64
+			}}},
+		},
+	}
+	for name := range Available() {
+		safe, err := Render(name, metCtx())
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := Render(name, hostile)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for format, out := range got {
+			if strings.Contains(out, "zz_marker") && !strings.Contains(out, `\n  zz_marker`) {
+				t.Errorf("%s %s: a value's newline started a line:\n%s", name, format, out)
+			}
+			if strings.Contains(out, "\nexporters: {evil") {
+				t.Errorf("%s %s: the service name wrote configuration:\n%s", name, format, out)
+			}
+			if strings.Contains(out, "or true") && !strings.Contains(out, `\") or true`) {
+				t.Errorf("%s %s: the metric name was written into a statement:\n%s", name, format, out)
+			}
+			// Same number of lines as a clean render: no value added one.
+			if strings.Count(out, "\n") != strings.Count(safe[format], "\n") {
+				t.Errorf("%s %s: %d lines, want %d as for clean names", name, format,
+					strings.Count(out, "\n"), strings.Count(safe[format], "\n"))
+			}
+		}
+		var doc any
+		if err := yaml.Unmarshal([]byte(got["collector.yaml"]), &doc); err != nil {
+			t.Errorf("%s: collector.yaml does not parse: %v", name, err)
+		}
+	}
+
+	got, _ := Render("high-cardinality-attribute", hostile)
+	for _, want := range []string{placeholderMetric, placeholderAttribute, placeholderService, "~48000 distinct"} {
+		if !strings.Contains(got["collector.yaml"], want) {
+			t.Errorf("high-cardinality patch missing %q:\n%s", want, got["collector.yaml"])
+		}
+	}
+}
+
+// A service with no real name cannot be selected by name: the scope is left
+// for the reviewer to fill in rather than guessed.
+func TestRenderUnknownServiceIsNotScopedByName(t *testing.T) {
+	ctx := metCtx()
+	ctx.Service = "unknown_service:java"
+	got, err := Render("high-cardinality-attribute", ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got["collector.yaml"], `resource.attributes["service.name"] == "`+placeholderService+`"`) {
+		t.Errorf("want the scope left as a placeholder:\n%s", got["collector.yaml"])
+	}
+}

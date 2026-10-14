@@ -11,7 +11,7 @@ Evidence (attribute values redacted):
   - attribute: <redacted>
   - cardinality: <redacted>
   - metric: <redacted>
-Generated remediation patch:
+Generated remediation patch (names from telemetry replaced):
 // alloy.river
 otelcol.processor.attributes "drop_high_card" {
   action { key = "request_id" action = "delete" }
