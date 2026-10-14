@@ -54,7 +54,12 @@ func TestServeHealthzAndShutdown(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, serveConfig{addr: addr}) }()
+	cfg := serveConfig{
+		addr: addr, interval: 30 * time.Second, window: time.Hour,
+		cost:     serveCostConfig{window: time.Hour},
+		backtest: serveBacktestConfig{window: time.Hour, step: time.Minute},
+	}
+	go func() { done <- serve(ctx, cfg) }()
 
 	// Poll until the server answers (it needs a moment to bind).
 	url := fmt.Sprintf("http://%s/healthz", addr)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bench"
+	"github.com/tamen25/Argus/engine/internal/bounded"
 )
 
 // OpenAIConfig configures an OpenAI-compatible chat-completions agent. Any
@@ -178,7 +179,7 @@ func (a *OpenAIAgent) chat(ctx context.Context, body oaRequest) (oaResponse, err
 		return oaResponse{}, &httpStatusError{Agent: a.cfg.Name, Status: resp.StatusCode, Body: string(b)}
 	}
 	var out oaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := bounded.DecodeJSON(resp.Body, bounded.ModelResponse, &out); err != nil {
 		return oaResponse{}, err
 	}
 	return out, nil

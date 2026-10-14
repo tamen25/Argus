@@ -4,13 +4,14 @@ package mimir
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/tamen25/Argus/engine/internal/bounded"
 )
 
 // Client talks to Mimir's Prometheus-compatible HTTP API.
@@ -176,5 +177,5 @@ func (c *Client) get(ctx context.Context, u string, into any) error {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("mimir %s: HTTP %d: %s", u, resp.StatusCode, b)
 	}
-	return json.NewDecoder(resp.Body).Decode(into)
+	return bounded.DecodeJSON(resp.Body, bounded.BackendResponse, into)
 }

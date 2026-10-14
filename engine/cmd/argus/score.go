@@ -99,6 +99,9 @@ func scoreGate(snap *rules.Snapshot, failBelow float64) error {
 // mirror for the window, verify what Mimir can see, and build the report
 // (persisting it when a store is configured).
 func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
+	if err := positive("window", opts.window); err != nil {
+		return nil, err
+	}
 	rs, err := loadRules(opts.rulesDir)
 	if err != nil {
 		return nil, fmt.Errorf("loading rules: %w", err)

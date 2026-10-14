@@ -80,6 +80,10 @@ straight into CI.`,
 }
 
 func runBacktestDiff(ctx context.Context, opts *backtestDiffOptions) (backtest.Diff, error) {
+	if err := errors.Join(positive("step", opts.step), nonNegative("grace", opts.grace),
+		nonNegative("max-ttd-regression", opts.maxTTD)); err != nil {
+		return backtest.Diff{}, err
+	}
 	base := backtestRunOptions{
 		incidents: opts.incidents, mimirURL: opts.mimirURL, mimirTenant: opts.mimirTenant,
 		from: opts.from, to: opts.to, step: opts.step, grace: opts.grace,

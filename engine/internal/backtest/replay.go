@@ -33,6 +33,9 @@ type Firing struct {
 // pending state (a condition that began before the segment cannot be seen).
 // The caller records those caveats on the report.
 func Replay(ctx context.Context, q EvalQuerier, rule Rule, seg Segment, step time.Duration) ([]Firing, error) {
+	if err := checkStepping("step", seg.Start, seg.End, step); err != nil {
+		return nil, err
+	}
 	type state struct {
 		activeAt time.Time
 		firedAt  time.Time // zero until for: satisfied

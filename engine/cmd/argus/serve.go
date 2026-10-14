@@ -123,12 +123,31 @@ type serveConfig struct {
 	bench                    serveBenchConfig
 }
 
+// validate checks the duration flags. They are checked whether or not the
+// feature they belong to is enabled: the defaults are valid, so a bad value
+// was typed, and is wrong either way.
+func (cfg serveConfig) validate() error {
+	return errors.Join(
+		positive("score-interval", cfg.interval),
+		positive("cardinality-window", cfg.window),
+		positive("cost-window", cfg.cost.window),
+		nonNegative("cost-cache-ttl", cfg.cost.cacheTTL),
+		positive("backtest-window", cfg.backtest.window),
+		positive("backtest-step", cfg.backtest.step),
+		nonNegative("backtest-grace", cfg.backtest.grace),
+		nonNegative("backtest-cache-ttl", cfg.backtest.cacheTTL),
+	)
+}
+
 // serve runs the HTTP endpoints (and, when configured, the OTLP receiver and
 // periodic score export) until ctx is cancelled or SIGINT/SIGTERM.
 //
 // Every route is registered as "GET /path" (Go 1.22 method patterns): the API
 // is read-only, so anything else is answered 405 by the mux itself.
 func serve(ctx context.Context, cfg serveConfig) error {
+	if err := cfg.validate(); err != nil {
+		return err
+	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

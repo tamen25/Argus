@@ -120,6 +120,10 @@ own output the same way twice would launder that error into the score.`,
 // runBenchScenario runs one scenario against one agent, with the repeats and
 // budgets the flags give, and writes the report.
 func runBenchScenario(cmd *cobra.Command, f benchFlags) error {
+	// Zero picks the adapter's default timeout; a negative one is a typo.
+	if err := errors.Join(nonNegative("agent-timeout", f.agentTimeout), nonNegative("judge-timeout", f.judgeTimeout)); err != nil {
+		return err
+	}
 	sc, err := bench.LoadScenario(f.scenario)
 	if err != nil {
 		return err

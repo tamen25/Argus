@@ -80,7 +80,7 @@ func TestRunScoreStreamWindow(t *testing.T) {
 
 func TestScoreCommandFailBelowThreshold(t *testing.T) {
 	// built-ins load with no rules dir at all; a custom dir overrides by ID
-	rep0, err := runScore(context.Background(), &scoreOptions{specVersionFile: specVersionFile(t)})
+	rep0, err := runScore(context.Background(), &scoreOptions{specVersionFile: specVersionFile(t), window: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ evaluation:
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rep1, err := runScore(context.Background(), &scoreOptions{rulesDir: override, specVersionFile: specVersionFile(t)})
+	rep1, err := runScore(context.Background(), &scoreOptions{rulesDir: override, specVersionFile: specVersionFile(t), window: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}

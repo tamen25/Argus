@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/tamen25/Argus/engine/internal/bounded"
 )
 
 // workloadKinds are what a root cause is named as. Pods are left out: they
@@ -177,10 +178,14 @@ func (k *KubeTopology) kubectl(ctx context.Context, args ...string) ([]byte, err
 	// Arguments are a list, not a shell line, and the only agent-supplied one
 	// (the namespace) is checked against validNamespace first.
 	cmd := exec.CommandContext(ctx, "kubectl", args...) //nolint:gosec // see above
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	stdout := &bounded.Buffer{Limit: bounded.ProcessOutput}
+	stderr := &bounded.Buffer{Limit: bounded.ProcessErrors}
+	cmd.Stdout, cmd.Stderr = stdout, stderr
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("kubectl %s: %w: %s", strings.Join(args, " "), err, truncate(stderr.Bytes(), 512))
+	}
+	if stdout.Overflowed() {
+		return nil, fmt.Errorf("kubectl %s: output %w of %d bytes", strings.Join(args, " "), bounded.ErrTooLarge, bounded.ProcessOutput)
 	}
 	return stdout.Bytes(), nil
 }

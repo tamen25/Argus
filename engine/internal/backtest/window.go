@@ -24,6 +24,9 @@ type InstantQuerier interface {
 // converged on, which is still the honest "queries older than this saw
 // nothing" line.
 func UsableWindow(ctx context.Context, q InstantQuerier, earliest, latest time.Time, resolution time.Duration) (time.Time, error) {
+	if resolution <= 0 {
+		return time.Time{}, fmt.Errorf("resolution must be positive, got %s", resolution)
+	}
 	ok, err := q.HasData(ctx, latest)
 	if err != nil {
 		return time.Time{}, err

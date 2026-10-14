@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tamen25/Argus/engine/internal/bounded"
 )
 
 // ShellConfig configures a shell-wrapped agent: an existing open-source agent
@@ -82,14 +84,18 @@ func (s *ShellAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 	)
 	cmd.Stdin = strings.NewReader(brief)
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdout := &bounded.Buffer{Limit: bounded.ProcessOutput}
+	stderr := &bounded.Buffer{Limit: bounded.ProcessErrors}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	usage := Usage{Steps: 1}
 	if err := cmd.Run(); err != nil {
 		return Result{Usage: usage}, fmt.Errorf("shell agent %s: %w (stderr: %s)",
 			s.cfg.Name, err, truncateStr(stderr.String(), 512))
+	}
+	if stdout.Overflowed() {
+		return Result{Usage: usage}, fmt.Errorf("shell agent %s: output %w of %d bytes", s.cfg.Name, bounded.ErrTooLarge, bounded.ProcessOutput)
 	}
 	out := bytes.TrimSpace(stdout.Bytes())
 	if len(out) == 0 {

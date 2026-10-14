@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -82,6 +83,9 @@ Every report carries the fidelity caveats that applied (docs/backtest-fidelity.m
 }
 
 func runBacktestRun(ctx context.Context, opts *backtestRunOptions) (backtest.Report, error) {
+	if err := errors.Join(positive("step", opts.step), nonNegative("grace", opts.grace)); err != nil {
+		return backtest.Report{}, err
+	}
 	from, to, err := parseWindow(opts.from, opts.to)
 	if err != nil {
 		return backtest.Report{}, err

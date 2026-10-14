@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bench"
+	"github.com/tamen25/Argus/engine/internal/bounded"
 )
 
 // Config configures the OpenAI-compatible endpoint used for judging.
@@ -175,7 +176,7 @@ func (j *LLMJudge) chat(ctx context.Context, prompt string) (string, error) {
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := bounded.DecodeJSON(resp.Body, bounded.ModelResponse, &out); err != nil {
 		return "", err
 	}
 	if len(out.Choices) == 0 {

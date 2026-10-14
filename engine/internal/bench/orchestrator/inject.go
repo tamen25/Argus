@@ -1,7 +1,6 @@
 package orchestrator
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bench"
+	"github.com/tamen25/Argus/engine/internal/bounded"
 )
 
 // NoopInjector performs no injection. Use it to score an agent against an
@@ -104,8 +104,8 @@ func (s ScriptInjector) run(ctx context.Context, sc bench.Scenario, script strin
 		"ARGUS_APP="+sc.Spec.Environment.App,
 	)
 	cmd.Env = append(cmd.Env, s.Env...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	stderr := &bounded.Buffer{Limit: bounded.ProcessErrors}
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("script %s: %w (stderr: %s)", script, err, truncateStr(stderr.String(), 512))
 	}

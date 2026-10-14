@@ -292,7 +292,10 @@ Each run also records its **tool log**: every tool call the agent made, with its
 arguments (truncated) and whether it returned an error. The answers are not kept
 — they are raw telemetry, and only their size is recorded. The markdown report
 summarizes the log per run and counts tool errors; the JSON report carries it in
-full as `tool_log`. It is what separates an agent that investigated badly from
+full as `tool_log`. An answer larger than 256 KiB is cut before the model sees
+it, with a note asking for a narrower query, and its log entry has `cut: true`
+next to the real `result_bytes`: every turn resends the whole conversation, so
+one oversized answer would be paid for on every later turn. It is what separates an agent that investigated badly from
 one whose queries were being rejected, and a run with many tool errors says so
 in its caveats. The category an agent gave is recorded verbatim too, so a
 mismatch shows what it actually said. Shell agents have no tool log: Argus cannot

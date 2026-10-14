@@ -154,3 +154,16 @@ func TestPathSegment(t *testing.T) {
 		}
 	}
 }
+
+// R29: an answer over the cap is an error that tells the agent how to narrow
+// its query, not a cut-off document that looks complete.
+func TestGetRawRefusesOversizedAnswers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("x", maxToolAnswer+1)))
+	}))
+	defer srv.Close()
+	_, err := getRaw(context.Background(), srv.Client(), srv.URL, "")
+	if err == nil || !strings.Contains(err.Error(), "narrow the query") {
+		t.Errorf("err = %v, want a size error that says how to narrow the query", err)
+	}
+}
