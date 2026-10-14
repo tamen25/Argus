@@ -5,7 +5,6 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -66,101 +65,73 @@ func NewAnthropic(cfg AnthropicConfig) *AnthropicAgent {
 // Name identifies the agent in the run record.
 func (a *AnthropicAgent) Name() string { return a.cfg.Name }
 
-// Diagnose runs the tool-use loop. Budget semantics match the OpenAI agent: the
-// budget is stated up front, tool calls are counted (submit_diagnosis terminal,
-// not counted), input+output tokens summed, and once the last permitted tool
-// call is used the agent is told and gets one turn to submit. An overrun
-// returns ErrBudgetExhausted with partial usage.
+// Diagnose runs the shared tool-use loop (runTurns) over the Anthropic
+// Messages format.
 func (a *AnthropicAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
-	tools := a.toolDefs(task.Tools, task.Categories)
-	msgs := []antMessage{{
-		Role: "user",
-		Content: []antBlock{{Type: "text", Text: task.Brief + categoryBrief(task.Categories) + "\n\nWhen you have identified the root cause, call " +
-			submitToolName + "." + budgetBrief(task.Budget)}},
-	}}
-
-	s := &session{budget: task.Budget}
-	hardStep := 20
-	if task.Budget.MaxToolCalls > 0 {
-		hardStep = task.Budget.MaxToolCalls + 2
+	conv := &antConversation{
+		agent: a,
+		tools: a.toolDefs(task.Tools, task.Categories),
+		msgs:  []antMessage{{Role: "user", Content: []antBlock{{Type: "text", Text: openingBrief(task)}}}},
 	}
+	return runTurns(ctx, a.cfg.Name, task, conv, a.cfg.MaxTokens)
+}
 
-	for step := 0; step < hardStep; step++ {
-		s.usage.Steps++
-		resp, err := a.messages(ctx, antRequest{
-			Model:     a.cfg.Model,
-			MaxTokens: a.cfg.MaxTokens,
-			System:    systemPrompt,
-			Messages:  msgs,
-			Tools:     tools,
-		})
-		if err != nil {
-			if s.retry(err) {
-				// The same turn again: a repeated call is not another step.
-				step--
-				s.usage.Steps--
-				continue
-			}
-			return s.result(nil), err
-		}
-		s.addTokens(resp.Usage.InputTokens + resp.Usage.OutputTokens)
+// antConversation is a run's message list in the Messages format.
+type antConversation struct {
+	agent *AnthropicAgent
+	tools []antTool
+	msgs  []antMessage
+	last  []antBlock // the model's last reply
+}
 
-		var uses []antBlock
-		for _, b := range resp.Content {
-			if b.Type == "tool_use" {
-				uses = append(uses, b)
-			}
-		}
-		if len(uses) == 0 {
-			// Reminded once, as in the OpenAI adapter.
-			if s.nudge() {
-				// An empty assistant turn is invalid on the wire; skip it.
-				if len(resp.Content) > 0 {
-					msgs = append(msgs, antMessage{Role: "assistant", Content: resp.Content})
-				}
-				msgs = append(msgs, antMessage{Role: "user", Content: []antBlock{{Type: "text", Text: noToolNotice}}})
-				continue
-			}
-			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s", a.cfg.Name, submitToolName)
-		}
-		// Same rules as the OpenAI adapter: a diagnosis anywhere in the turn
-		// ends the run, even past the token cap; otherwise a cap, or a tool
-		// call after the budget notice, ends it with nothing more executed.
-		rejected := map[string]string{}
-		for _, b := range uses {
-			if b.Name == submitToolName {
-				problem := s.reviewSubmission(b.Input, task.Categories)
-				if problem == "" {
-					return s.result(b.Input), nil
-				}
-				rejected[b.ID] = problem
-			}
-		}
-		if (s.overTokens() || s.warned) && len(rejected) == 0 {
-			return s.result(nil), s.exhausted()
-		}
-
-		// The assistant turn (its content blocks) must be echoed back verbatim.
-		msgs = append(msgs, antMessage{Role: "assistant", Content: resp.Content})
-		var toolResults []antBlock
-		for _, b := range uses {
-			content := budgetRefusal
-			if problem, ok := rejected[b.ID]; ok {
-				content = submitRejection(problem)
-			} else if !s.spent() && !s.warned {
-				content = s.call(ctx, task.Tools, b.Name, b.Input)
-			}
-			// Every tool_use id needs a tool_result, so a call made past the
-			// cap in the same turn gets the refusal.
-			toolResults = append(toolResults, antBlock{Type: "tool_result", ToolUseID: b.ID, Content: content})
-		}
-		if n := s.notice(); n != "" {
-			// Text after the tool_result blocks, in the same user turn.
-			toolResults = append(toolResults, antBlock{Type: "text", Text: n})
-		}
-		msgs = append(msgs, antMessage{Role: "user", Content: toolResults})
+func (c *antConversation) next(ctx context.Context) (reply, error) {
+	resp, err := c.agent.messages(ctx, antRequest{
+		Model:     c.agent.cfg.Model,
+		MaxTokens: c.agent.cfg.MaxTokens,
+		System:    systemPrompt,
+		Messages:  c.msgs,
+		Tools:     c.tools,
+	})
+	if err != nil {
+		return reply{}, err
 	}
-	return s.result(nil), fmt.Errorf("agent %s: exceeded %d steps without submitting", a.cfg.Name, hardStep)
+	c.last = resp.Content
+	r := reply{truncated: resp.StopReason == "max_tokens", tokens: resp.Usage.InputTokens + resp.Usage.OutputTokens}
+	for _, b := range resp.Content {
+		switch b.Type {
+		case "text":
+			r.text += b.Text
+		case "tool_use":
+			r.calls = append(r.calls, toolUse{id: b.ID, name: b.Name, args: b.Input})
+		}
+	}
+	return r, nil
+}
+
+// keepReply appends the last reply's content blocks verbatim, as the API
+// requires; an empty turn is invalid on the wire and is skipped.
+func (c *antConversation) keepReply() {
+	if len(c.last) == 0 {
+		return
+	}
+	c.msgs = append(c.msgs, antMessage{Role: "assistant", Content: c.last})
+}
+
+// answerTools appends one user turn: a tool_result block per call, then the
+// notice as a text block.
+func (c *antConversation) answerTools(results []toolResult, notice string) {
+	blocks := make([]antBlock, 0, len(results)+1)
+	for _, r := range results {
+		blocks = append(blocks, antBlock{Type: "tool_result", ToolUseID: r.id, Content: r.content})
+	}
+	if notice != "" {
+		blocks = append(blocks, antBlock{Type: "text", Text: notice})
+	}
+	c.msgs = append(c.msgs, antMessage{Role: "user", Content: blocks})
+}
+
+func (c *antConversation) say(text string) {
+	c.msgs = append(c.msgs, antMessage{Role: "user", Content: []antBlock{{Type: "text", Text: text}}})
 }
 
 func (a *AnthropicAgent) toolDefs(tools Tools, categories []bench.Category) []antTool {
