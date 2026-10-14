@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -58,21 +59,27 @@ type costEndpoint struct {
 
 func newCostEndpoint(pricing *cost.Pricing, srcs cost.Sources, store cost.SnapshotStore, window, ttl time.Duration) *costEndpoint {
 	c := &costEndpoint{pricing: pricing, srcs: srcs, store: store, window: window, now: time.Now}
-	c.cache = newTTLCache[cost.Showback](ttl)
+	c.cache = newTTLCache[cost.Showback](ttl, costComputeTimeout)
 	c.cache.now = func() time.Time { return c.now() } // one clock, swappable in tests
 	return c
 }
 
 // get returns the showback, recomputed once its cache entry is stale.
 func (c *costEndpoint) get(ctx context.Context) (*cost.Showback, error) {
-	return c.cache.get(func() (cost.Showback, error) {
+	return c.cache.get(ctx, func(ctx context.Context) (cost.Showback, error) {
 		return cost.Assemble(ctx, c.pricing, c.srcs, c.window, c.store, c.now())
 	})
 }
 
 func (c *costEndpoint) handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		sb, err := c.get(r.Context())
+		ctx, cancel := context.WithTimeout(r.Context(), maxResponseWait)
+		defer cancel()
+		sb, err := c.get(ctx)
+		if errors.Is(err, errStillComputing) {
+			stillComputing(w, "the cost report")
+			return
+		}
 		if err != nil {
 			// backend unreachable: a gateway error, never a fake $0 report
 			http.Error(w, "cost sources unavailable: "+err.Error(), http.StatusBadGateway)

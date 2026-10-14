@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { PluginType } from '@grafana/data';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import AppConfig, { AppConfigProps } from './AppConfig';
 import { testIds } from 'components/testIds';
 
@@ -31,17 +31,28 @@ describe('Components/AppConfig', () => {
     } as unknown as AppConfigProps;
   });
 
-  test('renders the engine connection form; save needs a URL', () => {
+  test('renders the engine connection form; an empty URL saves as the default', () => {
     // @ts-ignore - `addConfigPage()` and `setChannelSupport()` are not needed here
     render(<AppConfig plugin={props.plugin} query={props.query} />);
 
     expect(screen.queryByRole('group', { name: /engine connection/i })).toBeInTheDocument();
-    const input = screen.getByTestId(testIds.appConfig.engineUrl);
-    const save = screen.getByRole('button', { name: /save engine settings/i });
-    expect(save).toBeDisabled();
+    expect(screen.getByRole('button', { name: /save engine settings/i })).toBeEnabled();
+    expect(screen.getByText(/Empty uses the default/)).toBeInTheDocument();
+  });
 
-    fireEvent.change(input, { target: { value: 'http://argus-engine.argus.svc:8080' } });
-    expect(save).toBeEnabled();
+  // R33: a save the backend refuses is shown on the form, not only logged.
+  test('shows why the settings were not saved', async () => {
+    fetchMock.mockReturnValue(
+      throwError(() => ({ status: 400, data: { message: 'engine URL "x": want http(s)://host[:port]' } }))
+    );
+    // @ts-ignore
+    render(<AppConfig plugin={props.plugin} query={props.query} />);
+    fireEvent.change(screen.getByTestId(testIds.appConfig.engineUrl), { target: { value: 'x' } });
+    fireEvent.click(screen.getByRole('button', { name: /save engine settings/i }));
+
+    expect(await screen.findByText('The settings were not saved')).toBeInTheDocument();
+    expect(screen.getByText(/want http\(s\):\/\/host/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save engine settings/i })).toBeEnabled();
   });
 
   test('prefills the configured engine URL', () => {

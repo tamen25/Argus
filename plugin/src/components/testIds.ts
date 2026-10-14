@@ -1,4 +1,5 @@
 export const testIds = {
+  freshness: 'data-testid freshness',
   appConfig: {
     engineUrl: 'data-testid ac-engine-url',
     apiToken: 'data-testid ac-api-token',

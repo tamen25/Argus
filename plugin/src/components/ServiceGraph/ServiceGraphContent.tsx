@@ -1,10 +1,12 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { getDefaultTimeRange, GrafanaTheme2, LoadingState, PanelData } from '@grafana/data';
 import { PanelRenderer } from '@grafana/runtime';
-import { Alert, LoadingPlaceholder, useStyles2 } from '@grafana/ui';
+import { Alert, useStyles2 } from '@grafana/ui';
 import { fetchServiceGraph } from '../../api/client';
 import { ServiceGraph } from '../../api/types';
+import { useEngineData } from '../../api/useEngineData';
+import { EngineGate } from '../EngineGate/EngineGate';
 import { testIds } from '../testIds';
 import { buildGraphFrames } from './graphFrames';
 
@@ -12,30 +14,23 @@ import { buildGraphFrames } from './graphFrames';
 // instrumentation? Nodes are scored services (arc = spec score), edges are
 // resolved cross-service parent references from the completed window.
 export function ServiceGraphContent() {
+  const state = useEngineData(fetchServiceGraph);
+  return (
+    <EngineGate state={state} loading="Loading service graph…">
+      {(graph) => <Graph graph={graph} />}
+    </EngineGate>
+  );
+}
+
+function Graph({ graph }: { graph: ServiceGraph }) {
   const s = useStyles2(getStyles);
-  const [graph, setGraph] = useState<ServiceGraph | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [wrapRef, width] = useContainerWidth();
 
-  useEffect(() => {
-    fetchServiceGraph().then(setGraph, (e) => setError(e?.message ?? String(e)));
-  }, []);
-
-  if (error) {
-    return (
-      <Alert title="Engine not reachable" severity="error">
-        {error}
-      </Alert>
-    );
-  }
-  if (!graph) {
-    return <LoadingPlaceholder text="Loading service graph…" />;
-  }
-  if (graph.edges.length === 0 && graph.nodes.length === 0) {
+  if ((graph.edges ?? []).length === 0 && (graph.nodes ?? []).length === 0) {
     return (
       <Alert title="No cross-service traces observed" severity="info">
-        Edges appear once a completed window contains traces whose parent spans resolve across services. If the fleet
-        is quiet or the window just rotated, this fills in on the next refresh.
+        Edges appear once a completed window contains traces whose parent spans resolve across services. If the fleet is
+        quiet or the window just rotated, this fills in on the next refresh.
       </Alert>
     );
   }
@@ -59,20 +54,38 @@ export function ServiceGraphContent() {
   );
 }
 
-// The nodeGraph panel needs explicit pixel dimensions; measure the container
-// instead of pulling in a sizing dependency.
-function useContainerWidth(): [React.RefObject<HTMLDivElement>, number] {
-  const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(800);
-  useLayoutEffect(() => {
-    const update = () => {
-      if (ref.current?.clientWidth) {
-        setWidth(ref.current.clientWidth);
+// fallbackWidth is used until the container has been measured (and in test
+// environments, which lay nothing out).
+const fallbackWidth = 800;
+
+// useContainerWidth tracks the width of the element the returned ref is
+// attached to; the nodeGraph panel needs explicit pixels. It is a callback
+// ref, so it measures when the element mounts, which here is after the data
+// has loaded, and a ResizeObserver follows sidebar and layout changes, which
+// emit no window resize event. The observer is disconnected when the element
+// goes away.
+function useContainerWidth(): [(el: HTMLDivElement | null) => void, number] {
+  const [width, setWidth] = useState(fallbackWidth);
+  const observer = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    observer.current?.disconnect();
+    observer.current = null;
+    if (!el) {
+      return;
+    }
+    if (el.clientWidth) {
+      setWidth(el.clientWidth);
+    }
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    observer.current = new ResizeObserver(([entry]) => {
+      const w = Math.round(entry.contentRect.width);
+      if (w > 0) {
+        setWidth(w);
       }
-    };
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
+    });
+    observer.current.observe(el);
   }, []);
   return [ref, width];
 }

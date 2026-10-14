@@ -16,9 +16,20 @@ const showback: Showback = {
     total_monthly: 39.34,
   },
   lifecycle: [
-    { from_class: 'STANDARD', to_class: 'GLACIER_IR', gb: 1000, current_monthly: 23, projected_monthly: 4, savings_monthly: 19 },
+    {
+      from_class: 'STANDARD',
+      to_class: 'GLACIER_IR',
+      gb: 1000,
+      current_monthly: 23,
+      projected_monthly: 4,
+      savings_monthly: 19,
+    },
   ],
-  trend: { currency: 'USD', total_delta: 5, lines: [{ service: 'checkout', signal: 'metrics', previous: 3, current: 4, delta: 1, percent_delta: 33.3 }] },
+  trend: {
+    currency: 'USD',
+    total_delta: 5,
+    lines: [{ service: 'checkout', signal: 'metrics', previous: 3, current: 4, delta: 1, percent_delta: 33.3 }],
+  },
   notes: ['Costs are modeled from your pricing.yaml, not billed.'],
 };
 
@@ -52,7 +63,9 @@ describe('SpendContent', () => {
       window: '1h0m0s',
       report: {
         currency: 'USD',
-        lines: [{ service: 'kafka', signal: 'logs', ingest_monthly: 0.53, active_series_monthly: 0, total_monthly: 0.53 }],
+        lines: [
+          { service: 'kafka', signal: 'logs', ingest_monthly: 0.53, active_series_monthly: 0, total_monthly: 0.53 },
+        ],
         storage: null,
         total_monthly: 0.53,
       },

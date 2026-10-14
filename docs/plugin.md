@@ -39,6 +39,15 @@ Instrumentation Score (color-graded), the spec-mandated partial-rule-set
 disclosure, every engine degradation note (eviction pressure, empty
 windows, poller failures — never hidden), and a worst-first service table.
 
+### Every page
+
+Each page refreshes itself every minute and says when its data was fetched,
+with a Refresh button. If a refresh fails, the last data stays on screen with
+a note that the refresh failed, so stale numbers never pass for live ones. A
+report the engine is still computing (a backtest replays a week of history,
+which can take minutes) shows as "still computing" and is asked for again
+every ten seconds; the engine keeps computing it in the meantime.
+
 ### Scores
 
 Answers: *what exactly is wrong per service, how sure is Argus, and what

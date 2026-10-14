@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -39,7 +40,7 @@ func registerBacktestEndpoint(mux *http.ServeMux, cfg serveBacktestConfig) error
 		return fmt.Errorf("backtest config: %w", err)
 	}
 	ep := &backtestEndpoint{cfg: cfg, now: time.Now}
-	ep.cache = newTTLCache[backtest.Report](cfg.cacheTTL)
+	ep.cache = newTTLCache[backtest.Report](cfg.cacheTTL, backtestComputeTimeout)
 	ep.cache.now = func() time.Time { return ep.now() }
 	mux.HandleFunc("GET /api/backtest", ep.handler())
 	return nil
@@ -57,7 +58,7 @@ type backtestEndpoint struct {
 // entry is stale. The files are reloaded on each recompute, so editing
 // incidents.yaml or the rules shows without a restart.
 func (e *backtestEndpoint) get(ctx context.Context) (*backtest.Report, error) {
-	return e.cache.get(func() (backtest.Report, error) {
+	return e.cache.get(ctx, func(ctx context.Context) (backtest.Report, error) {
 		in, err := loadBacktestInputs(e.cfg)
 		if err != nil {
 			return backtest.Report{}, err
@@ -72,7 +73,13 @@ func (e *backtestEndpoint) get(ctx context.Context) (*backtest.Report, error) {
 
 func (e *backtestEndpoint) handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rep, err := e.get(r.Context())
+		ctx, cancel := context.WithTimeout(r.Context(), maxResponseWait)
+		defer cancel()
+		rep, err := e.get(ctx)
+		if errors.Is(err, errStillComputing) {
+			stillComputing(w, "the backtest")
+			return
+		}
 		if err != nil {
 			http.Error(w, "backtest sources unavailable: "+err.Error(), http.StatusBadGateway)
 			return

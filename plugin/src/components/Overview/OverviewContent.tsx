@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
-import { Alert, LinkButton, LoadingPlaceholder, useStyles2, useTheme2 } from '@grafana/ui';
+import { Alert, LinkButton, useStyles2, useTheme2 } from '@grafana/ui';
 import { fetchReport } from '../../api/client';
 import { Report } from '../../api/types';
+import { useEngineData } from '../../api/useEngineData';
+import { EngineGate } from '../EngineGate/EngineGate';
 import { prefixRoute } from '../../utils/utils.routing';
 import { ROUTES } from '../../constants';
 import { testIds } from '../testIds';
@@ -11,28 +13,29 @@ import { testIds } from '../testIds';
 // Overview answers one question: how healthy is the fleet's
 // instrumentation right now? Numbers first, adjectives never (§8).
 export function OverviewContent() {
+  const state = useEngineData(fetchReport);
+  return (
+    <EngineGate state={state} loading="Loading fleet score…">
+      {(report) => <Overview report={report} />}
+    </EngineGate>
+  );
+}
+
+function Overview({ report }: { report: Report }) {
   const s = useStyles2(getStyles);
   const theme = useTheme2();
-  const [report, setReport] = useState<Report | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetchReport().then(setReport, (e) => setError(e?.message ?? String(e)));
-  }, []);
-
-  if (error) {
+  const snap = report.snapshot;
+  // An engine before v1.1 sent null for an empty fleet.
+  const services = snap.services ?? [];
+  if (services.length === 0) {
     return (
-      <Alert title="Engine not reachable" severity="error">
-        {error}
+      <Alert title="No services observed yet" severity="info">
+        The engine has not received telemetry from any service, so there is no score yet. A fleet score of{' '}
+        {snap.fleet_score.toFixed(0)} here would describe an empty fleet, not healthy instrumentation.
       </Alert>
     );
   }
-  if (!report) {
-    return <LoadingPlaceholder text="Loading fleet score…" />;
-  }
-
-  const snap = report.snapshot;
-  const worstFirst = [...snap.services].sort((a, b) => a.spec_score - b.spec_score);
+  const worstFirst = [...services].sort((a, b) => a.spec_score - b.spec_score);
 
   return (
     <div data-testid={testIds.overview.container}>
@@ -41,14 +44,14 @@ export function OverviewContent() {
           {snap.fleet_score.toFixed(1)}
         </div>
         <div className={s.scoreLabel}>
-          Fleet Instrumentation Score · {snap.services.length} services · window {report.window}
+          Fleet Instrumentation Score · {services.length} services · window {report.window}
         </div>
       </div>
 
       {!report.rule_set_complete && (
         <Alert title="Partial rule set" severity="info">
-          This implementation does not yet implement the full rule set of the Instrumentation Score specification
-          (rules evaluated: {snap.rules_evaluated.join(', ')} · spec {report.spec_version}). Scores may differ from a
+          This implementation does not yet implement the full rule set of the Instrumentation Score specification (rules
+          evaluated: {(snap.rules_evaluated ?? []).join(', ')} · spec {report.spec_version}). Scores may differ from a
           complete implementation.
         </Alert>
       )}

@@ -105,7 +105,12 @@ describe('BenchContent', () => {
 
     // The comparison is requested for the flagship's two conditions.
     expect(await screen.findByText('degraded → remediated')).toBeInTheDocument();
-    expect(mockGet).toHaveBeenCalledWith(expect.stringMatching(/\/bench$/), { compare: 'degraded,remediated' });
+    expect(mockGet).toHaveBeenCalledWith(
+      expect.stringMatching(/\/bench$/),
+      { compare: 'degraded,remediated' },
+      undefined,
+      { showErrorAlert: false }
+    );
     expect(screen.getByText('1 of 2')).toBeInTheDocument();
     expect(screen.getAllByText('+0.75').length).toBeGreaterThan(0);
     // A scenario unanswered on one side is listed, not counted as zero.
@@ -147,5 +152,19 @@ describe('BenchContent', () => {
     mockGet.mockRejectedValue({ status: 500, data: { message: 'x.json: not a bench run report' } });
     render(<BenchContent />);
     expect(await screen.findByText(/not a bench run report/)).toBeInTheDocument();
+  });
+
+  // R33: a comparison that fails is reported beside the picker; the
+  // leaderboard stays on the page.
+  it('keeps the leaderboard when the comparison fails', async () => {
+    mockGet.mockImplementation((_url: string, params?: { compare?: string }) =>
+      params?.compare
+        ? Promise.reject({ status: 400, data: { message: 'unknown condition' } })
+        : Promise.resolve(response)
+    );
+    render(<BenchContent />);
+    expect(await screen.findByText('Could not load the comparison')).toBeInTheDocument();
+    expect(screen.getByText('unknown condition')).toBeInTheDocument();
+    expect(screen.getByText('Leaderboard · degraded')).toBeInTheDocument();
   });
 });

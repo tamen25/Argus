@@ -12,8 +12,8 @@
       "name": "tamen25"
     },
     "links": [
-      {"name": "GitHub", "url": "https://github.com/tamen25/Argus"},
-      {"name": "License", "url": "https://github.com/tamen25/Argus/blob/main/LICENSE"}
+      { "name": "GitHub", "url": "https://github.com/tamen25/Argus" },
+      { "name": "License", "url": "https://github.com/tamen25/Argus/blob/main/LICENSE" }
     ],
     "logos": {
       "small": "img/logo.svg",

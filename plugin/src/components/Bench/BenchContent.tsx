@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
-import { Alert, Combobox, LoadingPlaceholder, useStyles2 } from '@grafana/ui';
+import { Alert, Combobox, useStyles2 } from '@grafana/ui';
 import { fetchBench } from '../../api/client';
 import { BenchAgentComparison, BenchBoard, BenchCell, BenchComparison, BenchResponse } from '../../api/types';
+import { errorText, useEngineData } from '../../api/useEngineData';
+import { EngineGate } from '../EngineGate/EngineGate';
 import { testIds } from '../testIds';
 
 // The flagship experiment's two telemetry conditions. When both are present
@@ -17,63 +19,68 @@ const DEFAULT_TREATMENT = 'remediated';
 // conditions. Every number comes from `argus bench run` reports by plain
 // arithmetic, and the caveats ride on every view (architecture rule 7).
 export function BenchContent() {
-  const s = useStyles2(getStyles);
-  const [data, setData] = useState<BenchResponse | null>(null);
-  const [comparison, setComparison] = useState<BenchComparison | null>(null);
-  const [baseline, setBaseline] = useState<string | null>(null);
-  const [treatment, setTreatment] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [notConfigured, setNotConfigured] = useState(false);
-
-  useEffect(() => {
-    fetchBench().then(
-      (d) => {
-        setData(d);
-        const conditions = d.conditions ?? [];
-        if (conditions.includes(DEFAULT_BASELINE) && conditions.includes(DEFAULT_TREATMENT)) {
-          setBaseline(DEFAULT_BASELINE);
-          setTreatment(DEFAULT_TREATMENT);
-        }
-      },
-      (e) => {
-        if (e?.status === 404) {
-          setNotConfigured(true);
-        } else {
-          setError(e?.data?.message ?? e?.message ?? String(e));
-        }
+  const state = useEngineData(fetchLeaderboard);
+  return (
+    <EngineGate
+      state={state}
+      loading="Reading bench runs…"
+      notConfigured={
+        <Alert title="Bench is not configured" severity="info">
+          Start the engine with <code>--bench-reports &lt;dir&gt;</code>, a directory of reports written by{' '}
+          <code>argus bench run --format json --out &lt;dir&gt;/&lt;name&gt;.json</code>, to see the leaderboard here.
+          See the Bench docs.
+        </Alert>
       }
-    );
-  }, []);
+    >
+      {(data) => <Bench data={data} />}
+    </EngineGate>
+  );
+}
+
+// fetchLeaderboard is the leaderboard alone, without a comparison.
+const fetchLeaderboard = () => fetchBench();
+
+// defaultPair opens the page on the flagship comparison when both of its
+// conditions have runs.
+function defaultPair(conditions: string[]): [string | null, string | null] {
+  return conditions.includes(DEFAULT_BASELINE) && conditions.includes(DEFAULT_TREATMENT)
+    ? [DEFAULT_BASELINE, DEFAULT_TREATMENT]
+    : [null, null];
+}
+
+function Bench({ data }: { data: BenchResponse }) {
+  const s = useStyles2(getStyles);
+  const conditions = data.conditions ?? [];
+  const [baseline, setBaseline] = useState<string | null>(() => defaultPair(conditions)[0]);
+  const [treatment, setTreatment] = useState<string | null>(() => defaultPair(conditions)[1]);
+  const [comparison, setComparison] = useState<BenchComparison | null>(null);
+  // A comparison that fails is reported next to the picker; the leaderboard
+  // stays, and choosing again (or the next refresh) can clear it.
+  const [compareError, setCompareError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!baseline || !treatment || baseline === treatment) {
       return;
     }
+    let current = true; // a response for an earlier selection is dropped
     fetchBench(`${baseline},${treatment}`).then(
-      (d) => setComparison(d.comparison ?? null),
-      (e) => setError(e?.data?.message ?? e?.message ?? String(e))
+      (d) => {
+        if (current) {
+          setComparison(d.comparison ?? null);
+          setCompareError(null);
+        }
+      },
+      (e) => {
+        if (current) {
+          setCompareError(errorText(e));
+        }
+      }
     );
+    return () => {
+      current = false;
+    };
   }, [baseline, treatment]);
 
-  if (notConfigured) {
-    return (
-      <Alert title="Bench is not configured" severity="info">
-        Start the engine with <code>--bench-reports &lt;dir&gt;</code>, a directory of reports written by{' '}
-        <code>argus bench run --format json --out &lt;dir&gt;/&lt;name&gt;.json</code>, to see the leaderboard here. See
-        the Bench docs.
-      </Alert>
-    );
-  }
-  if (error) {
-    return (
-      <Alert title="Could not load the bench results" severity="error">
-        {error}
-      </Alert>
-    );
-  }
-  if (!data) {
-    return <LoadingPlaceholder text="Reading bench runs…" />;
-  }
   if (data.reports === 0 || !data.leaderboard) {
     return (
       <Alert title="No bench runs yet" severity="info">
@@ -83,7 +90,6 @@ export function BenchContent() {
     );
   }
 
-  const conditions = data.conditions ?? [];
   const options = conditions.map((c) => ({ label: conditionLabel(c), value: c }));
   // Only the comparison for the pair currently selected is shown: a response
   // for an earlier selection must not linger under the new one.
@@ -122,6 +128,12 @@ export function BenchContent() {
             onChange={(o) => setTreatment(o?.value ?? null)}
           />
         </div>
+      )}
+
+      {compareError && (
+        <Alert title="Could not load the comparison" severity="warning">
+          {compareError}
+        </Alert>
       )}
 
       {shown && <ComparisonView c={shown} />}
