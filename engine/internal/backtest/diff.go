@@ -2,6 +2,7 @@ package backtest
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -33,16 +34,27 @@ type Diff struct {
 	Regression       bool
 	Reasons          []string
 	Coverage         time.Duration
+	// CaveatsA and CaveatsB are each set's fidelity caveats (synthesized or
+	// skipped rules, coverage), carried into the diff so a gate result is
+	// never read without them.
+	CaveatsA, CaveatsB []string
 }
 
-// DiffReports compares two backtest reports produced over the same window.
-// Reports with different coverage are not comparable — refused, not fudged
-// (architecture rule 7).
+// DiffReports compares two backtest reports produced over the same history.
+// Reports over different windows, steps or covered segments are not
+// comparable, and are refused, not fudged (architecture rule 7). Comparing
+// only the total covered time, as before, accepted two different windows
+// that happened to have the same amount of coverage. A report with no
+// coverage at all judged nothing, and is refused too: a CI gate must not
+// pass on no evidence.
 func DiffReports(a, b Report, opts DiffOptions) (Diff, error) {
-	if a.Coverage != b.Coverage {
-		return Diff{}, fmt.Errorf("reports are not comparable: coverage %s vs %s — run both sets over the same window in one invocation", a.Coverage, b.Coverage)
+	if err := comparable(a, b); err != nil {
+		return Diff{}, err
 	}
-	d := Diff{Coverage: a.Coverage, PagesA: totalPages(a), PagesB: totalPages(b)}
+	d := Diff{
+		Coverage: a.Coverage, PagesA: totalPages(a), PagesB: totalPages(b),
+		CaveatsA: a.Caveats, CaveatsB: b.Caveats,
+	}
 
 	detA, detB := setDetections(a), setDetections(b)
 	for _, id := range sortedKeys(detA) {
@@ -61,6 +73,23 @@ func DiffReports(a, b Report, opts DiffOptions) (Diff, error) {
 	d.Reasons = gateReasons(d, opts)
 	d.Regression = len(d.Reasons) > 0
 	return d, nil
+}
+
+// comparable says why two reports cannot be compared, or nil.
+func comparable(a, b Report) error {
+	const hint = " — run both sets in one `backtest diff`, which replays them over the same history"
+	switch {
+	case !a.From.Equal(b.From) || !a.To.Equal(b.To):
+		return fmt.Errorf("reports are not comparable: windows %s–%s and %s–%s differ%s",
+			a.From.Format(time.RFC3339), a.To.Format(time.RFC3339), b.From.Format(time.RFC3339), b.To.Format(time.RFC3339), hint)
+	case a.Step != b.Step:
+		return fmt.Errorf("reports are not comparable: steps %s and %s differ%s", a.Step, b.Step, hint)
+	case !slices.Equal(a.Spans, b.Spans) || a.Coverage != b.Coverage:
+		return fmt.Errorf("reports are not comparable: they cover different segments of the window (%s and %s)%s", a.Coverage, b.Coverage, hint)
+	case a.Coverage == 0:
+		return fmt.Errorf("no telemetry coverage in the window: there is no history to compare the rule sets on")
+	}
+	return nil
 }
 
 // gateReasons lists every budget the diff breaks. Losing a detection always
@@ -146,6 +175,14 @@ func RenderDiffMarkdown(d Diff) string {
 		fmt.Fprintf(&b, "\n")
 	}
 
-	fmt.Fprintf(&b, "## Fidelity caveats\n\n- %s\n", standingReplayCaveat)
+	fmt.Fprintf(&b, "## Fidelity caveats\n\n- %s\n- %s\n", standingReplayCaveat, standingCoverageCaveat)
+	for _, set := range []struct {
+		name    string
+		caveats []string
+	}{{"A", d.CaveatsA}, {"B", d.CaveatsB}} {
+		for _, c := range set.caveats {
+			fmt.Fprintf(&b, "- Set %s: %s\n", set.name, c)
+		}
+	}
 	return b.String()
 }

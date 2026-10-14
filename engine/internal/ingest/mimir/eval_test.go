@@ -121,3 +121,20 @@ func TestAdapters(t *testing.T) {
 		t.Error("a scalar result was accepted")
 	}
 }
+
+// R23: a probe answering only NaN has no data at that step; a zero is data.
+func TestPresenceIgnoresNaN(t *testing.T) {
+	value := "NaN"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[0,"` + value + `"]}]}}`))
+	}))
+	defer srv.Close()
+	p := PresenceSource{Client: New(srv.URL, ""), Expr: "x"}
+	if ok, err := p.HasData(context.Background(), time.Unix(0, 0)); err != nil || ok {
+		t.Errorf("NaN: present = %v, err = %v; want not present", ok, err)
+	}
+	value = "0"
+	if ok, err := p.HasData(context.Background(), time.Unix(0, 0)); err != nil || !ok {
+		t.Errorf("zero: present = %v, err = %v; want present", ok, err)
+	}
+}

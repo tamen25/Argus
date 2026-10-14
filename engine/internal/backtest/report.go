@@ -22,7 +22,11 @@ type Report struct {
 	Step        time.Duration
 	Coverage    time.Duration
 	Segments    int
-	Rules       []Scorecard
+	// Spans are the covered segments themselves. They are not part of the
+	// JSON contract; DiffReports compares them, so two reports are only
+	// compared when they judged the same history.
+	Spans []Segment
+	Rules []Scorecard
 	// Caveats carry the fidelity notes (architecture rule 7); the standing
 	// replay caveat is always rendered even when this is empty.
 	Caveats []string
@@ -112,8 +116,12 @@ func nonNil(s []string) []string {
 	return s
 }
 
-// standingReplayCaveat can never be stripped from a rendering.
-const standingReplayCaveat = "Replay is not re-execution: stepped instant queries differ from live ruler evaluation in staleness, lookback, and alignment (docs/backtest-fidelity.md)."
+// standingReplayCaveat and standingCoverageCaveat can never be stripped from
+// a rendering.
+const (
+	standingReplayCaveat   = "Replay is not re-execution: stepped instant queries differ from live ruler evaluation in staleness, lookback, and alignment (docs/backtest-fidelity.md)."
+	standingCoverageCaveat = "Coverage comes from one presence probe across the backend: it shows the backend had data at each step, not that every rule's own input series existed. An incident in covered time whose series were missing is reported as missed, not unverifiable."
+)
 
 // RenderReportJSON renders the report as indented JSON (CI-friendly).
 func RenderReportJSON(r Report) ([]byte, error) {
@@ -140,6 +148,7 @@ func RenderReportMarkdown(r Report) string {
 	fmt.Fprintf(&b, "*Pages/week extrapolates firing intervals over covered time only.\n\n")
 	fmt.Fprintf(&b, "## Fidelity caveats\n\n")
 	fmt.Fprintf(&b, "- %s\n", standingReplayCaveat)
+	fmt.Fprintf(&b, "- %s\n", standingCoverageCaveat)
 	for _, c := range r.Caveats {
 		fmt.Fprintf(&b, "- %s\n", c)
 	}

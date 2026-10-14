@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -256,32 +257,71 @@ func TestTraceTrackerServiceCap(t *testing.T) {
 	for i := 0; i <= maxServicesPerTrace; i++ {
 		tt.ObserveTraces(mkTrace(fmt.Sprintf("s%d", i), 1, []spanSpec{{name: "op", id: byte(i + 1)}}))
 	}
-	// callee's span points at the overflow service's span (id 65) and at s0's
-	// span (id 1): both resolve, but only s0 becomes a caller.
-	tt.ObserveTraces(mkTrace("callee", 1, []spanSpec{
+	// s1, a counted participant, has spans whose parents are the overflow
+	// service's span (id 65) and s0's span (id 1): both resolve, but only s0
+	// becomes a caller.
+	tt.ObserveTraces(mkTrace("s1", 1, []spanSpec{
 		{name: "a", id: 100, parent: maxServicesPerTrace + 1},
 		{name: "b", id: 101, parent: 1},
 	}))
+	// A service past the cap whose span points at a parent that never
+	// arrives: it is not a participant, so it is not blamed either (R17).
+	tt.ObserveTraces(mkTrace("late", 1, []spanSpec{{name: "c", id: 102, parent: 250}}))
 
 	now = now.Add(61 * time.Minute)
 	rows := tt.Rows()
-	var callers []string
+	var edges []string
 	for _, r := range rows {
 		if r.Aggregate == "service_dependency" {
-			callers = append(callers, r.Service)
+			edges = append(edges, r.Service+"→"+r.Fields["callee"].(string))
 		}
 	}
-	if len(callers) != 1 || callers[0] != "s0" {
-		t.Errorf("dependency callers = %v, want only s0 (the overflow service is unattributed)", callers)
+	if len(edges) != 1 || edges[0] != "s0→s1" {
+		t.Errorf("edges = %v, want only s0→s1 (the overflow service is unattributed)", edges)
 	}
-	// Both parents resolved, so no service has an orphan. (callee itself is
-	// past the cap, so it is not counted as a participant at all.)
 	for _, r := range rows {
-		if r.Aggregate == "trace_health" && r.Fields["orphan_ratio"].(float64) != 0 {
+		if r.Aggregate != "trace_health" {
+			continue
+		}
+		// R17: a ratio is only emitted with a non-zero denominator, so it is
+		// always finite, and JSON can encode it.
+		for _, f := range []string{"orphan_ratio", "missing_root_ratio"} {
+			if v := r.Fields[f].(float64); math.IsNaN(v) || math.IsInf(v, 0) {
+				t.Errorf("%s %s = %v", r.Service, f, v)
+			}
+		}
+		if r.Fields["orphan_ratio"].(float64) != 0 {
 			t.Errorf("%s orphan_ratio = %v: an overflow parent still resolves", r.Service, r.Fields["orphan_ratio"])
 		}
 	}
-	if rowsFor(rows, "trace_health", "callee") != nil {
-		t.Error("callee is past the service cap and should not be counted")
+	for _, svc := range []string{"s64", "late"} {
+		if rowsFor(rows, "trace_health", svc) != nil {
+			t.Errorf("%s is past the service cap and should not be counted", svc)
+		}
+	}
+}
+
+// R17: past maxGraphEdges, the edges seen in the most traces are kept, the
+// choice is the same on every call, and the number left out is reported.
+func TestDependencyRowsCapIsDeterministic(t *testing.T) {
+	counts := map[edge]int64{}
+	for i := range maxGraphEdges + 10 {
+		counts[edge{fmt.Sprintf("c%05d", i), "x"}] = 1
+	}
+	counts[edge{"zz-busy", "x"}] = 50 // sorts last by name, first by traces
+	first, omitted := dependencyRows(counts)
+	if len(first) != maxGraphEdges || omitted != 11 {
+		t.Fatalf("rows = %d, omitted = %d; want %d and 11", len(first), omitted, maxGraphEdges)
+	}
+	if first[len(first)-1].Service != "zz-busy" {
+		t.Error("the busiest edge was dropped")
+	}
+	for range 5 {
+		again, _ := dependencyRows(counts)
+		for i := range again {
+			if again[i].Service != first[i].Service {
+				t.Fatalf("row %d differs between calls: %s vs %s", i, again[i].Service, first[i].Service)
+			}
+		}
 	}
 }

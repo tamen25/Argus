@@ -123,7 +123,7 @@ func convertResource(attrs pcommon.Map) (map[string]any, string) {
 	svc := UnknownService
 	if v, ok := res["service.name"]; ok {
 		if s, ok := v.(string); ok && s != "" {
-			svc = s
+			svc = ServiceName(s)
 		}
 	}
 	return res, svc
@@ -140,11 +140,7 @@ func convertAttrs(attrs pcommon.Map) map[string]any {
 func convertValue(v pcommon.Value) any {
 	switch v.Type() {
 	case pcommon.ValueTypeStr:
-		s := v.Str()
-		if len(s) > MaxAttrValueLen {
-			s = s[:MaxAttrValueLen]
-		}
-		return s
+		return v.Str()
 	case pcommon.ValueTypeInt:
 		return v.Int()
 	case pcommon.ValueTypeDouble:
@@ -153,12 +149,8 @@ func convertValue(v pcommon.Value) any {
 		return v.Bool()
 	default:
 		// Maps/slices/bytes: rules only need scalar attributes; represent
-		// complex values by their string form, truncated.
-		s := v.AsString()
-		if len(s) > MaxAttrValueLen {
-			s = s[:MaxAttrValueLen]
-		}
-		return s
+		// complex values by their string form.
+		return v.AsString()
 	}
 }
 

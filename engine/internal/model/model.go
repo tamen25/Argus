@@ -3,18 +3,58 @@
 // path and (indirectly) the backend pollers: one Item per span, metric data
 // point, or log record, always carrying its resource context.
 //
-// Bounded memory (architecture rule 3): conversion truncates attribute
-// values; Items are processed and discarded, never persisted.
+// Bounded memory (architecture rule 3): an Item lives for one OTLP payload
+// (itself capped by the receiver) and is then discarded. Only what is kept
+// beyond it is bounded: finding evidence (Truncate) and service identity
+// (ServiceName).
 package model
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
+	"unicode/utf8"
+)
 
 // UnknownService is the service bucket for telemetry with no usable
 // service.name resource attribute.
 const UnknownService = "<unknown>"
 
-// MaxAttrValueLen caps stored attribute value length (bytes). Longer values
-// are truncated at conversion time so nothing downstream ever holds
-// unbounded payloads.
+// MaxAttrValueLen caps an attribute value kept beyond the item that carried
+// it, as finding evidence. Items hold full values: they used to be truncated
+// at conversion, so the cardinality sketches hashed only the first 256 bytes,
+// and distinct values sharing that prefix counted as one.
 const MaxAttrValueLen = 256
+
+// MaxServiceNameLen caps the length of a service identity (see ServiceName).
+const MaxServiceNameLen = 256
+
+// ServiceName returns the identity Argus keys a service by: the name itself,
+// or, for one longer than MaxServiceNameLen, a prefix and a hash of the
+// whole name. Long names therefore stay distinct and bounded, where a plain
+// prefix would merge them. The item path and the trace tracker both use it,
+// so a service has one identity in scores and in the service graph.
+func ServiceName(name string) string {
+	if len(name) <= MaxServiceNameLen {
+		return name
+	}
+	sum := sha256.Sum256([]byte(name))
+	return Truncate(name, MaxServiceNameLen-18) + "…" + hex.EncodeToString(sum[:7])
+}
+
+// Truncate returns s cut to at most n bytes on a UTF-8 character boundary,
+// as a copy: a short slice of a long string would keep the whole string's
+// memory alive.
+func Truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return strings.Clone(s[:cut])
+}
 
 // Kind discriminates the item payload.
 type Kind int8

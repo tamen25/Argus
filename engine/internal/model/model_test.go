@@ -121,7 +121,10 @@ func TestFromLogs(t *testing.T) {
 	}
 }
 
-func TestAttributeValueTruncation(t *testing.T) {
+// R16: an item carries full values, so two values that share their first
+// 256 bytes are still two values to a cardinality sketch. Truncation happens
+// where values are kept (finding evidence), not here.
+func TestItemsKeepFullValues(t *testing.T) {
 	td := ptrace.NewTraces()
 	rs := td.ResourceSpans().AppendEmpty()
 	rs.Resource().Attributes().PutStr("service.name", "x")
@@ -130,9 +133,39 @@ func TestAttributeValueTruncation(t *testing.T) {
 	sp.Attributes().PutStr("big", long)
 
 	items := FromTraces(td)
-	got, _ := items[0].Span.Attrs["big"].(string)
-	if len(got) > MaxAttrValueLen {
-		t.Errorf("attr value len = %d, want <= %d (bounded memory rule)", len(got), MaxAttrValueLen)
+	if got, _ := items[0].Span.Attrs["big"].(string); got != long {
+		t.Errorf("attr value len = %d, want the full %d", len(got), len(long))
+	}
+}
+
+func TestTruncate(t *testing.T) {
+	if got := Truncate("short", 10); got != "short" {
+		t.Errorf("Truncate(short) = %q", got)
+	}
+	// "é" is two bytes: a cut at byte 3 would split it, so it stops before.
+	if got := Truncate("abé", 3); got != "ab" {
+		t.Errorf("Truncate(abé, 3) = %q, want ab (no split character)", got)
+	}
+	if got := Truncate(strings.Repeat("x", 300), MaxAttrValueLen); len(got) != MaxAttrValueLen {
+		t.Errorf("len = %d", len(got))
+	}
+}
+
+// R16: long service names stay distinct and bounded.
+func TestServiceName(t *testing.T) {
+	if ServiceName("checkout") != "checkout" {
+		t.Error("a normal name changed")
+	}
+	a := ServiceName(strings.Repeat("s", 300) + "-a")
+	b := ServiceName(strings.Repeat("s", 300) + "-b")
+	if a == b {
+		t.Error("two long names sharing a prefix became one service")
+	}
+	if len(a) > MaxServiceNameLen+4 { // the ellipsis is 3 bytes
+		t.Errorf("identity is %d bytes", len(a))
+	}
+	if ServiceName(strings.Repeat("s", 300)+"-a") != a {
+		t.Error("the identity is not stable")
 	}
 }
 

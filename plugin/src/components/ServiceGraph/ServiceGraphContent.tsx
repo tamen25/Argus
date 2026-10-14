@@ -49,6 +49,8 @@ function Graph({ graph }: { graph: ServiceGraph }) {
         Edges come from the sampled mirror: parent references resolved across services in the last completed window
         (window {graph.window}). A missing edge can simply mean its traces were not sampled — absence here is not
         evidence of absence.
+        {(graph.edges_omitted ?? 0) > 0 &&
+          ` ${graph.edges_omitted} less frequent edges are not shown: the graph keeps the busiest ${graph.edges.length}.`}
       </p>
     </div>
   );
