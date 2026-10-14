@@ -90,6 +90,34 @@ func (i *Injector) sweep(ctx context.Context) error {
 	return first
 }
 
+// The cluster lock. The sweep above deletes every argus-managed fault in the
+// cluster, so two bench runs on one cluster would delete each other's
+// faults. A run therefore claims the cluster first: kubectl create is atomic,
+// and fails when the object exists, so exactly one run can hold it.
+const (
+	LockName      = "argus-bench-lock"
+	lockNamespace = "default" // exists in every cluster
+)
+
+// Lock claims the cluster for one bench run; holder says which, for anyone
+// who finds the lock. A held lock is an error naming the command that clears
+// a stale one (a run that crashed cannot release it). The lock does not
+// carry the ManagedBy label, so the sweep never removes it.
+func (i *Injector) Lock(ctx context.Context, holder string) error {
+	err := i.runIn(ctx, lockNamespace, "create", "configmap", LockName, "--from-literal=holder="+holder)
+	if err != nil && strings.Contains(err.Error(), "AlreadyExists") {
+		return fmt.Errorf("another bench run is using this cluster (configmap %s/%s exists). "+
+			"If none is running, a crashed run left it behind: kubectl delete configmap %s -n %s",
+			lockNamespace, LockName, LockName, lockNamespace)
+	}
+	return err
+}
+
+// Unlock releases the cluster.
+func (i *Injector) Unlock(ctx context.Context) error {
+	return i.runIn(ctx, lockNamespace, "delete", "configmap", LockName, "--ignore-not-found")
+}
+
 // Inject applies one manifest step. Script steps are rejected: this injector
 // only speaks manifests, and silently skipping a step would mean scoring an
 // environment that was never faulted.

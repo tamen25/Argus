@@ -172,7 +172,15 @@ func runBenchScenario(cmd *cobra.Command, f benchFlags) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	rep, err := orchestrator.Run(ctx, sc, ag, tools, inj, buildProbe(f, sc), opts)
-	if err != nil {
+	switch {
+	case errors.Is(err, orchestrator.ErrNotRestored):
+		// The results are valid and are saved; the environment is not, and
+		// the command fails so that nothing runs on it unexamined.
+		if werr := writeBenchReport(cmd, f, rep); werr != nil {
+			return errors.Join(err, werr)
+		}
+		return fmt.Errorf("%w; the report was written, but check the environment for a leftover fault before running anything else", err)
+	case err != nil:
 		// No report on interruption: a partial one would look like a finished
 		// cell to a matrix that resumes by skipping reports.
 		return err

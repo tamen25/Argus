@@ -150,6 +150,23 @@ func (a AutoInjector) Inject(ctx context.Context, sc bench.Scenario, step bench.
 	}
 }
 
+// Lock claims the environment through the manifest injector, when it takes
+// a lock (see Locker); otherwise it does nothing.
+func (a AutoInjector) Lock(ctx context.Context, holder string) error {
+	if l, ok := a.Manifests.(Locker); ok {
+		return l.Lock(ctx, holder)
+	}
+	return nil
+}
+
+// Unlock releases what Lock claimed.
+func (a AutoInjector) Unlock(ctx context.Context) error {
+	if l, ok := a.Manifests.(Locker); ok {
+		return l.Unlock(ctx)
+	}
+	return nil
+}
+
 // Cleanup runs the scenario's cleanup hooks, then deletes the fault's objects.
 // Every step runs even if an earlier one fails, and the first error is
 // returned: a cleanup that stops at its first failure leaves more of the fault

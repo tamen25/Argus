@@ -56,6 +56,16 @@ type BaselineProbe interface {
 	Clean(ctx context.Context, sc bench.Scenario) (bool, error)
 }
 
+// Locker is implemented by injectors whose reset reaches beyond the
+// scenario's own objects: the Kubernetes injector sweeps every argus-managed
+// fault in the cluster. Run holds the lock for its whole duration, so a
+// second run on the same cluster fails at once instead of deleting the
+// first one's fault mid-measurement.
+type Locker interface {
+	Lock(ctx context.Context, holder string) error
+	Unlock(ctx context.Context) error
+}
+
 // Options configure a run.
 type Options struct {
 	// Repeats is how many times the scenario runs against the agent (variance).
@@ -127,6 +137,10 @@ type RunRecord struct {
 	BudgetExhausted bool `json:"budget_exhausted,omitempty"`
 	// BudgetCap names the cap that ended the run: "tool calls" or "tokens".
 	BudgetCap string `json:"budget_cap,omitempty"`
+	// CleanupError is set when the fault could not be removed after the run.
+	// The run's own result stands, but the environment may still carry the
+	// fault, so what ran after it is suspect until a reset proves otherwise.
+	CleanupError string `json:"cleanup_error,omitempty"`
 }
 
 // Summary aggregates the repeats.
@@ -180,6 +194,13 @@ type Report struct {
 // skipping existing reports would never complete it.
 var ErrInterrupted = errors.New("bench run interrupted")
 
+// ErrNotRestored is returned, with the full report, when the last repeat's
+// cleanup failed, so the fault may still be in the environment, or when an
+// earlier cleanup failed and the probe cannot verify that the next repeat
+// starts clean, so the run stopped early. The results gathered are valid and
+// worth saving; the environment needs a look before anything else runs.
+var ErrNotRestored = errors.New("bench environment not restored")
+
 // Run executes the scenario against the agent Repeats times and returns the
 // report. Individual run failures are recorded, not fatal: one broken attempt
 // must not discard the rest of the matrix. Cancelling ctx stops the run after
@@ -215,18 +236,43 @@ func Run(
 	}
 	rep.MaxTurnTokens = opts.MaxTurnTokens
 
+	if l, ok := inj.(Locker); ok {
+		holder := fmt.Sprintf("%s, agent %s, started %s", sc.Metadata.Name, ag.Name(), opts.Now().UTC().Format(time.RFC3339))
+		if err := l.Lock(ctx, holder); err != nil {
+			return Report{}, fmt.Errorf("claiming the environment: %w", err)
+		}
+		// Released even when the run was interrupted, like cleanup.
+		defer func() {
+			uctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), opts.CleanupTimeout)
+			defer cancel()
+			_ = l.Unlock(uctx)
+		}()
+	}
+
 	h := harness{sc: sc, agent: ag, tools: tools, inj: inj, probe: probe, opts: opts}
+	var restoreErr error
 	for i := 0; i < opts.Repeats; i++ {
-		rep.Runs = append(rep.Runs, h.once(ctx, i))
+		rec := h.once(ctx, i)
+		rep.Runs = append(rep.Runs, rec)
 		if ctx.Err() != nil {
 			break
+		}
+		restoreErr = nil
+		if rec.CleanupError != "" {
+			restoreErr = fmt.Errorf("%w: repeat %d's cleanup failed: %s", ErrNotRestored, i, rec.CleanupError)
+			// The next repeat resets first. If the probe can verify the
+			// baseline, that reset is checked before anything is injected;
+			// if not, nothing would notice the leftover fault, so stop.
+			if !h.canVerifyBaseline() {
+				break
+			}
 		}
 	}
 	rep.Summary = summarize(rep.Runs)
 	if err := ctx.Err(); err != nil {
 		return rep, fmt.Errorf("%w after %d of %d repeats: %w", ErrInterrupted, len(rep.Runs), opts.Repeats, err)
 	}
-	return rep, nil
+	return rep, restoreErr
 }
 
 // harness is everything one repeat needs, so Run can hand it over whole.
@@ -241,26 +287,41 @@ type harness struct {
 
 // once runs one repeat: bring the fault up, ask the agent, score its answer,
 // and clean up. A failure at any stage is recorded in the RunRecord.
-func (h harness) once(ctx context.Context, repeat int) RunRecord {
-	// Cleanup always runs, even when the attempt fails partway: a leaked fault
-	// would poison every later repeat. It also runs when the run was
-	// interrupted, so it gets a context that ctx's cancellation does not reach
-	// (context.WithoutCancel keeps ctx's values but drops its cancellation),
-	// bounded by its own timeout instead.
+//
+// rec is a named result so the deferred cleanup can record its outcome on
+// the record being returned: a deferred function runs after the return value
+// is set, and may change a named one.
+func (h harness) once(ctx context.Context, repeat int) (rec RunRecord) {
+	rec = RunRecord{Repeat: repeat, Started: h.opts.Now()}
+
+	// Cleanup always runs, even when the attempt fails partway, or panics: a
+	// leaked fault would poison every later repeat. It also runs when the run
+	// was interrupted, so it gets a context that ctx's cancellation does not
+	// reach (context.WithoutCancel keeps ctx's values but drops its
+	// cancellation), bounded by its own timeout instead. Finished is set after
+	// it, so a run's duration includes restoring the environment.
 	defer func() {
 		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), h.opts.CleanupTimeout)
 		defer cancel()
-		_ = h.inj.Cleanup(cctx, h.sc)
+		if err := h.inj.Cleanup(cctx, h.sc); err != nil {
+			rec.CleanupError = err.Error()
+		}
+		rec.Finished = h.opts.Now()
 	}()
 
-	rec := RunRecord{Repeat: repeat, Started: h.opts.Now()}
 	if err := h.injectFault(ctx); err != nil {
 		rec.Error = err.Error()
 	} else {
 		h.diagnose(ctx, &rec)
 	}
-	rec.Finished = h.opts.Now()
 	return rec
+}
+
+// canVerifyBaseline reports whether a repeat checks, before injecting, that
+// the environment no longer shows the fault (see waitBaseline).
+func (h harness) canVerifyBaseline() bool {
+	_, ok := h.probe.(BaselineProbe)
+	return ok && h.sc.Spec.SteadyState != nil
 }
 
 // injectFault resets the environment, waits until it is verifiably clean,

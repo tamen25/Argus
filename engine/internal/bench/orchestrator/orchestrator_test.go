@@ -34,6 +34,9 @@ func testScenario() bench.Scenario {
 type fakeInjector struct {
 	resets, injects, cleanups int
 	resetErr                  error
+	// cleanupErrs are returned by successive Cleanup calls; past the end,
+	// Cleanup succeeds.
+	cleanupErrs []error
 }
 
 func (f *fakeInjector) Reset(context.Context, bench.Scenario) error {
@@ -46,6 +49,9 @@ func (f *fakeInjector) Inject(context.Context, bench.Scenario, bench.InjectStep)
 }
 func (f *fakeInjector) Cleanup(context.Context, bench.Scenario) error {
 	f.cleanups++
+	if f.cleanups <= len(f.cleanupErrs) {
+		return f.cleanupErrs[f.cleanups-1]
+	}
 	return nil
 }
 
