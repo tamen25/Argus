@@ -31,91 +31,112 @@ func RenderReportJSON(r Report) ([]byte, error) {
 // byte-identical for the same Report.
 func RenderReportMarkdown(r Report) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Argus Bench\n\n")
-	fmt.Fprintf(&b, "- Scenario: `%s`\n", r.Scenario)
-	fmt.Fprintf(&b, "- Agent: `%s`\n", r.Agent)
-	fmt.Fprintf(&b, "- Scenario hash: `%s`\n", r.ScenarioHash)
+	writeHeader(&b, r)
+	writeSummary(&b, r.Summary)
+	writeRuns(&b, r)
+	writeToolUse(&b, r)
+	writeCaveats(&b, r)
+	return b.String()
+}
+
+// writeHeader writes the title and everything needed to reproduce the run.
+func writeHeader(b *strings.Builder, r Report) {
+	fmt.Fprintf(b, "# Argus Bench\n\n")
+	fmt.Fprintf(b, "- Scenario: `%s`\n", r.Scenario)
+	fmt.Fprintf(b, "- Agent: `%s`\n", r.Agent)
+	fmt.Fprintf(b, "- Scenario hash: `%s`\n", r.ScenarioHash)
 	if r.EnvDigest != "" {
-		fmt.Fprintf(&b, "- Environment: `%s`\n", r.EnvDigest)
+		fmt.Fprintf(b, "- Environment: `%s`\n", r.EnvDigest)
 	}
 	if r.Condition != "" {
-		fmt.Fprintf(&b, "- Telemetry condition: `%s`\n", r.Condition)
+		fmt.Fprintf(b, "- Telemetry condition: `%s`\n", r.Condition)
 	}
 	if n := len(r.CategoriesOffered); n > 0 {
-		fmt.Fprintf(&b, "- Fault categories offered: %d (`%s`)\n", n, strings.Join(r.CategoriesOffered, "`, `"))
+		fmt.Fprintf(b, "- Fault categories offered: %d (`%s`)\n", n, strings.Join(r.CategoriesOffered, "`, `"))
 	} else {
-		fmt.Fprintf(&b, "- Fault categories offered: **none** — the agent was not shown the category list"+
+		fmt.Fprintf(b, "- Fault categories offered: **none** — the agent was not shown the category list"+
 			" and could match the ground-truth category only by guessing its exact name\n")
 	}
-	fmt.Fprintf(&b, "- Seed: %d\n", r.Seed)
-	fmt.Fprintf(&b, "- Budget: %s\n", budgetString(r))
+	fmt.Fprintf(b, "- Seed: %d\n", r.Seed)
+	fmt.Fprintf(b, "- Budget: %s\n", budgetString(r))
 	if m := r.Model; m != nil {
 		if m.Endpoint != "" {
-			fmt.Fprintf(&b, "- Model: `%s` served at `%s`\n", m.Model, m.Endpoint)
+			fmt.Fprintf(b, "- Model: `%s` served at `%s`\n", m.Model, m.Endpoint)
 		} else {
-			fmt.Fprintf(&b, "- Model: `%s`\n", m.Model)
+			fmt.Fprintf(b, "- Model: `%s`\n", m.Model)
 		}
 	}
-	fmt.Fprintf(&b, "\n")
+	fmt.Fprintf(b, "\n")
+}
 
-	s := r.Summary
-	fmt.Fprintf(&b, "## Summary\n\n")
-	fmt.Fprintf(&b, "| Score (mean ± sd) | Answered | Entity score | Category match | Uncited | Budget exhausted | Mean tool calls | Mean tokens |\n")
-	fmt.Fprintf(&b, "|---:|---:|---:|---:|---:|---:|---:|---:|\n")
-	fmt.Fprintf(&b, "| **%.2f ± %.2f** | %d/%d (%.0f%%) | %.2f ± %.2f | %.0f%% | %.0f%% | %d | %.1f | %.0f |\n\n",
+func writeSummary(b *strings.Builder, s Summary) {
+	fmt.Fprintf(b, "## Summary\n\n")
+	fmt.Fprintf(b, "| Score (mean ± sd) | Answered | Entity score | Category match | Uncited | Budget exhausted | Mean tool calls | Mean tokens |\n")
+	fmt.Fprintf(b, "|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+	fmt.Fprintf(b, "| **%.2f ± %.2f** | %d/%d (%.0f%%) | %.2f ± %.2f | %.0f%% | %.0f%% | %d | %.1f | %.0f |\n\n",
 		s.MeanScore, s.StdDevScore,
 		s.Diagnoses, s.Attempts, s.AnswerRate*100,
 		s.MeanEntityScore, s.StdDevEntityScore, s.CategoryMatchRate*100,
 		s.EvidenceMissingRate*100,
 		s.BudgetExhausted, s.MeanToolCalls, s.MeanTokens)
+}
 
-	fmt.Fprintf(&b, "## Runs\n\n")
-	fmt.Fprintf(&b, "| # | Score | Entity | Category | Decoys | Evidence | Normalization | Tool calls | Tool errors | Tokens | Outcome |\n")
-	fmt.Fprintf(&b, "|---:|---:|---:|---|---:|---|---|---:|---:|---:|---|\n")
+// writeRuns writes one table row per repeat, then the decoys named and the
+// entities missed across all of them.
+func writeRuns(b *strings.Builder, r Report) {
+	fmt.Fprintf(b, "## Runs\n\n")
+	fmt.Fprintf(b, "| # | Score | Entity | Category | Decoys | Evidence | Normalization | Tool calls | Tool errors | Tokens | Outcome |\n")
+	fmt.Fprintf(b, "|---:|---:|---:|---|---:|---|---|---:|---:|---:|---|\n")
 	for _, run := range r.Runs {
+		// A run with no diagnosis has no score columns, only an outcome.
 		score, ent, cat, decoys, ev := "—", "—", "—", "—", "—"
-		if run.Score != nil {
-			score = fmt.Sprintf("%.2f", run.Score.Score)
-			ent = fmt.Sprintf("%.2f", run.Score.EntityScore)
-			cat = categoryCell(run.Score.CategoryMatch, run.Score.Category)
-			decoys = fmt.Sprintf("%d", len(run.Score.DecoysNamed))
-			ev = evidenceCell(run.Score.EvidenceCount, run.Score.CitedSignals, run.Score.EvidenceMissing,
-				run.Score.MalformedEvidence)
+		if s := run.Score; s != nil {
+			score = fmt.Sprintf("%.2f", s.Score)
+			ent = fmt.Sprintf("%.2f", s.EntityScore)
+			cat = categoryCell(s.CategoryMatch, s.Category)
+			decoys = fmt.Sprintf("%d", len(s.DecoysNamed))
+			ev = evidenceCell(s.EvidenceCount, s.CitedSignals, s.EvidenceMissing, s.MalformedEvidence)
 		}
-		fmt.Fprintf(&b, "| %d | %s | %s | %s | %s | %s | %s | %d | %d | %d | %s |\n",
+		fmt.Fprintf(b, "| %d | %s | %s | %s | %s | %s | %s | %d | %d | %d | %s |\n",
 			run.Repeat, score, ent, cat, decoys, ev, dash(run.Normalization),
 			run.Usage.ToolCalls, run.Usage.ToolErrors, run.Usage.Tokens, outcome(run))
 	}
-	fmt.Fprintf(&b, "\n")
+	fmt.Fprintf(b, "\n")
 
 	if d := decoyTally(r); len(d) > 0 {
-		fmt.Fprintf(&b, "Decoys named (plausible-but-wrong entities asserted): %s\n\n", strings.Join(d, ", "))
+		fmt.Fprintf(b, "Decoys named (plausible-but-wrong entities asserted): %s\n\n", strings.Join(d, ", "))
 	}
-
 	if miss := missedEntities(r); len(miss) > 0 {
-		fmt.Fprintf(&b, "Most-missed ground-truth entities: %s\n\n", strings.Join(miss, ", "))
+		fmt.Fprintf(b, "Most-missed ground-truth entities: %s\n\n", strings.Join(miss, ", "))
 	}
+}
 
-	if lines := toolUse(r); len(lines) > 0 {
-		fmt.Fprintf(&b, "## Tool use\n\n")
-		for _, l := range lines {
-			fmt.Fprintf(&b, "- %s\n", l)
-		}
-		fmt.Fprintf(&b, "\n")
+func writeToolUse(b *strings.Builder, r Report) {
+	lines := toolUse(r)
+	if len(lines) == 0 {
+		return
 	}
+	fmt.Fprintf(b, "## Tool use\n\n")
+	for _, l := range lines {
+		fmt.Fprintf(b, "- %s\n", l)
+	}
+	fmt.Fprintf(b, "\n")
+}
 
-	fmt.Fprintf(&b, "## Method and caveats\n\n")
+// writeCaveats writes how the runs were normalized, how many tool calls failed
+// under the agent, and the standing caveats.
+func writeCaveats(b *strings.Builder, r Report) {
+	fmt.Fprintf(b, "## Method and caveats\n\n")
 	for _, m := range normalizationMethods(r) {
-		fmt.Fprintf(&b, "- Normalization used: **%s**%s\n", m, methodNote(m))
+		fmt.Fprintf(b, "- Normalization used: **%s**%s\n", m, methodNote(m))
 	}
 	if calls, errs := toolErrorTotals(r); errs > 0 {
-		fmt.Fprintf(&b, "- %d of %d tool calls returned an error to the agent (a rejected query, or a backend that did not answer). "+
+		fmt.Fprintf(b, "- %d of %d tool calls returned an error to the agent (a rejected query, or a backend that did not answer). "+
 			"Read `tool_log` in the JSON report before attributing a low score to the agent alone.\n", errs, calls)
 	}
 	for _, c := range standingBenchCaveats {
-		fmt.Fprintf(&b, "- %s\n", c)
+		fmt.Fprintf(b, "- %s\n", c)
 	}
-	return b.String()
 }
 
 // StandingCaveats returns the caveats every rendering of bench results must
@@ -231,34 +252,19 @@ func methodNote(method string) string {
 func missedEntities(r Report) []string {
 	count := map[string]int{}
 	for _, run := range r.Runs {
-		if run.Score == nil {
-			continue
-		}
-		for _, e := range run.Score.Missed {
-			count[entityLabel(e.Kind, e.Namespace, e.Name)]++
+		if run.Score != nil {
+			for _, e := range run.Score.Missed {
+				count[entityLabel(e.Kind, e.Namespace, e.Name)]++
+			}
 		}
 	}
-	out := make([]string, 0, len(count))
-	for k := range count {
-		out = append(out, k)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if count[out[i]] != count[out[j]] {
-			return count[out[i]] > count[out[j]]
-		}
-		return out[i] < out[j]
-	})
-	for i, k := range out {
-		out[i] = fmt.Sprintf("%s (%d/%d)", k, count[k], len(r.Runs))
-	}
-	return out
+	return rankByCount(count, len(r.Runs))
 }
 
-// evidenceCell renders what the agent cited: the count plus which signals, or an
-// explicit marker when the scenario required evidence and got none.
-// evidenceCell renders what the agent validly cited, flagging citations that
-// did not count so an agent that tried and got the format wrong is visible
-// rather than indistinguishable from one that never tried.
+// evidenceCell renders what the agent validly cited: the count and which
+// signals, or an explicit marker when the scenario required evidence and got
+// none. Citations that did not count are flagged, so an agent that tried and
+// got the format wrong is told apart from one that never tried.
 func evidenceCell(count int, signals []string, missing bool, malformed int) string {
 	cell := fmt.Sprintf("%d", count)
 	switch {
@@ -278,13 +284,19 @@ func evidenceCell(count int, signals []string, missing bool, malformed int) stri
 func decoyTally(r Report) []string {
 	count := map[string]int{}
 	for _, run := range r.Runs {
-		if run.Score == nil {
-			continue
-		}
-		for _, e := range run.Score.DecoysNamed {
-			count[entityLabel(e.Kind, e.Namespace, e.Name)]++
+		if run.Score != nil {
+			for _, e := range run.Score.DecoysNamed {
+				count[entityLabel(e.Kind, e.Namespace, e.Name)]++
+			}
 		}
 	}
+	return rankByCount(count, len(r.Runs))
+}
+
+// rankByCount orders labels by the number of runs they appeared in, most
+// first and then by name, each followed by that count out of runs:
+// "deployment/shop/cart (3/5)".
+func rankByCount(count map[string]int, runs int) []string {
 	out := make([]string, 0, len(count))
 	for k := range count {
 		out = append(out, k)
@@ -296,7 +308,7 @@ func decoyTally(r Report) []string {
 		return out[i] < out[j]
 	})
 	for i, k := range out {
-		out[i] = fmt.Sprintf("%s (%d/%d)", k, count[k], len(r.Runs))
+		out[i] = fmt.Sprintf("%s (%d/%d)", k, count[k], runs)
 	}
 	return out
 }

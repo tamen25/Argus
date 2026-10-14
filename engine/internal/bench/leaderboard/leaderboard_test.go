@@ -389,3 +389,20 @@ func containsCaveat(caveats []string, want string) bool {
 	}
 	return false
 }
+
+// Only a key that took more than one value gets a caveat, in key order, with
+// its values sorted.
+func TestVariantsCaveats(t *testing.T) {
+	v := variants{}
+	v.add("b", "y")
+	v.add("b", "x")
+	v.add("a", "only")
+	v.add("c", "1")
+	v.add("c", "2")
+	v.add("c", "1")
+	got := v.caveats("; ", "%s: %d (%s)")
+	want := []string{"b: 2 (x; y)", "c: 2 (1; 2)"}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") {
+		t.Errorf("caveats = %q, want %q", got, want)
+	}
+}

@@ -174,7 +174,9 @@ func groundTruth(s Scenario) ([]bench.Entity, []string) {
 				continue
 			}
 			e := bench.Entity{Kind: ko.Kind, Namespace: ko.Metadata.Namespace, Name: ko.Metadata.Name}
-			key := e.Kind + "/" + e.Namespace + "/" + e.Name
+			// The key scoring compares by, so an entity listed twice in
+			// different case is one root cause, as scoring would count it.
+			key := bench.EntityKey(e)
 			if seenEntity[key] {
 				continue
 			}

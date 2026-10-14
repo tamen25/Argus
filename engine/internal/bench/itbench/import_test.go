@@ -133,10 +133,12 @@ func TestConvert_MultipleInjectionsDeterministic(t *testing.T) {
 	       {"id": "alpha-fault", "args": {"kubernetesObject": {"kind":"Deployment","metadata":{"name":"a","namespace":"ns"}}}}
 	    ]},
 	    {"injections": [
-	       {"id": "alpha-fault", "args": {"kubernetesObject": {"kind":"Deployment","metadata":{"name":"a","namespace":"ns"}}}}
+	       {"id": "alpha-fault", "args": {"kubernetesObject": {"kind":"deployment","metadata":{"name":"a","namespace":"ns"}}}}
 	    ]}
 	  ]
 	}`)
+	// The repeat differs only in case: scoring treats it as the same entity,
+	// so the ground truth must list it once.
 	sc, err := Convert(raw)
 	if err != nil {
 		t.Fatal(err)

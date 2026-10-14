@@ -29,8 +29,9 @@ func (NoopInjector) Cleanup(context.Context, bench.Scenario) error { return nil 
 
 // ScriptInjector runs a scenario's `type: script` steps as local commands,
 // resolved relative to Dir. Steps of type chaosmesh or kubectl are rejected
-// with a clear error: those adapters need a cluster client and land with the
-// Kubernetes slice. Failing loudly beats pretending a fault was injected.
+// with a clear error: they need a cluster client (inject/kube, or
+// AutoInjector, which routes each step to the right one). Failing loudly beats
+// pretending a fault was injected.
 type ScriptInjector struct {
 	// Dir is the scenario root that script paths resolve against.
 	Dir string
@@ -62,7 +63,8 @@ func (s ScriptInjector) Inject(ctx context.Context, sc bench.Scenario, step benc
 	case bench.InjectScript:
 		return s.run(ctx, sc, step.Script)
 	case bench.InjectChaosMesh, bench.InjectKubectl:
-		return fmt.Errorf("inject type %q needs a cluster client; the Kubernetes injector adapter is not wired yet", step.Type)
+		return fmt.Errorf("inject type %q needs a cluster client, which the script injector does not have "+
+			"(use --inject=auto)", step.Type)
 	default:
 		return fmt.Errorf("unknown inject type %q", step.Type)
 	}
@@ -165,10 +167,11 @@ func (a AutoInjector) Cleanup(ctx context.Context, sc bench.Scenario) error {
 	return first
 }
 
-// AlwaysReadyProbe reports the environment as immediately steady. It is the
-// honest default while telemetry-based steady-state detection is unwired: the
-// injector's script is expected to return only once the fault is established.
-// A report produced with it must not claim steady state was verified.
+// AlwaysReadyProbe reports the environment as immediately steady. It is used
+// for a scenario with no steadyState block, and by the calibration stub when
+// no metrics backend is given; the injector is then expected to return only
+// once the fault is established. A report produced with it must not claim
+// steady state was verified.
 type AlwaysReadyProbe struct{}
 
 // Reached always returns true.

@@ -9,11 +9,10 @@ import (
 
 // Normalizer maps an agent's raw output into a validated Diagnosis. Adapters
 // that already emit the diagnosis JSON use JSONNormalizer (deterministic).
-// Shell agents whose native format we don't control get a per-adapter
-// normalizer; an LLM-judge normalizer lands with the agent-adapter slice and
-// MUST report Method() = "llm-judge" so results disclose it (honest reporting,
-// architecture rule 7). Scoring never sees raw agent text — only what a
-// Normalizer produced.
+// A shell agent whose output is not that JSON goes through the LLM judge
+// (bench/judge), which reports Method() = "llm-judge" so results disclose it
+// (honest reporting, architecture rule 7). Scoring never sees raw agent text,
+// only what a Normalizer produced.
 type Normalizer interface {
 	// Normalize converts raw agent output into a validated Diagnosis for the
 	// given scenario. The scenario name is injected so the Diagnosis.Scenario

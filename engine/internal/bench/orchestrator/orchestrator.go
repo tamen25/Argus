@@ -215,9 +215,9 @@ func Run(
 	}
 	rep.MaxTurnTokens = opts.MaxTurnTokens
 
+	h := harness{sc: sc, agent: ag, tools: tools, inj: inj, probe: probe, opts: opts}
 	for i := 0; i < opts.Repeats; i++ {
-		rec := runOnce(ctx, sc, ag, tools, inj, probe, opts, i)
-		rep.Runs = append(rep.Runs, rec)
+		rep.Runs = append(rep.Runs, h.once(ctx, i))
 		if ctx.Err() != nil {
 			break
 		}
@@ -229,84 +229,94 @@ func Run(
 	return rep, nil
 }
 
-func runOnce(
-	ctx context.Context,
-	sc bench.Scenario,
-	ag agent.Agent,
-	tools agent.Tools,
-	inj Injector,
-	probe SteadyStateProbe,
-	opts Options,
-	repeat int,
-) RunRecord {
-	rec := RunRecord{Repeat: repeat, Started: opts.Now()}
-	finish := func() RunRecord {
-		rec.Finished = opts.Now()
-		return rec
-	}
+// harness is everything one repeat needs, so Run can hand it over whole.
+type harness struct {
+	sc    bench.Scenario
+	agent agent.Agent
+	tools agent.Tools
+	inj   Injector
+	probe SteadyStateProbe
+	opts  Options
+}
 
+// once runs one repeat: bring the fault up, ask the agent, score its answer,
+// and clean up. A failure at any stage is recorded in the RunRecord.
+func (h harness) once(ctx context.Context, repeat int) RunRecord {
 	// Cleanup always runs, even when the attempt fails partway: a leaked fault
 	// would poison every later repeat. It also runs when the run was
 	// interrupted, so it gets a context that ctx's cancellation does not reach
 	// (context.WithoutCancel keeps ctx's values but drops its cancellation),
 	// bounded by its own timeout instead.
 	defer func() {
-		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), opts.CleanupTimeout)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), h.opts.CleanupTimeout)
 		defer cancel()
-		_ = inj.Cleanup(cctx, sc)
+		_ = h.inj.Cleanup(cctx, h.sc)
 	}()
 
-	if err := inj.Reset(ctx, sc); err != nil {
-		rec.Error = fmt.Sprintf("reset: %v", err)
-		return finish()
+	rec := RunRecord{Repeat: repeat, Started: h.opts.Now()}
+	if err := h.injectFault(ctx); err != nil {
+		rec.Error = err.Error()
+	} else {
+		h.diagnose(ctx, &rec)
 	}
-	if err := waitBaseline(ctx, probe, sc, opts); err != nil {
-		rec.Error = fmt.Sprintf("baseline: %v", err)
-		return finish()
+	rec.Finished = h.opts.Now()
+	return rec
+}
+
+// injectFault resets the environment, waits until it is verifiably clean,
+// injects every step, and waits until the fault is observable. The error names
+// the stage that failed.
+func (h harness) injectFault(ctx context.Context) error {
+	if err := h.inj.Reset(ctx, h.sc); err != nil {
+		return fmt.Errorf("reset: %w", err)
 	}
-	for _, step := range sc.Spec.Inject {
-		if err := inj.Inject(ctx, sc, step); err != nil {
-			rec.Error = fmt.Sprintf("inject: %v", err)
-			return finish()
+	if err := waitBaseline(ctx, h.probe, h.sc, h.opts); err != nil {
+		return fmt.Errorf("baseline: %w", err)
+	}
+	for _, step := range h.sc.Spec.Inject {
+		if err := h.inj.Inject(ctx, h.sc, step); err != nil {
+			return fmt.Errorf("inject: %w", err)
 		}
 	}
-	if err := waitSteady(ctx, probe, sc, opts); err != nil {
-		rec.Error = fmt.Sprintf("steady state: %v", err)
-		return finish()
+	if err := waitSteady(ctx, h.probe, h.sc, h.opts); err != nil {
+		return fmt.Errorf("steady state: %w", err)
 	}
+	return nil
+}
 
-	res, err := ag.Diagnose(ctx, agent.Task{
-		Scenario:   sc.Metadata.Name,
-		Brief:      opts.Brief(sc),
-		Tools:      tools,
-		Budget:     opts.Budget,
-		Categories: opts.Categories.Sorted(),
+// diagnose asks the agent, normalizes its answer, and scores it, recording
+// each step's outcome in rec.
+func (h harness) diagnose(ctx context.Context, rec *RunRecord) {
+	res, err := h.agent.Diagnose(ctx, agent.Task{
+		Scenario:   h.sc.Metadata.Name,
+		Brief:      h.opts.Brief(h.sc),
+		Tools:      h.tools,
+		Budget:     h.opts.Budget,
+		Categories: h.opts.Categories.Sorted(),
 	})
 	rec.Usage = res.Usage
 	rec.ToolLog = res.Calls
 	if err != nil {
 		rec.Error = err.Error()
 		rec.BudgetExhausted = errors.Is(err, agent.ErrBudgetExhausted)
-		var be *agent.BudgetError
-		if errors.As(err, &be) {
+		if be, ok := errors.AsType[*agent.BudgetError](err); ok {
 			rec.BudgetCap = be.Cap
 		}
-		return finish()
+		return
 	}
 
-	d, method, err := normalize(ctx, opts.Normalizers, res.Raw, sc.Metadata.Name)
+	d, method, err := normalize(ctx, h.opts.Normalizers, res.Raw, h.sc.Metadata.Name)
 	rec.Normalization = method
 	if err != nil {
 		// The submission is kept (truncated) so a rejected answer can be told
 		// apart from an absent one: the first gpt-oss runs submitted arguments
 		// with a field the schema does not have.
 		rec.Error = fmt.Sprintf("normalize: %v (submitted: %s)", err, truncateSubmission(res.Raw))
-		return finish()
+		return
 	}
 
-	s := scoring.Score(sc.Spec.GroundTruth, sc.Spec.Scoring, d)
+	s := scoring.Score(h.sc.Spec.GroundTruth, h.sc.Spec.Scoring, d)
 	rec.Score = &s
-	return finish()
 }
 
 // normalize tries each normalizer in order, returning the first success and the

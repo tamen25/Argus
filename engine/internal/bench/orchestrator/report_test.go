@@ -114,3 +114,15 @@ func TestRenderJSON_RoundTrips(t *testing.T) {
 		t.Errorf("summary lost in round-trip: %+v", back.Summary)
 	}
 }
+
+// Labels rank by how often they appeared, then by name, so ties are stable.
+func TestRankByCount(t *testing.T) {
+	got := rankByCount(map[string]int{"b": 1, "a": 1, "c": 3}, 4)
+	want := []string{"c (3/4)", "a (1/4)", "b (1/4)"}
+	if strings.Join(got, ", ") != strings.Join(want, ", ") {
+		t.Errorf("rankByCount = %v, want %v", got, want)
+	}
+	if got := rankByCount(map[string]int{}, 4); len(got) != 0 {
+		t.Errorf("rankByCount of nothing = %v, want empty", got)
+	}
+}

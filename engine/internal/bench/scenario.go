@@ -252,60 +252,78 @@ func (s Scenario) validate() error {
 			return fmt.Errorf("spec.inject[%d]: %w", i, err)
 		}
 	}
-	if len(s.Spec.GroundTruth.RootCauseEntities) == 0 {
-		return fmt.Errorf("spec.groundTruth.rootCauseEntities is empty")
+	if err := s.Spec.GroundTruth.validate(); err != nil {
+		return fmt.Errorf("spec.groundTruth.%w", err)
 	}
-	for i, e := range s.Spec.GroundTruth.RootCauseEntities {
-		if e.Kind == "" || e.Name == "" {
-			return fmt.Errorf("spec.groundTruth.rootCauseEntities[%d]: kind and name are required", i)
-		}
+	if err := s.Spec.Scoring.validate(); err != nil {
+		return fmt.Errorf("spec.scoring.%w", err)
 	}
-	if s.Spec.GroundTruth.Category == "" {
-		return fmt.Errorf("spec.groundTruth.category is empty")
+	if err := validateHooks("reset", s.Spec.Reset); err != nil {
+		return err
 	}
-	for i, e := range s.Spec.GroundTruth.Decoys {
-		if e.Kind == "" || e.Name == "" {
-			return fmt.Errorf("spec.groundTruth.decoys[%d]: kind and name are required", i)
-		}
-	}
-	// A decoy that is also ground truth would penalize the correct answer.
-	truth := map[string]bool{}
-	for _, e := range s.Spec.GroundTruth.RootCauseEntities {
-		truth[EntityKey(e)] = true
-	}
-	for i, e := range s.Spec.GroundTruth.Decoys {
-		if truth[EntityKey(e)] {
-			return fmt.Errorf("spec.groundTruth.decoys[%d]: %s/%s/%s is also a root-cause entity",
-				i, e.Kind, e.Namespace, e.Name)
-		}
-	}
-	switch s.Spec.Scoring.EntityMatch {
-	case "", MatchJaccard, MatchExact: // "" defaults to jaccard downstream
-	default:
-		return fmt.Errorf("spec.scoring.entityMatch %q, want %q or %q",
-			s.Spec.Scoring.EntityMatch, MatchJaccard, MatchExact)
-	}
-	if w := s.Spec.Scoring.CategoryWeight; w != nil && (*w < 0 || *w > 1) {
-		return fmt.Errorf("spec.scoring.categoryWeight %v out of [0,1]", *w)
-	}
-	if p := s.Spec.Scoring.DecoyPenalty; p != nil && (*p < 0 || *p > 1) {
-		return fmt.Errorf("spec.scoring.decoyPenalty %v out of [0,1]", *p)
-	}
-	// An ordered slice, not a map: Go randomizes map iteration, which would make
-	// the reported error depend on the run when both lists are invalid.
-	for _, list := range []struct {
-		name  string
-		hooks []Hook
-	}{{"reset", s.Spec.Reset}, {"cleanup", s.Spec.Cleanup}} {
-		for i, h := range list.hooks {
-			if strings.TrimSpace(h.Script) == "" {
-				return fmt.Errorf("spec.%s[%d]: script is empty", list.name, i)
-			}
-		}
+	if err := validateHooks("cleanup", s.Spec.Cleanup); err != nil {
+		return err
 	}
 	if ss := s.Spec.SteadyState; ss != nil {
 		if err := ss.validate(); err != nil {
 			return fmt.Errorf("spec.steadyState: %w", err)
+		}
+	}
+	return nil
+}
+
+// validate checks the ground truth. Errors start with the field name, so the
+// caller can prefix the path to it.
+func (g GroundTruth) validate() error {
+	if len(g.RootCauseEntities) == 0 {
+		return fmt.Errorf("rootCauseEntities is empty")
+	}
+	for i, e := range g.RootCauseEntities {
+		if e.Kind == "" || e.Name == "" {
+			return fmt.Errorf("rootCauseEntities[%d]: kind and name are required", i)
+		}
+	}
+	if g.Category == "" {
+		return fmt.Errorf("category is empty")
+	}
+	// A decoy that is also ground truth would penalize the correct answer.
+	truth := map[string]bool{}
+	for _, e := range g.RootCauseEntities {
+		truth[EntityKey(e)] = true
+	}
+	for i, e := range g.Decoys {
+		if e.Kind == "" || e.Name == "" {
+			return fmt.Errorf("decoys[%d]: kind and name are required", i)
+		}
+		if truth[EntityKey(e)] {
+			return fmt.Errorf("decoys[%d]: %s/%s/%s is also a root-cause entity", i, e.Kind, e.Namespace, e.Name)
+		}
+	}
+	return nil
+}
+
+// validate checks the scoring block. Errors start with the field name, as in
+// GroundTruth.validate.
+func (s ScoringSpec) validate() error {
+	switch s.EntityMatch {
+	case "", MatchJaccard, MatchExact: // "" defaults to jaccard downstream
+	default:
+		return fmt.Errorf("entityMatch %q, want %q or %q", s.EntityMatch, MatchJaccard, MatchExact)
+	}
+	if w := s.CategoryWeight; w != nil && (*w < 0 || *w > 1) {
+		return fmt.Errorf("categoryWeight %v out of [0,1]", *w)
+	}
+	if p := s.DecoyPenalty; p != nil && (*p < 0 || *p > 1) {
+		return fmt.Errorf("decoyPenalty %v out of [0,1]", *p)
+	}
+	return nil
+}
+
+// validateHooks checks that every hook in spec.<list> names a script.
+func validateHooks(list string, hooks []Hook) error {
+	for i, h := range hooks {
+		if strings.TrimSpace(h.Script) == "" {
+			return fmt.Errorf("spec.%s[%d]: script is empty", list, i)
 		}
 	}
 	return nil
