@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/httpclient"
 )
 
 // OpenAIConfig configures the OpenAI-compatible chat-completions client. Any
@@ -36,7 +37,7 @@ type OpenAIClient struct {
 func NewOpenAI(cfg OpenAIConfig) *OpenAIClient {
 	h := cfg.HTTP
 	if h == nil {
-		h = &http.Client{Timeout: 60 * time.Second}
+		h = httpclient.New(60 * time.Second)
 	}
 	if cfg.MaxTokens <= 0 {
 		cfg.MaxTokens = 512

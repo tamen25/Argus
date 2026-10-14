@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/httpclient"
 )
 
 // Client talks to Mimir's Prometheus-compatible HTTP API.
@@ -23,7 +24,7 @@ type Client struct {
 
 // New builds a client for the given base URL and optional tenant.
 func New(base, tenant string) *Client {
-	return &Client{base: base, tenant: tenant, http: &http.Client{Timeout: 30 * time.Second}}
+	return &Client{base: base, tenant: tenant, http: httpclient.New(30 * time.Second)}
 }
 
 // LabelValues implements ingest.MimirAPI.

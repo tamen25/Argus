@@ -284,8 +284,10 @@ func startScoring(ctx context.Context, cfg serveConfig, mux *http.ServeMux, reg 
 	// Self-instrumentation (dogfooding, §3.4): exports only when
 	// OTEL_EXPORTER_OTLP_ENDPOINT is set, typically to another argus scoring
 	// this one (the CI dogfood gate does exactly that).
+	endpoint, insecure := otlpEndpointFromEnv()
 	tel, err := telemetry.Setup(ctx, telemetry.Config{
-		Endpoint:       otlpEndpointFromEnv(),
+		Endpoint:       endpoint,
+		Insecure:       insecure,
 		ServiceName:    "argus-engine",
 		ServiceVersion: version,
 		Environment:    os.Getenv("ARGUS_ENVIRONMENT"),
@@ -322,12 +324,21 @@ func startScoring(ctx context.Context, cfg serveConfig, mux *http.ServeMux, reg 
 	}, nil
 }
 
-// otlpEndpointFromEnv is OTEL_EXPORTER_OTLP_ENDPOINT as host:port: the OTel
-// convention allows a URL, the gRPC exporter wants no scheme.
-func otlpEndpointFromEnv() string {
+// otlpEndpointFromEnv reads OTEL_EXPORTER_OTLP_ENDPOINT. The OTel convention
+// allows a URL, while the gRPC exporter wants host:port and a separate
+// transport choice, and the scheme is that choice: https:// means TLS. A bare
+// host:port, or http://, is plaintext, the setting for a mirror inside a
+// cluster. OTEL_EXPORTER_OTLP_INSECURE=true forces plaintext, as in the SDKs.
+//
+// The scheme used to be stripped from both, so an https:// endpoint was sent
+// plaintext.
+func otlpEndpointFromEnv() (endpoint string, insecure bool) {
 	ep := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	ep = strings.TrimPrefix(ep, "http://")
-	return strings.TrimPrefix(ep, "https://")
+	forced := strings.EqualFold(os.Getenv("OTEL_EXPORTER_OTLP_INSECURE"), "true")
+	if rest, ok := strings.CutPrefix(ep, "https://"); ok {
+		return strings.TrimSuffix(rest, "/"), forced
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(ep, "http://"), "/"), true
 }
 
 // registerAPI mounts the JSON endpoints backing the soak harness and the

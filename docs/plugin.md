@@ -12,7 +12,9 @@ Engine connection, on the app's configuration page:
 
 - **Engine URL** (`jsonData.engineUrl`): default
   `http://argus-engine.argus.svc:8080`, matching the kind deployment. It must
-  be an `http(s)` URL; anything else is refused when the settings are saved.
+  be an `http(s)` URL with no credentials, query or fragment; anything else is
+  refused when the settings are saved. The plugin does not follow redirects
+  from the engine, so the token only ever goes to this URL.
 - **API token** (`secureJsonData.apiToken`): the engine's `ARGUS_API_TOKEN`.
   When the engine has one, every `/api/` call needs it as a bearer token.
   The Helm chart generates it, and `helm status` shows how to read it.

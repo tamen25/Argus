@@ -15,13 +15,14 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/httpclient"
 )
 
 // httpClient is the shared transport; a modest timeout bounds a hung backend.
 // maxToolAnswer caps one backend answer handed to an agent.
 const maxToolAnswer = 8 << 20
 
-func newHTTP() *http.Client { return &http.Client{Timeout: 30 * time.Second} }
+func newHTTP() *http.Client { return httpclient.New(30 * time.Second) }
 
 // getRaw performs a GET and returns the response body verbatim. Non-2xx is an
 // error carrying a truncated body so the agent sees why a tool failed.

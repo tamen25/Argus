@@ -12,6 +12,7 @@ import (
 
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/httpclient"
 )
 
 // OpenAIConfig configures an OpenAI-compatible chat-completions agent. Any
@@ -48,7 +49,7 @@ type OpenAIAgent struct {
 func NewOpenAI(cfg OpenAIConfig) *OpenAIAgent {
 	h := cfg.HTTP
 	if h == nil {
-		h = &http.Client{Timeout: cmp.Or(cfg.Timeout, DefaultAgentTimeout)}
+		h = httpclient.New(cmp.Or(cfg.Timeout, DefaultAgentTimeout))
 	}
 	if cfg.Name == "" {
 		cfg.Name = cfg.Model

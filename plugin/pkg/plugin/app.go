@@ -60,7 +60,7 @@ func NewApp(_ context.Context, as backend.AppInstanceSettings) (instancemgmt.Ins
 	app := &App{
 		engineURL: engineURL,
 		apiToken:  as.DecryptedSecureJSONData[apiTokenKey],
-		client:    &http.Client{Timeout: 10 * time.Second},
+		client:    &http.Client{Timeout: 10 * time.Second, CheckRedirect: refuseRedirect},
 	}
 
 	mux := http.NewServeMux()
@@ -119,6 +119,13 @@ func (a *App) get(ctx context.Context, pathAndQuery string) (*http.Response, err
 // in-cluster default. Anything that is not an http(s) URL with a host is an
 // error, shown on the app's configuration page, rather than a proxy that fails
 // on every request.
+// refuseRedirect stops the client following a redirect: the engine API never
+// answers with one, and following it would send the bearer token to the URL
+// it names (on the same host, possibly over plain HTTP).
+func refuseRedirect(req *http.Request, _ []*http.Request) error {
+	return fmt.Errorf("the engine redirected to %s: refusing to follow it; set that URL instead", req.URL.Redacted())
+}
+
 func normalizeEngineURL(raw string) (string, error) {
 	if strings.TrimSpace(raw) == "" {
 		return defaultEngineURL, nil
@@ -126,6 +133,12 @@ func normalizeEngineURL(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return "", fmt.Errorf("engine URL %q: want http(s)://host[:port]", raw)
+	}
+	// Request paths are appended to this URL. A query or a fragment would end
+	// up in front of them ("…?x=1/api/report"), and credentials in the URL
+	// would bypass the token setting, so none of them is accepted.
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("engine URL %q: no credentials, query or fragment; the API token has its own setting", u.Redacted())
 	}
 	return strings.TrimRight(u.String(), "/"), nil
 }
