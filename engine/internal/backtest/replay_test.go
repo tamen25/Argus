@@ -135,3 +135,28 @@ func TestReplayPerSeriesState(t *testing.T) {
 		t.Errorf("fired at %v and %v, want minutes 3 and 6", firings[0].FiredAt, firings[1].FiredAt)
 	}
 }
+
+// R24: keep_firing_for keeps a firing alert firing after its condition
+// stops, as the live ruler does; replay used to resolve it at once.
+func TestReplayKeepFiringFor(t *testing.T) {
+	t0 := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
+	step := time.Minute
+	at := func(m int) int64 { return t0.Add(time.Duration(m) * step).Unix() }
+	expr := `errors_ratio > 0.05`
+	vals := map[int64]map[string]float64{}
+	for m := 2; m <= 4; m++ {
+		vals[at(m)] = map[string]float64{`{service="ad"}`: 0.08}
+	}
+	q := &scriptedEvaluator{values: map[string]map[int64]map[string]float64{expr: vals}}
+	rule := backtest.Rule{Name: "HighErr", Alert: true, Expr: expr, KeepFiringFor: 3 * time.Minute}
+
+	firings, err := backtest.Replay(context.Background(), q, rule, backtest.Segment{Start: t0, End: t0.Add(12 * step)}, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// true at minutes 2-4, last true at 4: it keeps firing while less than
+	// 3m have passed (minutes 5 and 6), and resolves at minute 7.
+	if len(firings) != 1 || !firings[0].ResolvedAt.Equal(t0.Add(7*step)) {
+		t.Errorf("firings = %+v, want one resolved at minute 7", firings)
+	}
+}

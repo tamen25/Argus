@@ -47,11 +47,14 @@ type Group struct {
 
 // Rule is one alerting or recording rule.
 type Rule struct {
-	Name   string // alert name, or the recording rule's series name
-	Alert  bool
-	Expr   string
-	For    time.Duration     // alerts only
-	Labels map[string]string // static labels from the rule file
+	Name  string // alert name, or the recording rule's series name
+	Alert bool
+	Expr  string
+	For   time.Duration // alerts only
+	// KeepFiringFor keeps a firing alert firing for this long after its
+	// condition stops holding (alerts only).
+	KeepFiringFor time.Duration
+	Labels        map[string]string // static labels from the rule file
 }
 
 // LoadRuleFiles strictly parses Prometheus/Mimir ruler rule files (Sloth and
@@ -103,7 +106,10 @@ func parseRuleFile(path string) (*rulefmt.RuleGroups, error) {
 // fromRulefmt converts one parsed rule into backtest's model.
 func fromRulefmt(r rulefmt.Rule) Rule {
 	if r.Alert != "" {
-		return Rule{Name: r.Alert, Alert: true, Expr: r.Expr, For: time.Duration(r.For), Labels: r.Labels}
+		return Rule{
+			Name: r.Alert, Alert: true, Expr: r.Expr, Labels: r.Labels,
+			For: time.Duration(r.For), KeepFiringFor: time.Duration(r.KeepFiringFor),
+		}
 	}
 	return Rule{Name: r.Record, Expr: r.Expr, Labels: r.Labels}
 }

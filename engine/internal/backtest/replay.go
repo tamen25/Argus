@@ -25,7 +25,8 @@ type Firing struct {
 // Replay steps one alerting rule through a presence segment, reconstructing
 // per-series `for:` state the way a live ruler would have evolved it: pending
 // on the first true evaluation, firing once continuously true for the rule's
-// For duration, resolved on the first false evaluation.
+// For duration, resolved on the first false evaluation, or, with
+// keep_firing_for, once the condition has been false for that long.
 //
 // Fidelity caveats (spike, docs/backtest-fidelity.md): step-aligned instant
 // queries approximate the live ruler's own evaluation schedule; staleness and
@@ -39,6 +40,7 @@ func Replay(ctx context.Context, q EvalQuerier, rule Rule, seg Segment, step tim
 	type state struct {
 		activeAt time.Time
 		firedAt  time.Time // zero until for: satisfied
+		lastTrue time.Time // the last evaluation the condition held
 	}
 	active := map[string]*state{}
 	var out []Firing
@@ -64,14 +66,21 @@ func Replay(ctx context.Context, q EvalQuerier, rule Rule, seg Segment, step tim
 				st = &state{activeAt: t}
 				active[key] = st
 			}
+			st.lastTrue = t
 			if st.firedAt.IsZero() && t.Sub(st.activeAt) >= rule.For {
 				st.firedAt = t
 			}
 		}
-		for key := range active {
-			if _, still := vals[key]; !still {
-				resolve(key, t)
+		for key, st := range active {
+			if _, still := vals[key]; still {
+				continue
 			}
+			// A firing alert with keep_firing_for stays firing until the
+			// condition has been false for that long.
+			if !st.firedAt.IsZero() && t.Sub(st.lastTrue) < rule.KeepFiringFor {
+				continue
+			}
+			resolve(key, t)
 		}
 	}
 	// still active at segment end: firing with no resolution in view

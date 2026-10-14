@@ -76,8 +76,12 @@ argus backtest diff \
 - `--max-pages-week` fails when set B's total exceeds the budget.
 - The exit code is **2** on a regression and **1** on any other error: wire it
   straight into CI, and retry only the second.
-- Reports over different coverage are **refused, not fudged**: both sets are
-  replayed in one invocation over identical segments.
+- Both sets are judged on **the same history**: presence is mapped once, and
+  both are replayed over those segments. Reports over different windows,
+  steps or segments are refused, not fudged, and so is a window with no
+  coverage at all: the gate does not pass on no evidence.
+- Each set's caveats (a rule that could not be synthesized, say) are listed
+  in the diff report under its name.
 
 ## Live endpoint (plugin Backtest page)
 
@@ -94,8 +98,17 @@ shows "not configured" rather than an empty report.
 
 Every report ends with the **fidelity caveats** that applied — coverage
 (telemetry presence segments vs the calendar window), synthesized recording
-rules, external recording-rule dependencies, and the standing
-staleness/lookback divergence caveat. `--synthesize` refuses unsound rewrites
+rules, external recording-rule dependencies, a group the live ruler evaluates
+at another interval than the replay step, and two standing caveats: replay
+differs from live evaluation in staleness and lookback, and coverage comes from
+one presence probe across the backend, so it shows the backend had data, not
+that each rule's own series existed.
+
+Replay honors each alert's `for:` and `keep_firing_for:`. An alert name that
+appears in two groups is scored as two rules, named `group/alert`. Static
+`labels:` on a rule are not applied to the replayed series: if a static label
+overwrites a label of the query's result, series the live ruler would merge
+into one alert are scored separately. `--synthesize` refuses unsound rewrites
 (external recording rules, label-matcher pushdown, recording rules inside
 range selectors) instead of guessing.
 

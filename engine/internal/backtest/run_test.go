@@ -136,3 +136,30 @@ func TestRunSynthesizesAndDisclosesCoverage(t *testing.T) {
 		t.Errorf("caveats = %q, want one each: not replayed, inlined, partial coverage", rep.Caveats)
 	}
 }
+
+// R24: two groups with the same alert name are two rules, scored apart, and
+// a group the live ruler evaluates at another interval than the replay step
+// is disclosed.
+func TestRunDistinctNamesAndGroupIntervals(t *testing.T) {
+	from := time.Date(2026, 7, 18, 5, 0, 0, 0, time.UTC)
+	rs := backtest.RuleSet{Groups: []backtest.Group{
+		{Name: "api", Interval: 30 * time.Second, Rules: []backtest.Rule{{Name: "HighErr", Alert: true, Expr: `errs > 0.05`}}},
+		{Name: "web", Rules: []backtest.Rule{{Name: "HighErr", Alert: true, Expr: `errs > 0.05`}}},
+	}}
+	rep, err := backtest.Run(context.Background(), fakeEval{}, alwaysPresent{}, backtest.RunInput{
+		Rules: rs, From: from, To: from.Add(time.Hour), Step: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Rules) != 2 || rep.Rules[0].Rule != "api/HighErr" || rep.Rules[1].Rule != "web/HighErr" {
+		t.Errorf("scorecards = %v, want api/HighErr and web/HighErr", []string{rep.Rules[0].Rule, rep.Rules[1].Rule})
+	}
+	found := false
+	for _, c := range rep.Caveats {
+		found = found || strings.Contains(c, "group api is evaluated every 30s")
+	}
+	if !found {
+		t.Errorf("caveats = %q, want the group interval disclosed", rep.Caveats)
+	}
+}

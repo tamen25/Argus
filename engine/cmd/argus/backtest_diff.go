@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/tamen25/Argus/engine/internal/backtest"
+	"github.com/tamen25/Argus/engine/internal/ingest/mimir"
 )
 
 // errBacktestRegression marks the CI-gate failure: exit non-zero when the
@@ -84,10 +85,26 @@ func runBacktestDiff(ctx context.Context, opts *backtestDiffOptions) (backtest.D
 		nonNegative("max-ttd-regression", opts.maxTTD)); err != nil {
 		return backtest.Diff{}, err
 	}
+	// Presence is mapped once, and both rule sets are replayed over those
+	// segments: two sweeps could see different history if the backend
+	// changed in between, and then the diff would compare unlike things.
+	from, to, err := parseWindow(opts.from, opts.to)
+	if err != nil {
+		return backtest.Diff{}, err
+	}
+	client := mimir.New(opts.mimirURL, opts.mimirTenant)
+	segs, err := backtest.Segments(ctx, mimir.PresenceSource{Client: client, Expr: opts.probeExpr}, from, to, opts.step)
+	if err != nil {
+		return backtest.Diff{}, fmt.Errorf("presence mapping: %w", err)
+	}
+	if segs == nil {
+		segs = []backtest.Segment{} // mapped, and empty: not "probe again"
+	}
+
 	base := backtestRunOptions{
 		incidents: opts.incidents, mimirURL: opts.mimirURL, mimirTenant: opts.mimirTenant,
 		from: opts.from, to: opts.to, step: opts.step, grace: opts.grace,
-		probeExpr: opts.probeExpr, synthesize: opts.synthesize,
+		probeExpr: opts.probeExpr, synthesize: opts.synthesize, segments: segs,
 	}
 
 	a := base

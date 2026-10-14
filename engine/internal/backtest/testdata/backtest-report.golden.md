@@ -30,5 +30,6 @@
 ## Fidelity caveats
 
 - Replay is not re-execution: stepped instant queries differ from live ruler evaluation in staleness, lookback, and alignment (docs/backtest-fidelity.md).
+- Coverage comes from one presence probe across the backend: it shows the backend had data at each step, not that every rule's own input series existed. An incident in covered time whose series were missing is reported as missed, not unverifiable.
 - replay steps instant queries through time — staleness and ruler-alignment semantics differ from live evaluation
 - telemetry covers 32m0s of the 35m0s window — verdicts apply to covered segments only

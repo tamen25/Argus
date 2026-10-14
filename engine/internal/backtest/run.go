@@ -17,6 +17,11 @@ type RunInput struct {
 	From, To    time.Time
 	Step, Grace time.Duration
 	Synthesize  bool
+	// Segments, when set, is the presence mapping to use instead of probing
+	// the backend. backtest diff maps presence once and replays both rule
+	// sets over the same segments, so a backend change between two sweeps
+	// cannot make them judge different history.
+	Segments []Segment
 }
 
 // Run is the backtest pipeline end to end: map telemetry presence over the
@@ -36,9 +41,12 @@ func Run(ctx context.Context, eval EvalQuerier, probe InstantQuerier, in RunInpu
 	if err := checkStepping("step", in.From, in.To, in.Step); err != nil {
 		return Report{}, err
 	}
-	segs, err := Segments(ctx, probe, in.From, in.To, in.Step)
-	if err != nil {
-		return Report{}, fmt.Errorf("presence mapping: %w", err)
+	segs := in.Segments
+	if segs == nil {
+		var err error
+		if segs, err = Segments(ctx, probe, in.From, in.To, in.Step); err != nil {
+			return Report{}, fmt.Errorf("presence mapping: %w", err)
+		}
 	}
 
 	rep := Report{
@@ -48,15 +56,26 @@ func Run(ctx context.Context, eval EvalQuerier, probe InstantQuerier, in RunInpu
 		Step:        in.Step,
 		Coverage:    totalCoverage(segs),
 		Segments:    len(segs),
+		Spans:       segs,
 	}
 	if window := in.To.Sub(in.From); rep.Coverage < window {
 		rep.Caveats = append(rep.Caveats, fmt.Sprintf("telemetry covers %s of the %s window — verdicts apply to covered segments only", rep.Coverage, window))
 	}
 
+	names := alertNames(in.Rules)
 	for _, g := range in.Rules.Groups {
+		if g.Interval > 0 && g.Interval != in.Step {
+			rep.Caveats = append(rep.Caveats, fmt.Sprintf(
+				"group %s is evaluated every %s by the live ruler, and was replayed every %s", g.Name, g.Interval, in.Step))
+		}
 		for _, rule := range g.Rules {
 			if !rule.Alert {
 				continue
+			}
+			// The same alert name in two groups is two rules: keep their
+			// scorecards apart.
+			if names[rule.Name] > 1 {
+				rule.Name = g.Name + "/" + rule.Name
 			}
 			if in.Synthesize {
 				expr, caveats, err := Synthesize(in.Rules, rule.Expr)
@@ -77,6 +96,19 @@ func Run(ctx context.Context, eval EvalQuerier, probe InstantQuerier, in RunInpu
 	}
 	rep.Caveats = dedupeCaveats(rep.Caveats)
 	return rep, nil
+}
+
+// alertNames counts how many alerting rules carry each name.
+func alertNames(rs RuleSet) map[string]int {
+	n := map[string]int{}
+	for _, g := range rs.Groups {
+		for _, r := range g.Rules {
+			if r.Alert {
+				n[r.Name]++
+			}
+		}
+	}
+	return n
 }
 
 // replaySegments replays one rule through every covered segment in turn.
