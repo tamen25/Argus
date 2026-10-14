@@ -101,7 +101,7 @@ func TestInject_RejectsScriptSteps(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected script steps to be rejected")
 	}
-	if !strings.Contains(err.Error(), "script injector") {
+	if !strings.Contains(err.Error(), "--inject=auto") {
 		t.Errorf("error should point at the right injector: %v", err)
 	}
 }

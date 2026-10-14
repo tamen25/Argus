@@ -52,9 +52,6 @@ type Evidence struct {
 // surface. A citation naming something else is malformed.
 var ValidSignals = []string{"metrics", "logs", "traces", "alerts", "topology"}
 
-// WellFormed reports whether a citation names a known signal and says what was
-// observed. A malformed citation is not an error in the diagnosis — it is simply
-// not a citation, and scoring counts only well-formed ones.
 // UnmarshalJSON decodes a citation leniently: unknown fields are ignored, and
 // an item that is not an object at all decodes as an empty citation. Either way
 // WellFormed then decides whether it counts. ParseDiagnosis is strict, and a
@@ -74,6 +71,9 @@ func (e *Evidence) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// WellFormed reports whether a citation names a known signal and says what was
+// observed. A malformed citation is not an error in the diagnosis — it is simply
+// not a citation, and scoring counts only well-formed ones.
 func (e Evidence) WellFormed() bool {
 	sig := strings.ToLower(strings.TrimSpace(e.Signal))
 	return strings.TrimSpace(e.Observation) != "" && slices.Contains(ValidSignals, sig)
@@ -110,10 +110,10 @@ func (d Diagnosis) Validate() error {
 	return nil
 }
 
-// WellFormedEvidence returns the citations scoring will count.
+// WellFormedEvidence returns the citations scoring will count. A malformed
+// citation reaches this filter only because Evidence.UnmarshalJSON is lenient:
+// decoded strictly, it failed the whole diagnosis first.
 func (d Diagnosis) WellFormedEvidence() []Evidence {
-	// UnmarshalJSON below is what lets a malformed citation reach this filter at
-	// all: decoded strictly, it failed the whole diagnosis first.
 	var out []Evidence
 	for _, e := range d.Evidence {
 		if e.WellFormed() {

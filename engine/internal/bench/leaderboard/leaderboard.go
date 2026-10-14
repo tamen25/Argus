@@ -380,75 +380,82 @@ func validate(reports []orchestrator.Report) error {
 // dataCaveats are the disclosures that depend on what the reports contain:
 // anything that makes two cells less than like-for-like.
 func dataCaveats(reports []orchestrator.Report) []string {
-	hashes := map[string]map[string]bool{}   // scenario → hashes
-	budgets := map[string]map[string]bool{}  // agent → budgets
-	models := map[string]map[string]bool{}   // agent → model provenance
-	timeouts := map[string]map[string]bool{} // agent → per-call timeouts
-	lists := map[string]bool{}               // category lists offered
-	judged, nudged, retried, corrected := 0, 0, 0, 0
+	out := settingCaveats(reports)
+	out = append(out, categoryListCaveats(reports)...)
+	return append(out, runCaveats(reports)...)
+}
+
+// settingCaveats flags a scenario run under more than one definition, and an
+// agent run under more than one budget, per-call limit, or model.
+func settingCaveats(reports []orchestrator.Report) []string {
+	hashes := variants{}  // scenario → definition hashes
+	budgets := variants{} // agent → budgets
+	limits := variants{}  // agent → per-call timeout and turn cap
+	models := variants{}  // agent → model and endpoint
 	for _, r := range reports {
-		add(hashes, r.Scenario, short(r.ScenarioHash))
-		add(budgets, r.Agent, budget(r.Budget))
-		add(timeouts, r.Agent, timeout(r.AgentTimeout)+", "+turnCap(r.MaxTurnTokens))
-		lists[strings.Join(r.CategoriesOffered, ", ")] = true
+		hashes.add(r.Scenario, short(r.ScenarioHash))
+		budgets.add(r.Agent, budget(r.Budget))
+		limits.add(r.Agent, timeout(r.AgentTimeout)+", "+turnCap(r.MaxTurnTokens))
 		if r.Model != nil {
-			add(models, r.Agent, strings.TrimSuffix(r.Model.Model+" at "+r.Model.Endpoint, " at "))
+			models.add(r.Agent, strings.TrimSuffix(r.Model.Model+" at "+r.Model.Endpoint, " at "))
 		}
+	}
+
+	var out []string
+	out = append(out, hashes.caveats(", ",
+		"Scenario `%s` was run with %d different definitions (hashes %s). Those runs are pooled here but are not like-for-like.")...)
+	out = append(out, budgets.caveats("; ",
+		"Agent `%s` ran under %d different budgets (%s). A difference between its cells may be a budget effect.")...)
+	out = append(out, limits.caveats("; ",
+		"Agent `%s` ran with %d different per-call limits (timeout, output cap per turn: %s). A run a tighter limit ended has no diagnosis, and might have answered under a looser one.")...)
+	out = append(out, models.caveats("; ",
+		"Agent `%s` was served by %d different models or endpoints (%s). Those are different subjects under one name.")...)
+	return out
+}
+
+// categoryListCaveats flags runs that were offered different category lists,
+// or none. The category is half of a score by default, and it is matched
+// against the list the agent was shown, so such runs answered different
+// questions.
+func categoryListCaveats(reports []orchestrator.Report) []string {
+	lists := map[string]bool{}
+	for _, r := range reports {
+		lists[strings.Join(r.CategoriesOffered, ", ")] = true
+	}
+	switch {
+	case len(lists) > 1:
+		return []string{fmt.Sprintf(
+			"Runs were offered %d different fault category lists%s. Their category scores are not like-for-like.",
+			len(lists), noListNote(lists))}
+	case lists[""]:
+		return []string{"No run was offered a fault category list, so an agent could match the category only by guessing its exact name."}
+	}
+	return nil
+}
+
+// runCaveats counts the runs that needed help the means do not show: an LLM
+// judge, a rejected submission, a retried model call, or a reminder.
+func runCaveats(reports []orchestrator.Report) []string {
+	judged, corrected, retried, nudged := 0, 0, 0, 0
+	for _, r := range reports {
 		for _, run := range r.Runs {
+			answered := run.Score != nil
 			if run.Normalization != "" && run.Normalization != "json" {
 				judged++
 			}
-			if run.Usage.Nudges > 0 && run.Score != nil {
-				nudged++
+			if run.Usage.SubmitRejections > 0 && answered {
+				corrected++
 			}
 			if run.Usage.Retries > 0 {
 				retried++
 			}
-			if run.Usage.SubmitRejections > 0 && run.Score != nil {
-				corrected++
+			if run.Usage.Nudges > 0 && answered {
+				nudged++
 			}
 		}
 	}
 
 	var out []string
-	for _, s := range sortedKeys(hashes) {
-		if len(hashes[s]) > 1 {
-			out = append(out, fmt.Sprintf(
-				"Scenario `%s` was run with %d different definitions (hashes %s). Those runs are pooled here but are not like-for-like.",
-				s, len(hashes[s]), strings.Join(sortedKeys(hashes[s]), ", ")))
-		}
-	}
-	for _, a := range sortedKeys(budgets) {
-		if len(budgets[a]) > 1 {
-			out = append(out, fmt.Sprintf(
-				"Agent `%s` ran under %d different budgets (%s). A difference between its cells may be a budget effect.",
-				a, len(budgets[a]), strings.Join(sortedKeys(budgets[a]), "; ")))
-		}
-	}
-	for _, a := range sortedKeys(timeouts) {
-		if len(timeouts[a]) > 1 {
-			out = append(out, fmt.Sprintf(
-				"Agent `%s` ran with %d different per-call limits (timeout, output cap per turn: %s). A run a tighter limit ended has no diagnosis, and might have answered under a looser one.",
-				a, len(timeouts[a]), strings.Join(sortedKeys(timeouts[a]), "; ")))
-		}
-	}
-	for _, a := range sortedKeys(models) {
-		if len(models[a]) > 1 {
-			out = append(out, fmt.Sprintf(
-				"Agent `%s` was served by %d different models or endpoints (%s). Those are different subjects under one name.",
-				a, len(models[a]), strings.Join(sortedKeys(models[a]), "; ")))
-		}
-	}
-	// The category is half of a score by default, and it is matched against the
-	// list the agent was shown. Runs offered different lists, or none, answered
-	// different questions.
-	if len(lists) > 1 {
-		out = append(out, fmt.Sprintf(
-			"Runs were offered %d different fault category lists%s. Their category scores are not like-for-like.",
-			len(lists), noListNote(lists)))
-	} else if lists[""] {
-		out = append(out, "No run was offered a fault category list, so an agent could match the category only by guessing its exact name.")
-	}
 	if judged > 0 {
 		out = append(out, fmt.Sprintf(
 			"%d run(s) were normalized by a non-deterministic method (an LLM judge), not parsed as JSON. See the run reports.", judged))
@@ -464,6 +471,30 @@ func dataCaveats(reports []orchestrator.Report) []string {
 	if nudged > 0 {
 		out = append(out, fmt.Sprintf(
 			"%d answered run(s) submitted their diagnosis only after one reminder to call a tool, having first replied in prose. See `nudges` in the run reports.", nudged))
+	}
+	return out
+}
+
+// variants records, per key (a scenario or an agent), the distinct values a
+// setting took across reports.
+type variants map[string]map[string]bool
+
+func (v variants) add(key, value string) {
+	if v[key] == nil {
+		v[key] = map[string]bool{}
+	}
+	v[key][value] = true
+}
+
+// caveats returns one caveat per key that took more than one value, in key
+// order. format receives the key, the number of values, and the values joined
+// with sep.
+func (v variants) caveats(sep, format string) []string {
+	var out []string
+	for _, k := range sortedKeys(v) {
+		if values := v[k]; len(values) > 1 {
+			out = append(out, fmt.Sprintf(format, k, len(values), strings.Join(sortedKeys(values), sep)))
+		}
 	}
 	return out
 }
@@ -490,13 +521,6 @@ func filter(reports []orchestrator.Report, condition string) []orchestrator.Repo
 		}
 	}
 	return out
-}
-
-func add(m map[string]map[string]bool, k, v string) {
-	if m[k] == nil {
-		m[k] = map[string]bool{}
-	}
-	m[k][v] = true
 }
 
 // sortedKeys returns a map's keys in order. Go randomizes map iteration, and a

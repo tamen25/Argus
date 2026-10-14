@@ -59,8 +59,29 @@ type Result struct {
 func Score(gt bench.GroundTruth, spec bench.ScoringSpec, d bench.Diagnosis) Result {
 	want := entitySet(gt.RootCauseEntities)
 	got := entitySet(d.RootCauseEntities)
+	matched, missed, extra := compare(want, got)
 
-	var matched, missed, extra []bench.Entity
+	res := Result{
+		Scenario:          d.Scenario,
+		EntityScore:       entityScore(spec, len(matched), len(missed), len(extra)),
+		CategoryMatch:     strings.EqualFold(strings.TrimSpace(gt.Category), strings.TrimSpace(d.Category)),
+		Category:          strings.TrimSpace(d.Category),
+		DecoysNamed:       decoysNamed(gt.Decoys, got),
+		EvidenceCount:     len(d.WellFormedEvidence()),
+		CitedSignals:      d.CitedSignals(),
+		MalformedEvidence: len(d.Evidence) - len(d.WellFormedEvidence()),
+		Matched:           matched,
+		Missed:            missed,
+		Extra:             extra,
+	}
+	res.EvidenceMissing = spec.RequireEvidence && res.EvidenceCount == 0
+	res.Score = overall(res, spec)
+	return res
+}
+
+// compare splits two entity sets into the entities in both (matched), only in
+// the ground truth (missed), and only in the diagnosis (extra), each sorted.
+func compare(want, got map[string]bench.Entity) (matched, missed, extra []bench.Entity) {
 	for k, e := range want {
 		if _, ok := got[k]; ok {
 			matched = append(matched, e)
@@ -76,46 +97,25 @@ func Score(gt bench.GroundTruth, spec bench.ScoringSpec, d bench.Diagnosis) Resu
 	sortEntities(matched)
 	sortEntities(missed)
 	sortEntities(extra)
+	return matched, missed, extra
+}
 
-	res := Result{
-		Scenario:          d.Scenario,
-		CategoryMatch:     strings.EqualFold(strings.TrimSpace(gt.Category), strings.TrimSpace(d.Category)),
-		Category:          strings.TrimSpace(d.Category),
-		DecoysNamed:       decoysNamed(gt.Decoys, got),
-		EvidenceCount:     len(d.WellFormedEvidence()),
-		CitedSignals:      d.CitedSignals(),
-		MalformedEvidence: len(d.Evidence) - len(d.WellFormedEvidence()),
-		Matched:           matched,
-		Missed:            missed,
-		Extra:             extra,
-	}
-
-	match := spec.EntityMatch
-	if match == "" {
-		match = bench.MatchJaccard
-	}
-	switch match {
-	case bench.MatchExact:
-		if len(missed) == 0 && len(extra) == 0 && len(want) > 0 {
-			res.EntityScore = 1
+// entityScore is the entity-set agreement in [0,1]. Exact matching, and
+// Jaccard without partial credit, give 1 only when the sets are equal (and not
+// both empty); Jaccard with partial credit gives |matched| / |union|.
+func entityScore(spec bench.ScoringSpec, matched, missed, extra int) float64 {
+	union := matched + missed + extra
+	exact := union > 0 && matched == union
+	if spec.EntityMatch == bench.MatchExact || !spec.PartialCredit {
+		if exact {
+			return 1
 		}
-	default: // jaccard
-		union := len(want) + len(got) - len(matched)
-		if !spec.PartialCredit {
-			// No partial credit: full marks only on a clean Jaccard of 1.
-			if union > 0 && len(matched) == union {
-				res.EntityScore = 1
-			}
-			break
-		}
-		if union > 0 {
-			res.EntityScore = float64(len(matched)) / float64(union)
-		}
+		return 0
 	}
-
-	res.EvidenceMissing = spec.RequireEvidence && res.EvidenceCount == 0
-	res.Score = overall(res, spec)
-	return res
+	if union == 0 {
+		return 0
+	}
+	return float64(matched) / float64(union)
 }
 
 // overall folds the graded components into the single number a leaderboard

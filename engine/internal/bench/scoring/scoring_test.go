@@ -103,3 +103,31 @@ func approx(a, b float64) bool {
 	d := a - b
 	return d < eps && d > -eps
 }
+
+// entityScore under each match mode. Exact matching and Jaccard without
+// partial credit are all-or-nothing; two empty sets never score.
+func TestEntityScore(t *testing.T) {
+	jaccard := bench.ScoringSpec{EntityMatch: bench.MatchJaccard}
+	partial := bench.ScoringSpec{EntityMatch: bench.MatchJaccard, PartialCredit: true}
+	exact := bench.ScoringSpec{EntityMatch: bench.MatchExact, PartialCredit: true}
+	cases := []struct {
+		name                   string
+		spec                   bench.ScoringSpec
+		matched, missed, extra int
+		want                   float64
+	}{
+		{"exact, equal sets", exact, 2, 0, 0, 1},
+		{"exact ignores partial credit", exact, 1, 1, 0, 0},
+		{"exact, both empty", exact, 0, 0, 0, 0},
+		{"jaccard without partial credit, equal", jaccard, 1, 0, 0, 1},
+		{"jaccard without partial credit, overlap", jaccard, 1, 0, 1, 0},
+		{"partial credit, overlap", partial, 1, 1, 2, 0.25},
+		{"partial credit, both empty", partial, 0, 0, 0, 0},
+		{"empty match mode is jaccard", bench.ScoringSpec{PartialCredit: true}, 1, 1, 0, 0.5},
+	}
+	for _, c := range cases {
+		if got := entityScore(c.spec, c.matched, c.missed, c.extra); got != c.want {
+			t.Errorf("%s: entityScore = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

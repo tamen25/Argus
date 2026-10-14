@@ -98,7 +98,7 @@ func (i *Injector) Inject(ctx context.Context, _ bench.Scenario, step bench.Inje
 	case bench.InjectChaosMesh, bench.InjectKubectl:
 		return i.run(ctx, "apply", "-f", i.path(step.Manifest))
 	case bench.InjectScript:
-		return fmt.Errorf("kube injector cannot run script steps; use the script injector for scenario steps of type %q", step.Type)
+		return fmt.Errorf("kube injector cannot run steps of type %q (use --inject=auto, which runs scripts too)", step.Type)
 	default:
 		return fmt.Errorf("unknown inject type %q", step.Type)
 	}
