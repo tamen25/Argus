@@ -140,6 +140,7 @@ function Spend({ data }: { data: Showback }) {
             <strong>
               {signed(data.trend.total_delta)} {cur}/mo
             </strong>
+            {data.trend.baseline_at && <> since {new Date(data.trend.baseline_at).toLocaleDateString()}</>}
           </p>
           <table className={s.table}>
             <thead>

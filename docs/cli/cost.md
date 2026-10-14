@@ -30,7 +30,7 @@ that would misleadingly read as `$0`.
 | `--s3-bucket` / `--s3-prefix` | | object-storage inventory |
 | `--s3-endpoint` / `--s3-region` / `--s3-path-style` | | MinIO / non-AWS endpoints |
 | `--service-label` | `service_name` | label used to attribute by service |
-| `--store-dsn` | | persist this snapshot and trend against the last |
+| `--store-dsn` | | persist this snapshot, and trend against the latest one at least a week old |
 | `--output` | `md` | `md` or `json` |
 | `--out` | *(stdout)* | write to a file instead |
 | `--fail-over-monthly` | `0` | exit non-zero when total monthly cost exceeds this (CI budget gate) |

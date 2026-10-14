@@ -144,9 +144,14 @@ JSONB plus queryable total). `Trend(current, previous)` computes per-line and
 total deltas so showback answers *"what moved, and by how much?"* — a line new
 this week shows as a full increase, a vanished line as a full decrease.
 
+The baseline is the **latest snapshot at least a week old**, and the trend
+records when it was taken (`baseline_at`; the Spend page shows the date).
+Until a snapshot a week old exists, there is no trend, and a note says so. A
+baseline priced in another currency gives no trend either: amounts in two
+currencies cannot be subtracted.
+
 Percent change is **0 against a zero baseline**: a brand-new cost line has no
-prior to divide by, so it is never reported as infinite growth. The first ever
-run trends against an empty baseline rather than failing.
+prior to divide by, so it is never reported as infinite growth.
 
 ## Live endpoint (plugin Spend page)
 

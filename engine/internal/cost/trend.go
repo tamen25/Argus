@@ -1,10 +1,16 @@
 package cost
 
-import "sort"
+import (
+	"sort"
+	"time"
+)
 
 // TrendReport is week-over-week cost movement between two reports.
 type TrendReport struct {
-	Currency   string      `json:"currency"`
+	Currency string `json:"currency"`
+	// BaselineAt is when the report compared against was taken: the latest
+	// snapshot at least a week old. Zero when Trend was called directly.
+	BaselineAt time.Time   `json:"baseline_at,omitzero"`
 	Lines      []TrendLine `json:"lines"`
 	TotalDelta float64     `json:"total_delta"` // current total − previous total
 }

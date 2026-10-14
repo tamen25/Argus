@@ -112,8 +112,8 @@ fixed; a finding that does not hold is marked so here, with the reason.
   so a passing pair can overwrite a failing one; queries are not service-scoped. Done in #109: distinct pairs, queries scoped to the service's `job`, one combined result per service. Still open: OTLP metric and attribute names are not translated to Mimir's (unit suffixes, dots).
 - [x] **R19** — `PriceFindings` is not called on the score or serve paths, and
   reads verified quantities from the wrong key. Done in #109: `argus score --pricing` and `serve --cost-pricing` price findings; the pricer reads `details.poller.pairs`; the Scores page shows the amount and currency.
-- [ ] **R20** — the week-over-week trend compares against the latest earlier
-  snapshot, not one a week old.
+- [x] **R20** — the week-over-week trend compares against the latest earlier
+  snapshot, not one a week old. Done in #120: the trend compares against the latest snapshot at least a week old and records `baseline_at` (shown on the Spend page); no week-old or same-currency baseline gives no trend, with a note. The team tie-break was #108.
 - [x] **R21** — recording-rule synthesis at the root, and cycles. Done in #106
   (B-60). Still open from R21: recording-rule output labels and `offset`/`@`.
 - [ ] **R22** — `backtest diff` compares total coverage only: different windows
