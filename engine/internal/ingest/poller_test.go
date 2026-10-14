@@ -53,7 +53,7 @@ func TestPollerVerifiesServicePresence(t *testing.T) {
 		t.Fatal(err)
 	}
 	eng, _ := rules.NewEngine(rs)
-	col := rules.NewCollector(eng)
+	col := rules.NewCollector(eng, rules.CollectorOptions{})
 
 	// stream saw checkout fail RES-005 (sampled artifact); Mimir knows the
 	// service exists with a proper job label -> verified pass overrides
@@ -86,11 +86,11 @@ func TestPollerVerifiesCardinality(t *testing.T) {
 		t.Fatal(err)
 	}
 	eng, _ := rules.NewEngine(rs)
-	col := rules.NewCollector(eng)
+	col := rules.NewCollector(eng, rules.CollectorOptions{})
 
 	// sampled sketch flagged user_id on requests_total for service ad
-	col.ObserveAggregate(rules.AggregateRow{Service: "ad", Aggregate: "metric_attribute_cardinality",
-		Fields: map[string]any{"metric": "requests_total", "attribute": "user_id", "cardinality": int64(20000)}})
+	col.ObserveAggregates([]rules.AggregateRow{{Service: "ad", Aggregate: "metric_attribute_cardinality",
+		Fields: map[string]any{"metric": "requests_total", "attribute": "user_id", "cardinality": int64(20000)}}})
 
 	// Mimir agrees: 55k series for that label -> verified fail
 	poller := NewPoller(&fakeMimir{cardinality: map[string]int64{"requests_total|user_id": 55000}}, eng)
@@ -109,9 +109,9 @@ func TestPollerVerifiesCardinality(t *testing.T) {
 func TestPollerZeroSeriesDoesNotVerify(t *testing.T) {
 	rs, _ := rules.LoadBytes([]byte(met001))
 	eng, _ := rules.NewEngine(rs)
-	col := rules.NewCollector(eng)
-	col.ObserveAggregate(rules.AggregateRow{Service: "ad", Aggregate: "metric_attribute_cardinality",
-		Fields: map[string]any{"metric": "stream_only_metric", "attribute": "user_id", "cardinality": int64(20000)}})
+	col := rules.NewCollector(eng, rules.CollectorOptions{})
+	col.ObserveAggregates([]rules.AggregateRow{{Service: "ad", Aggregate: "metric_attribute_cardinality",
+		Fields: map[string]any{"metric": "stream_only_metric", "attribute": "user_id", "cardinality": int64(20000)}}})
 
 	poller := NewPoller(&fakeMimir{cardinality: map[string]int64{}}, eng)
 	if err := poller.Run(context.Background(), col, []string{"ad"}); err != nil {
@@ -126,7 +126,7 @@ func TestPollerZeroSeriesDoesNotVerify(t *testing.T) {
 func TestPollerErrorLeavesSampledResults(t *testing.T) {
 	rs, _ := rules.LoadBytes([]byte(res005WithPoller))
 	eng, _ := rules.NewEngine(rs)
-	col := rules.NewCollector(eng)
+	col := rules.NewCollector(eng, rules.CollectorOptions{})
 	p := NewPipeline(col, TrackerOpts{MaxPairs: 10})
 	p.ConsumeTraces(testTraces("", 1))
 

@@ -50,7 +50,11 @@ func Trend(cur, prev Report) TrendReport {
 		add(l, false)
 	}
 
-	tr := TrendReport{Currency: cur.Currency, TotalDelta: cur.TotalMonthly - prev.TotalMonthly}
+	tr := TrendReport{
+		Currency:   cur.Currency,
+		Lines:      make([]TrendLine, 0, len(byKey)), // [] not null when there are none: the plugin reads .length
+		TotalDelta: cur.TotalMonthly - prev.TotalMonthly,
+	}
 	if tr.Currency == "" {
 		tr.Currency = prev.Currency
 	}
@@ -64,11 +68,18 @@ func Trend(cur, prev Report) TrendReport {
 			Current: a.cur, Previous: a.prev, Delta: a.cur - a.prev, PercentDelta: pct,
 		})
 	}
+	// Sorted on the whole line key: map order is random, so a partial key
+	// would order two teams' lines for one service and signal differently on
+	// every run.
 	sort.Slice(tr.Lines, func(i, j int) bool {
-		if tr.Lines[i].Service != tr.Lines[j].Service {
-			return tr.Lines[i].Service < tr.Lines[j].Service
+		a, b := tr.Lines[i], tr.Lines[j]
+		if a.Service != b.Service {
+			return a.Service < b.Service
 		}
-		return tr.Lines[i].Signal < tr.Lines[j].Signal
+		if a.Signal != b.Signal {
+			return a.Signal < b.Signal
+		}
+		return a.Team < b.Team
 	})
 	return tr
 }

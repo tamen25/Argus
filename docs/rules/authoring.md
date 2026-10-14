@@ -86,6 +86,24 @@ worst case ≈ cap × 16KiB (dense HLL-14) × 2 generations; in practice far les
 ## Rollup, scoring, confidence
 
 Per service: an item rule fails when `violations/observed > threshold_ratio`.
+What those counts cover:
+
+- **Item rules** count over the same two-generation window as the
+  aggregates (`--cardinality-window` in `argus serve`): a violation stops
+  counting once it is between W and 2W old. `argus score` keeps everything it
+  saw during its run.
+- **Aggregate rules** are judged on the latest export only. Each export
+  re-evaluates every tracker's current rows and replaces the previous
+  evaluation, so `observed` is the number of rows, not rows × exports, and a
+  recovered aggregate passes at the next export.
+- **A criteria that fails to evaluate** (reading a key that is not there, a
+  type mismatch) counts as a violation and as an `eval_errors` count on the
+  rule's result. A rule that could not be evaluated has not passed. Guard
+  optional keys with `in` or `has()`, as the built-in rules do.
+- **Services** are capped at 2000 per engine, and a service with no outcome
+  left in either window is dropped. Telemetry for services past the cap is
+  dropped and counted (`rejected_observations`, plus a report note).
+
 Scores follow the Instrumentation Score spec formula exactly
 (`Σ(P×W)/Σ(T×W)×100`, weights 40/30/20/10) over `source: spec` rules only;
 `source: argus` rules produce findings and a separate extension score.

@@ -14,6 +14,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/tamen25/Argus/engine/internal/rules"
 )
 
 func specVersionFile(t *testing.T) string {
@@ -167,5 +169,29 @@ func TestRunScoreEmptyWindowNote(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("empty window must be disclosed in notes, got %v", rep.Notes)
+	}
+}
+
+// The gate trips on a low score, and on an empty fleet, whose vacuous 100
+// would otherwise let a broken telemetry connection pass CI.
+func TestScoreGate(t *testing.T) {
+	fleet := &rules.Snapshot{FleetScore: 90, Services: []rules.ServiceReport{{ServiceName: "ad"}}}
+	empty := &rules.Snapshot{FleetScore: 100, Services: []rules.ServiceReport{}}
+	cases := []struct {
+		name      string
+		snap      *rules.Snapshot
+		failBelow float64
+		trips     bool
+	}{
+		{"no gate", empty, 0, false},
+		{"above the threshold", fleet, 85, false},
+		{"below the threshold", fleet, 95, true},
+		{"empty fleet", empty, 85, true},
+	}
+	for _, c := range cases {
+		err := scoreGate(c.snap, c.failBelow)
+		if got := errors.Is(err, errBelowThreshold); got != c.trips {
+			t.Errorf("%s: err = %v, want trip %v", c.name, err, c.trips)
+		}
 	}
 }

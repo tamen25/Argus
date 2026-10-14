@@ -5,6 +5,10 @@ type RuleResult struct {
 	RuleID string `json:"rule_id"`
 	Impact Impact `json:"impact"`
 	Passed bool   `json:"passed"`
+	// EvalErrors counts evaluations of the rule that failed. Each counts as a
+	// violation; it is reported here as well, so it shows even when the rule
+	// passed under a nonzero threshold.
+	EvalErrors int64 `json:"eval_errors,omitempty"`
 }
 
 // Score implements the Instrumentation Score formula from the vendored spec:

@@ -25,7 +25,7 @@ argus score --listen-otlp :4317 --output json --store-dsn postgres://argus:...@d
 | `--mimir-tenant` | *(none)* | `X-Scope-OrgID` header |
 | `--output` | `markdown` | `markdown` or `json` |
 | `--out` | stdout | write report to a file |
-| `--fail-below-score` | `0` (off) | non-zero exit when fleet score is below this |
+| `--fail-below-score` | `0` (off) | exit 2 when the fleet score is below this, or when no service was observed at all (an empty fleet scores a vacuous 100) |
 | `--store-dsn` | *(off)* | Postgres DSN; persists snapshot + findings (schema migrates automatically) |
 | `--spec-version-file` | `.instrumentation-score-version` | pinned spec version echoed in reports |
 

@@ -1,7 +1,10 @@
 package rules
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -102,15 +105,15 @@ func LoadBytes(blobs ...[]byte) ([]*Rule, error) {
 	var out []*Rule
 	seen := map[string]bool{}
 	for _, b := range blobs {
-		dec := yaml.NewDecoder(strings.NewReader(string(b)))
+		dec := yaml.NewDecoder(bytes.NewReader(b))
 		dec.KnownFields(true)
 		for {
 			var r Rule
 			err := dec.Decode(&r)
+			if errors.Is(err, io.EOF) {
+				break // no more documents in this blob
+			}
 			if err != nil {
-				if err.Error() == "EOF" {
-					break
-				}
 				return nil, fmt.Errorf("parsing rule: %w", err)
 			}
 			if err := r.validate(); err != nil {
@@ -123,8 +126,7 @@ func LoadBytes(blobs ...[]byte) ([]*Rule, error) {
 			if _, err := compileCriteria(&r); err != nil {
 				return nil, fmt.Errorf("rule %q: compiling criteria: %w", r.ID, err)
 			}
-			rr := r
-			out = append(out, &rr)
+			out = append(out, &r) // r is declared inside the loop: a new variable each document
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })

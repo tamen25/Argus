@@ -1,6 +1,8 @@
 package cost_test
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/tamen25/Argus/engine/internal/cost"
@@ -60,5 +62,27 @@ func TestTrendAgainstEmptyPrevious(t *testing.T) {
 	tr := cost.Trend(cur, cost.Report{})
 	if len(tr.Lines) != 1 || !approx(tr.Lines[0].Delta, 10) || tr.Lines[0].PercentDelta != 0 {
 		t.Errorf("trend = %+v, want single +10 line, pct 0 (no prior baseline)", tr.Lines)
+	}
+}
+
+// Two teams sharing a service and signal come out in team order on every run,
+// and an empty trend encodes its lines as [], not null.
+func TestTrendOrderAndEmptyLines(t *testing.T) {
+	cur := cost.Report{Lines: []cost.Line{
+		{Service: "cart", Team: "web", Signal: "metrics", TotalMonthly: 2},
+		{Service: "cart", Team: "core", Signal: "metrics", TotalMonthly: 1},
+	}}
+	for range 20 { // map order differs between runs; one pass could pass by luck
+		tr := cost.Trend(cur, cost.Report{})
+		if tr.Lines[0].Team != "core" || tr.Lines[1].Team != "web" {
+			t.Fatalf("lines = %+v, want core before web", tr.Lines)
+		}
+	}
+	b, err := json.Marshal(cost.Trend(cost.Report{}, cost.Report{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"lines":[]`) {
+		t.Errorf("empty trend = %s, want lines as []", b)
 	}
 }

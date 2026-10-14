@@ -45,7 +45,7 @@ func newPipelineWith(t *testing.T, opts TrackerOpts) (*Pipeline, *rules.Collecto
 	if err != nil {
 		t.Fatal(err)
 	}
-	col := rules.NewCollector(eng)
+	col := rules.NewCollector(eng, rules.CollectorOptions{})
 	return NewPipeline(col, opts), col
 }
 
@@ -206,7 +206,7 @@ func TestPipelineCurrentRowsIsReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	col := rules.NewCollector(eng)
+	col := rules.NewCollector(eng, rules.CollectorOptions{})
 	p := NewPipeline(col, TrackerOpts{})
 	p.ConsumeMetrics(testMetrics("ad", "requests_total", "user_id", 12000))
 

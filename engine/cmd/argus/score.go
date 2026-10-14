@@ -59,10 +59,7 @@ per-service Instrumentation Scores. Exit code 2 when --fail-below-score trips
 			if err := writeOutput(cmd, opts.outPath, out); err != nil {
 				return err
 			}
-			if opts.failBelow > 0 && rep.Snapshot.FleetScore < opts.failBelow {
-				return fmt.Errorf("%w: %.2f < %.2f", errBelowThreshold, rep.Snapshot.FleetScore, opts.failBelow)
-			}
-			return nil
+			return scoreGate(rep.Snapshot, opts.failBelow)
 		},
 	}
 	f := cmd.Flags()
@@ -79,6 +76,22 @@ per-service Instrumentation Scores. Exit code 2 when --fail-below-score trips
 	return cmd
 }
 
+// scoreGate applies --fail-below-score. An empty fleet fails it too: it scores
+// a vacuous 100, so a broken telemetry connection would otherwise pass the
+// gate it exists to enforce.
+func scoreGate(snap *rules.Snapshot, failBelow float64) error {
+	if failBelow <= 0 {
+		return nil
+	}
+	if len(snap.Services) == 0 {
+		return fmt.Errorf("%w: no service was observed, so there is no score to gate on", errBelowThreshold)
+	}
+	if snap.FleetScore < failBelow {
+		return fmt.Errorf("%w: %.2f < %.2f", errBelowThreshold, snap.FleetScore, failBelow)
+	}
+	return nil
+}
+
 // runScore executes one collection+evaluation cycle: receive the sampled OTLP
 // mirror for the window, verify what Mimir can see, and build the report
 // (persisting it when a store is configured).
@@ -91,7 +104,7 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	col := rules.NewCollector(eng)
+	col := rules.NewCollector(eng, rules.CollectorOptions{})
 	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{})
 
 	listened, err := receiveOTLP(ctx, opts, pipe)
@@ -99,7 +112,7 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 		return nil, err
 	}
 	pipe.AggregateRows()
-	notes := ingestNotes(pipe.Evictions(), len(col.Snapshot().Services), listened)
+	notes := ingestNotes(pipe.Evictions(), col.Snapshot(), listened)
 
 	if opts.mimirURL != "" {
 		var services []string
@@ -156,14 +169,18 @@ func receiveOTLP(ctx context.Context, opts *scoreOptions, pipe *ingest.Pipeline)
 }
 
 // ingestNotes are the report notes about the ingest itself, shared by `score`
-// and `serve`: lost estimates, and an empty fleet, which scores a vacuous 100
-// and would pass any gate silently.
-func ingestNotes(evictions int64, services int, listened bool) []string {
+// and `serve`: lost estimates, services turned away at the collector's cap,
+// and an empty fleet, which scores a vacuous 100.
+func ingestNotes(evictions int64, snap *rules.Snapshot, listened bool) []string {
 	var notes []string
 	if evictions > 0 {
 		notes = append(notes, fmt.Sprintf("aggregate trackers evicted %d entries (LRU) — estimates for evicted entries are lost", evictions))
 	}
-	if listened && services == 0 {
+	if snap.RejectedObservations > 0 {
+		notes = append(notes, fmt.Sprintf("%d observations were dropped: their services arrived after the collector already tracked its maximum of %d services, so those services are missing from this report",
+			snap.RejectedObservations, rules.DefaultMaxServices))
+	}
+	if listened && len(snap.Services) == 0 {
 		notes = append(notes, "no telemetry received on the OTLP listener during the window — the fleet score reflects an empty fleet, not healthy instrumentation")
 	}
 	return notes

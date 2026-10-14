@@ -23,7 +23,7 @@ func TestSetupExportsScorableTelemetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	col := rules.NewCollector(eng)
+	col := rules.NewCollector(eng, rules.CollectorOptions{})
 	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{})
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

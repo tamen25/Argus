@@ -147,13 +147,11 @@ func (p *Pipeline) ItemsConsumed() (traces, metrics, logs int64) {
 	return p.traceItems.Load(), p.metricItems.Load(), p.logItems.Load()
 }
 
-// AggregateRows snapshots all trackers into the collector and returns the
-// rows for inspection.
+// AggregateRows evaluates every tracker's current rows into the collector,
+// replacing the previous evaluation, and returns the rows for inspection.
 func (p *Pipeline) AggregateRows() []rules.AggregateRow {
 	rows := p.CurrentRows()
-	for _, r := range rows {
-		p.col.ObserveAggregate(r)
-	}
+	p.col.ObserveAggregates(rows)
 	return rows
 }
 
