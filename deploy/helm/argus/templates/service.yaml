@@ -10,11 +10,7 @@ spec:
     - name: http
       port: {{ .Values.service.port }}
       targetPort: http
-    # OTLP receiver ports (engine implements them in Phase 1; exposing them now
-    # keeps the Alloy fan-out config stable across phases).
+    # The sampled OTLP mirror (gRPC only: the engine has no OTLP/HTTP receiver).
     - name: otlp-grpc
       port: {{ .Values.engine.otlp.grpcPort }}
-      targetPort: {{ .Values.engine.otlp.grpcPort }}
-    - name: otlp-http
-      port: {{ .Values.engine.otlp.httpPort }}
-      targetPort: {{ .Values.engine.otlp.httpPort }}
+      targetPort: otlp-grpc

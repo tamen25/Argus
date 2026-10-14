@@ -20,10 +20,15 @@ spec:
         - name: engine
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: ["serve", "--addr", {{ .Values.engine.addr | quote }}]
+          args:
+            - serve
+            - --addr={{ .Values.engine.addr }}
+            - --otlp-grpc=:{{ .Values.engine.otlp.grpcPort }}
           ports:
             - name: http
               containerPort: 8080
+            - name: otlp-grpc
+              containerPort: {{ .Values.engine.otlp.grpcPort }}
           env:
             - name: ARGUS_API_TOKEN
               valueFrom:

@@ -3,6 +3,11 @@ Argus {{ .Chart.AppVersion }} installed as {{ .Release.Name }} in {{ .Release.Na
 Engine API (in-cluster):
   http://{{ include "argus.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
 
+OTLP gRPC receiver for the sampled mirror (point a second exporter here):
+  {{ include "argus.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.engine.otlp.grpcPort }}
+It has no authentication: the NetworkPolicy (networkPolicy.otlpAllowedNamespaces)
+decides who may send to it, on a CNI that enforces NetworkPolicy.
+
 Every /api/ call needs this bearer token (/healthz and /metrics do not):
   kubectl -n {{ .Release.Namespace }} get secret {{ include "argus.fullname" . }} -o jsonpath='{.data.api-token}' | base64 -d
 

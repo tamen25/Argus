@@ -1,20 +1,28 @@
-# `make demo` — see Argus in 5 minutes without a cluster (master plan §8).
-# Phase 0: engine (healthz only) + Postgres + grafana/otel-lgtm (Grafana with
-# mini Loki+Tempo+Mimir+Collector in one image). Phase 1 adds the Argus plugin
-# preinstalled in Grafana and wires the collector's sampled mirror to the engine.
+# `make demo`: the engine, Postgres, and grafana/otel-lgtm (Grafana with a
+# mini Loki, Tempo, Mimir and Collector in one image), without a cluster.
+#
+# What it does not do yet: install the Argus plugin in Grafana, or point the
+# Collector's sampled mirror at the engine's OTLP port. Send OTLP to
+# localhost:4317 yourself to see scores at http://localhost:8080/api/report.
+# Every port is bound to localhost: this is a local demo.
 name: argus-demo
 
 services:
   engine:
     build:
       context: ../../engine
-    command: ["serve", "--addr", ":8080"]
+    # The API is open (no ARGUS_API_TOKEN), which serve allows on a
+    # non-loopback address only with --insecure-no-auth; the host ports
+    # below are bound to localhost.
+    command: ["serve", "--addr", ":8080", "--otlp-grpc", ":4317", "--insecure-no-auth"]
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080" # API, /healthz, /metrics
+      - "127.0.0.1:4317:4317" # OTLP gRPC receiver
     healthcheck:
-      test: ["CMD", "argus", "version"]
+      # The image is distroless (no shell, no curl): the binary checks itself.
+      test: ["CMD", "argus", "healthcheck"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 3
     depends_on:
       postgres:
@@ -35,12 +43,11 @@ services:
       retries: 10
 
   lgtm:
-    # All-in-one Grafana + Loki + Tempo + Mimir + OTel Collector demo image.
-    image: grafana/otel-lgtm:latest
+    image: grafana/otel-lgtm:0.34.0 # pinned: latest changes under you
     ports:
-      - "3000:3000" # Grafana
-      - "14317:4317" # OTLP gRPC (host ports offset to avoid clashing with kind)
-      - "14318:4318" # OTLP HTTP
+      - "127.0.0.1:3000:3000" # Grafana
+      - "127.0.0.1:14317:4317" # OTLP gRPC (offset from the engine's, and from kind's)
+      - "127.0.0.1:14318:4318" # OTLP HTTP
 
 volumes:
   pgdata:

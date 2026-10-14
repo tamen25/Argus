@@ -100,6 +100,10 @@ spec:
           args:
             - serve
             - --addr=:8080
+            # The dev cluster's Grafana is provisioned without an API token,
+            # so the API is served open here, deliberately: it is reachable
+            # only inside the local kind cluster. The Helm chart sets a token.
+            - --insecure-no-auth
             - --otlp-grpc=:4317
             # Dev-cluster feedback loop: trace-derived aggregates (service
             # graph edges, trace health) only surface after a completed

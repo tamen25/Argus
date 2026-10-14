@@ -13,11 +13,24 @@ import (
 	_ "google.golang.org/grpc/encoding/gzip"
 )
 
+// Receiver limits. The receiver has no authentication (the network decides
+// who may send; see docs/cli/serve.md), so what one sender can make it hold
+// at once is capped: one message, decompressed, and the exports in flight on
+// one connection. The message cap is gRPC's own default, stated here so it
+// cannot change unnoticed.
+const (
+	maxOTLPMessage    = 4 << 20
+	maxStreamsPerConn = 16
+)
+
 // NewGRPCServer returns a gRPC server exposing the three OTLP export services
 // backed by the pipeline. The receiver is read-only and never in the user's
 // critical path — it is fed by a second (sampled) exporter in Alloy.
 func NewGRPCServer(p *Pipeline) *grpc.Server {
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(
+		grpc.MaxRecvMsgSize(maxOTLPMessage),
+		grpc.MaxConcurrentStreams(maxStreamsPerConn),
+	)
 	ptraceotlp.RegisterGRPCServer(srv, &traceSvc{p: p})
 	pmetricotlp.RegisterGRPCServer(srv, &metricSvc{p: p})
 	plogotlp.RegisterGRPCServer(srv, &logSvc{p: p})

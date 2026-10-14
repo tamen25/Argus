@@ -95,7 +95,7 @@ fixed; a finding that does not hold is marked so here, with the reason.
   runners delete each other's faults. Done in #112: a run claims the cluster with a lock ConfigMap (`argus-bench-lock` in `default`, created atomically, outside the sweep's label) and releases it at the end, so a second run fails at once rather than deleting the first one's fault. The sweep stays cluster-wide under the lock.
 - [ ] **R12** — the Helm chart and the demo compose start `serve` without OTLP
   ingest, expose an unimplemented OTLP HTTP port, and health-check with
-  `argus version`.
+  `argus version`. Partly done in #113: Helm starts `--otlp-grpc` and exposes only it (no OTLP/HTTP port); compose runs ingest, health-checks with `argus healthcheck`, binds every port to localhost and pins `otel-lgtm`. Still open: the demo does not install the plugin or wire the Collector mirror (needs a live Docker check), and no image is published (B-61).
 
 **P2** — correctness, availability and privacy:
 
@@ -122,10 +122,10 @@ fixed; a finding that does not hold is marked so here, with the reason.
   not coverage of each rule's input series.
 - [ ] **R24** — replay ignores a rule's static labels, group interval and
   `keep_firing_for`.
-- [ ] **R25** — the engine API is open when `ARGUS_API_TOKEN` is unset, and
-  `--addr` defaults to every interface.
-- [ ] **R26** — the OTLP receiver's trust boundary (no auth, network policy
-  allows every port) is undocumented.
+- [x] **R25** — the engine API is open when `ARGUS_API_TOKEN` is unset, and
+  `--addr` defaults to every interface. Done in #113: without a token, `serve` refuses a non-loopback `--addr` unless `--insecure-no-auth` is given (kind and the demo pass it, with a comment).
+- [x] **R26** — the OTLP receiver's trust boundary (no auth, network policy
+  allows every port) is undocumented. Done in #113: the trust boundary is documented (`docs/cli/serve.md`); the chart's NetworkPolicy opens the API and OTLP ports to separate namespace lists, and an empty OTLP list renders no rule rather than an open one; the receiver caps message size and concurrent streams explicitly.
 - [ ] **R27** — an `https://` self-telemetry endpoint is sent in plaintext.
 - [ ] **R28** — HTTP clients follow redirects with custom credentials
   (`x-api-key`, `X-Scope-OrgID`).
@@ -161,6 +161,10 @@ Not defects. Tracked here so nothing is lost between sessions.
 
 - [ ] **B-32** — The LLM judge (the fallback normalizer for shell agents) needs a
   model other than the agent's; the guard refuses the same model id.
+- [ ] **B-61** — No engine image is published: releases ship the CLI and the
+  plugin, and the Helm chart points at `ghcr.io/tamen25/argus`, which does not
+  exist. Add an image build to the release workflow (multi-arch, pushed to
+  GHCR), so `helm install` works without building one. Found with R12.
 - [ ] **B-56** — A conclusive flagship. v1.0's agent scored at the floor under
   both conditions (`docs/bench/flagship-results.md`). Needs an agent that
   diagnoses some of these incidents, more passes (`--pass N`), and likely a
