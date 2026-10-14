@@ -23,72 +23,73 @@ import (
 //     matchers select on the recorded series' output labels, which do not
 //     distribute soundly into an arbitrary defining expression.
 func Synthesize(rs RuleSet, expr string) (string, []string, error) {
-	defined := map[string]string{}
-	for _, g := range rs.Groups {
-		for _, r := range g.Rules {
-			if !r.Alert {
-				defined[r.Name] = r.Expr
-			}
-		}
+	s := &synthesizer{
+		expr:     expr,
+		defined:  rs.recordingRules(),
+		inlining: map[string]bool{},
+		parser:   parser.NewParser(parser.Options{}),
 	}
-
-	promql := parser.NewParser(parser.Options{})
-	root, err := promql.ParseExpr(expr)
+	root, err := s.parser.ParseExpr(expr)
 	if err != nil {
 		return "", nil, fmt.Errorf("parsing %q: %w", expr, err)
 	}
-
-	var caveats []string
-	var rewrite func(node parser.Node) error
-	rewrite = func(node parser.Node) error {
-		return inspectChildren(node, func(child parser.Expr) (parser.Expr, error) {
-			vs, ok := child.(*parser.VectorSelector)
-			if !ok {
-				return nil, rewrite(child)
-			}
-			def, isDefined := defined[vs.Name]
-			if !isDefined {
-				if strings.Contains(vs.Name, ":") {
-					return nil, fmt.Errorf("%s references recording rule %q, which is not defined in the loaded set — cannot synthesize", expr, vs.Name)
-				}
-				return nil, nil // plain series, leave as-is
-			}
-			if hasExtraMatchers(vs) {
-				return nil, fmt.Errorf("%s applies label matchers to recording rule %q — matcher pushdown into the defining expression is unsound, refusing to synthesize", expr, vs.Name)
-			}
-			inlined, err := promql.ParseExpr("(" + def + ")")
-			if err != nil {
-				return nil, fmt.Errorf("parsing definition of %q: %w", vs.Name, err)
-			}
-			// the definition may itself reference recording rules
-			if err := rewrite(inlined); err != nil {
-				return nil, err
-			}
-			caveats = append(caveats, fmt.Sprintf(
-				"recording rule %q synthesized inline: replay evaluates its expression at query time over raw series, not the stored series the live ruler would have produced (staleness and evaluation-interval semantics differ)", vs.Name))
-			return inlined, nil
-		})
-	}
-	if err := rewrite(root); err != nil {
+	// The root goes through replace like any other node: it may itself be a
+	// bare recording-rule reference, which no parent node can swap out.
+	repl, err := s.replace(root)
+	if err != nil {
 		return "", nil, err
 	}
+	if repl != nil {
+		root = repl
+	}
+	return root.String(), s.caveats, nil
+}
 
-	// the root itself may be a bare recording-rule reference
-	if vs, ok := root.(*parser.VectorSelector); ok {
-		if def, isDefined := defined[vs.Name]; isDefined {
-			if hasExtraMatchers(vs) {
-				return "", nil, fmt.Errorf("%s applies label matchers to recording rule %q — refusing to synthesize", expr, vs.Name)
-			}
-			inlined, err := promql.ParseExpr("(" + def + ")")
-			if err != nil {
-				return "", nil, err
-			}
-			caveats = append(caveats, fmt.Sprintf("recording rule %q synthesized inline", vs.Name))
-			root = inlined
+// synthesizer rewrites one expression, inlining recording rules.
+type synthesizer struct {
+	expr     string            // the expression being rewritten, for errors
+	defined  map[string]string // recording rule name → defining expression
+	inlining map[string]bool   // rules being inlined right now, to catch cycles
+	parser   parser.Parser
+	caveats  []string
+}
+
+// replace returns the expression node should become: a recording-rule
+// reference becomes its definition, parenthesized and itself rewritten. It
+// returns nil when node stays, after rewriting any references below it.
+func (s *synthesizer) replace(node parser.Expr) (parser.Expr, error) {
+	vs, ok := node.(*parser.VectorSelector)
+	if !ok {
+		return nil, inspectChildren(node, s.replace)
+	}
+	def, isDefined := s.defined[vs.Name]
+	if !isDefined {
+		if strings.Contains(vs.Name, ":") {
+			return nil, fmt.Errorf("%s references recording rule %q, which is not defined in the loaded set — cannot synthesize", s.expr, vs.Name)
 		}
+		return nil, nil // a plain series stays as it is
+	}
+	if hasExtraMatchers(vs) {
+		return nil, fmt.Errorf("%s applies label matchers to recording rule %q — matcher pushdown into the defining expression is unsound, refusing to synthesize", s.expr, vs.Name)
+	}
+	if s.inlining[vs.Name] {
+		return nil, fmt.Errorf("%s: recording rule %q is defined in terms of itself — cannot synthesize", s.expr, vs.Name)
 	}
 
-	return root.String(), caveats, nil
+	inlined, err := s.parser.ParseExpr("(" + def + ")")
+	if err != nil {
+		return nil, fmt.Errorf("parsing definition of %q: %w", vs.Name, err)
+	}
+	// The definition may itself reference recording rules.
+	s.inlining[vs.Name] = true
+	err = inspectChildren(inlined, s.replace)
+	delete(s.inlining, vs.Name)
+	if err != nil {
+		return nil, err
+	}
+	s.caveats = append(s.caveats, fmt.Sprintf(
+		"recording rule %q synthesized inline: replay evaluates its expression at query time over raw series, not the stored series the live ruler would have produced (staleness and evaluation-interval semantics differ)", vs.Name))
+	return inlined, nil
 }
 
 // inspectChildren visits each child expression of node; when the callback

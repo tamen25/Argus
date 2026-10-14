@@ -38,45 +38,55 @@ func Run(ctx context.Context, eval EvalQuerier, probe InstantQuerier, in RunInpu
 		From:        in.From,
 		To:          in.To,
 		Step:        in.Step,
+		Coverage:    totalCoverage(segs),
 		Segments:    len(segs),
 	}
-	for _, s := range segs {
-		rep.Coverage += s.End.Sub(s.Start)
-	}
-	if rep.Coverage < in.To.Sub(in.From) {
-		rep.Caveats = append(rep.Caveats, fmt.Sprintf("telemetry covers %s of the %s window — verdicts apply to covered segments only", rep.Coverage, in.To.Sub(in.From)))
+	if window := in.To.Sub(in.From); rep.Coverage < window {
+		rep.Caveats = append(rep.Caveats, fmt.Sprintf("telemetry covers %s of the %s window — verdicts apply to covered segments only", rep.Coverage, window))
 	}
 
 	for _, g := range in.Rules.Groups {
-		for _, r := range g.Rules {
-			if !r.Alert {
+		for _, rule := range g.Rules {
+			if !rule.Alert {
 				continue
 			}
-			rule := r
 			if in.Synthesize {
-				synth, synthCaveats, err := Synthesize(in.Rules, r.Expr)
+				expr, caveats, err := Synthesize(in.Rules, rule.Expr)
 				if err != nil {
-					rep.Caveats = append(rep.Caveats, fmt.Sprintf("%s not replayed: %v", r.Name, err))
+					// One rule that cannot be synthesized is reported, not fatal.
+					rep.Caveats = append(rep.Caveats, fmt.Sprintf("%s not replayed: %v", rule.Name, err))
 					continue
 				}
-				rule.Expr = synth
-				rep.Caveats = append(rep.Caveats, synthCaveats...)
+				rule.Expr = expr // rule is a copy: the caller's rule set is untouched
+				rep.Caveats = append(rep.Caveats, caveats...)
 			}
-			var firings []Firing
-			for _, seg := range segs {
-				fs, err := Replay(ctx, eval, rule, seg, in.Step)
-				if err != nil {
-					return Report{}, fmt.Errorf("replaying %s: %w", r.Name, err)
-				}
-				firings = append(firings, fs...)
+			firings, err := replaySegments(ctx, eval, rule, segs, in.Step)
+			if err != nil {
+				return Report{}, err
 			}
-			rep.Rules = append(rep.Rules, Score(r.Name, firings, in.Incidents, segs, ScoreOptions{Grace: in.Grace}))
+			rep.Rules = append(rep.Rules, Score(rule.Name, firings, in.Incidents, segs, ScoreOptions{Grace: in.Grace}))
 		}
 	}
 	rep.Caveats = dedupeCaveats(rep.Caveats)
 	return rep, nil
 }
 
+// replaySegments replays one rule through every covered segment in turn.
+func replaySegments(ctx context.Context, eval EvalQuerier, rule Rule, segs []Segment, step time.Duration) ([]Firing, error) {
+	var firings []Firing
+	for _, seg := range segs {
+		fs, err := Replay(ctx, eval, rule, seg, step)
+		if err != nil {
+			return nil, fmt.Errorf("replaying %s: %w", rule.Name, err)
+		}
+		firings = append(firings, fs...)
+	}
+	return firings, nil
+}
+
+// dedupeCaveats drops repeated caveats, keeping first-seen order: every rule
+// that inlines the same recording rule adds the same note. It reuses in's
+// backing array.
 func dedupeCaveats(in []string) []string {
 	if len(in) == 0 {
 		return in

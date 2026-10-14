@@ -42,51 +42,65 @@ func DiffReports(a, b Report, opts DiffOptions) (Diff, error) {
 	if a.Coverage != b.Coverage {
 		return Diff{}, fmt.Errorf("reports are not comparable: coverage %s vs %s — run both sets over the same window in one invocation", a.Coverage, b.Coverage)
 	}
-	d := Diff{Coverage: a.Coverage}
+	d := Diff{Coverage: a.Coverage, PagesA: totalPages(a), PagesB: totalPages(b)}
 
 	detA, detB := setDetections(a), setDetections(b)
-	for id := range detA {
-		if _, ok := detB[id]; !ok {
+	for _, id := range sortedKeys(detA) {
+		if tb, ok := detB[id]; ok {
+			d.TTDChanges = append(d.TTDChanges, TTDChange{IncidentID: id, A: detA[id], B: tb})
+		} else {
 			d.LostDetections = append(d.LostDetections, id)
 		}
 	}
-	for id := range detB {
+	for _, id := range sortedKeys(detB) {
 		if _, ok := detA[id]; !ok {
 			d.GainedDetections = append(d.GainedDetections, id)
 		}
 	}
-	sort.Strings(d.LostDetections)
-	sort.Strings(d.GainedDetections)
 
-	for id, ta := range detA {
-		if tb, ok := detB[id]; ok {
-			d.TTDChanges = append(d.TTDChanges, TTDChange{IncidentID: id, A: ta, B: tb})
-		}
-	}
-	sort.Slice(d.TTDChanges, func(i, j int) bool { return d.TTDChanges[i].IncidentID < d.TTDChanges[j].IncidentID })
+	d.Reasons = gateReasons(d, opts)
+	d.Regression = len(d.Reasons) > 0
+	return d, nil
+}
 
-	for _, sc := range a.Rules {
-		d.PagesA += sc.PagesPerWeek
-	}
-	for _, sc := range b.Rules {
-		d.PagesB += sc.PagesPerWeek
-	}
-
+// gateReasons lists every budget the diff breaks. Losing a detection always
+// counts; the TTD and pages budgets apply only when set.
+func gateReasons(d Diff, opts DiffOptions) []string {
+	var reasons []string
 	if len(d.LostDetections) > 0 {
-		d.Reasons = append(d.Reasons, fmt.Sprintf("detections lost: %s", strings.Join(d.LostDetections, ", ")))
+		reasons = append(reasons, fmt.Sprintf("detections lost: %s", strings.Join(d.LostDetections, ", ")))
 	}
 	if opts.MaxTTDRegression > 0 {
 		for _, c := range d.TTDChanges {
 			if c.B-c.A > opts.MaxTTDRegression {
-				d.Reasons = append(d.Reasons, fmt.Sprintf("TTD for %s regressed %s → %s (budget %s)", c.IncidentID, c.A, c.B, opts.MaxTTDRegression))
+				reasons = append(reasons, fmt.Sprintf("TTD for %s regressed %s → %s (budget %s)", c.IncidentID, c.A, c.B, opts.MaxTTDRegression))
 			}
 		}
 	}
 	if opts.MaxPagesPerWeek > 0 && d.PagesB > opts.MaxPagesPerWeek {
-		d.Reasons = append(d.Reasons, fmt.Sprintf("pages/week %.1f exceeds budget %.1f", d.PagesB, opts.MaxPagesPerWeek))
+		reasons = append(reasons, fmt.Sprintf("pages/week %.1f exceeds budget %.1f", d.PagesB, opts.MaxPagesPerWeek))
 	}
-	d.Regression = len(d.Reasons) > 0
-	return d, nil
+	return reasons
+}
+
+// totalPages sums pages/week over a report's rules.
+func totalPages(r Report) float64 {
+	var total float64
+	for _, sc := range r.Rules {
+		total += sc.PagesPerWeek
+	}
+	return total
+}
+
+// sortedKeys returns a map's keys in order, so the diff is the same on every
+// run (Go randomizes map iteration).
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // setDetections is incident → best (earliest) TTD across the set's rules.

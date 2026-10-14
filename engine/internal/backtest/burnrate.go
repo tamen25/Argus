@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v3"
 )
 
@@ -87,19 +88,12 @@ func LoadSLOPolicies(path string) ([]SLOPolicy, error) {
 // ordinary alerts: same for:-state semantics, same fidelity caveats, no
 // second evaluator to drift from the first.
 func BurnRateRules(p SLOPolicy) []Rule {
-	budget := 1 - p.Objective
 	var rules []Rule
 	for _, w := range p.Windows {
-		cond := func(window time.Duration) string {
-			return fmt.Sprintf("%s(rate(%s[%s])) / %s(rate(%s[%s])) > (%.3f * %f)",
-				groupBy(p.SLI.GroupBy), p.SLI.Errors, promDur(window),
-				groupBy(p.SLI.GroupBy), p.SLI.Total, promDur(window),
-				w.Factor, budget)
-		}
 		rules = append(rules, Rule{
 			Name:  fmt.Sprintf("%s-burnrate-%s-%s", p.Name, w.Severity, w.Short),
 			Alert: true,
-			Expr:  fmt.Sprintf("(%s) and (%s)", cond(w.Short), cond(w.Long)),
+			Expr:  fmt.Sprintf("(%s) and (%s)", burning(p, w.Short, w.Factor), burning(p, w.Long, w.Factor)),
 			For:   w.For,
 			Labels: map[string]string{
 				"severity":   w.Severity,
@@ -110,6 +104,15 @@ func BurnRateRules(p SLOPolicy) []Rule {
 	return rules
 }
 
+// burning is the condition "the error ratio over window exceeds factor × the
+// error budget", where the budget is 1 − objective.
+func burning(p SLOPolicy, window time.Duration, factor float64) string {
+	return fmt.Sprintf("%s(rate(%s[%s])) / %s(rate(%s[%s])) > (%.3f * %f)",
+		groupBy(p.SLI.GroupBy), p.SLI.Errors, promDur(window),
+		groupBy(p.SLI.GroupBy), p.SLI.Total, promDur(window),
+		factor, 1-p.Objective)
+}
+
 func groupBy(labels []string) string {
 	if len(labels) == 0 {
 		return "sum"
@@ -117,13 +120,13 @@ func groupBy(labels []string) string {
 	return fmt.Sprintf("sum by (%s) ", strings.Join(labels, ", "))
 }
 
-// promDur renders a duration in compact PromQL form (5m, 1h, 6h — not 5m0s).
+// promDur renders a duration in PromQL form: 5m, 30m, 1h30m, not Go's 5m0s.
+//
+// It used to trim Go's "0s" and "0m" suffixes, which also ate the zero of a
+// tens digit: 30m0s became "3", which Prometheus reads as 3 seconds, so the
+// default slow-burn window replayed over 3s instead of 30m and almost never
+// fired. model.Duration is Prometheus's own duration type and prints what its
+// parser reads.
 func promDur(d time.Duration) string {
-	s := d.String()
-	s = strings.TrimSuffix(s, "0s")
-	s = strings.TrimSuffix(s, "0m")
-	if s == "" {
-		return "0s"
-	}
-	return s
+	return model.Duration(d).String()
 }

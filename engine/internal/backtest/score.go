@@ -48,61 +48,34 @@ type Scorecard struct {
 // Deterministic: outputs are sorted (detections and misses by incident ID
 // order of the registry, false positives by fire time).
 func Score(rule string, firings []Firing, incidents []Incident, segs []Segment, opts ScoreOptions) Scorecard {
-	sc := Scorecard{Rule: rule}
-	for _, s := range segs {
-		sc.Coverage += s.End.Sub(s.Start)
-	}
+	sc := Scorecard{Rule: rule, Coverage: totalCoverage(segs)}
 
-	expected := func(inc Incident) bool {
-		return len(inc.ExpectedAlerts) == 0 || slices.Contains(inc.ExpectedAlerts, rule)
-	}
-	covered := func(inc Incident) bool {
-		for _, s := range segs {
-			if inc.Start.Before(s.End) && inc.End.After(s.Start) {
-				return true
-			}
-		}
-		return false
-	}
-	inWindow := func(f Firing, inc Incident) bool {
-		lo, hi := inc.Start.Add(-opts.Grace), inc.End.Add(opts.Grace)
-		return !f.FiredAt.Before(lo) && !f.FiredAt.After(hi)
-	}
-
-	attributed := make([]bool, len(firings))
+	attributed := make([]bool, len(firings)) // firings some incident explains
+	detectedIntervals := 0                   // firings during detected incidents
 	for _, inc := range incidents {
-		if !covered(inc) {
+		if !covered(inc, segs) {
 			sc.Unverifiable = append(sc.Unverifiable, inc.ID)
 			continue
 		}
-		var first *Firing
-		var intervals int
-		for i := range firings {
-			if !inWindow(firings[i], inc) {
-				continue
-			}
-			// the incident explains the firing regardless of expected_alerts
+		during := firingsDuring(firings, inc, opts.Grace)
+		// The incident explains these firings whether or not this rule was
+		// expected to catch it, so none of them is a false positive.
+		for _, i := range during {
 			attributed[i] = true
-			intervals++
-			if first == nil || firings[i].FiredAt.Before(first.FiredAt) {
-				first = &firings[i]
-			}
 		}
-		if first == nil || !expected(inc) {
+		// A rule the incident does not list in expected_alerts gets no credit
+		// for firing: the incident counts as missed by this rule.
+		if len(during) == 0 || !expects(inc, rule) {
 			sc.Missed = append(sc.Missed, inc.ID)
 			continue
 		}
-		ttd := first.FiredAt.Sub(inc.Start)
-		if ttd < 0 {
-			ttd = 0
-		}
+		// Firing before the labeled start (within grace) is not negative TTD.
+		ttd := max(earliest(firings, during).Sub(inc.Start), 0)
 		sc.Detections = append(sc.Detections, Detection{IncidentID: inc.ID, TTD: ttd})
-		sc.Flappiness += float64(intervals)
+		detectedIntervals += len(during)
 	}
 	if n := len(sc.Detections); n > 0 {
-		sc.Flappiness /= float64(n)
-	} else {
-		sc.Flappiness = 0
+		sc.Flappiness = float64(detectedIntervals) / float64(n)
 	}
 
 	for i, f := range firings {
@@ -119,4 +92,54 @@ func Score(rule string, firings []Firing, incidents []Incident, segs []Segment, 
 		sc.PagesPerWeek = perHour * 24 * 7
 	}
 	return sc
+}
+
+// totalCoverage is the time the segments span together.
+func totalCoverage(segs []Segment) time.Duration {
+	var total time.Duration
+	for _, s := range segs {
+		total += s.End.Sub(s.Start)
+	}
+	return total
+}
+
+// covered reports whether any segment overlaps the incident, so a verdict on
+// it is possible at all.
+func covered(inc Incident, segs []Segment) bool {
+	for _, s := range segs {
+		if inc.Start.Before(s.End) && inc.End.After(s.Start) {
+			return true
+		}
+	}
+	return false
+}
+
+// expects reports whether rule may claim detection credit for the incident:
+// any rule may, unless the incident names its expected alerts.
+func expects(inc Incident, rule string) bool {
+	return len(inc.ExpectedAlerts) == 0 || slices.Contains(inc.ExpectedAlerts, rule)
+}
+
+// firingsDuring returns the indexes of the firings that began inside the
+// incident window widened by grace on both sides.
+func firingsDuring(firings []Firing, inc Incident, grace time.Duration) []int {
+	lo, hi := inc.Start.Add(-grace), inc.End.Add(grace)
+	var idx []int
+	for i, f := range firings {
+		if !f.FiredAt.Before(lo) && !f.FiredAt.After(hi) {
+			idx = append(idx, i)
+		}
+	}
+	return idx
+}
+
+// earliest is the first fire time among the indexed firings; idx is not empty.
+func earliest(firings []Firing, idx []int) time.Time {
+	first := firings[idx[0]].FiredAt
+	for _, i := range idx[1:] {
+		if firings[i].FiredAt.Before(first) {
+			first = firings[i].FiredAt
+		}
+	}
+	return first
 }
