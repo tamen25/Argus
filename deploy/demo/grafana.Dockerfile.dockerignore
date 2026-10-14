@@ -1,0 +1,10 @@
+# The demo Grafana image is built from the repository root but needs only the
+# plugin source and this directory's config files.
+**
+!plugin/
+!deploy/demo/argus-plugin.yaml
+!deploy/demo/otelcol-config.yaml
+plugin/node_modules/
+plugin/dist/
+plugin/coverage/
+plugin/.config/.cprc.json

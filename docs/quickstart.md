@@ -47,6 +47,22 @@ manual) or observe a real incident on the dev cluster, append an entry to
 [`incidents.yaml`](https://github.com/tamen25/Argus/blob/main/incidents.yaml) at repo root —
 schema is documented in the file header.
 
+## Try it without a cluster
+
+`make demo` (Docker only; no Node or Go needed) starts the engine, Postgres and
+`grafana/otel-lgtm` with the Argus plugin installed and pointed at the engine.
+The engine sends its own telemetry to the demo's Collector, which mirrors
+everything it receives back to the engine, so it scores itself from the start.
+
+| | |
+|---|---|
+| Grafana, with Argus under Apps | <http://localhost:23000> (anonymous admin) |
+| Engine API | <http://localhost:28080/api/report> |
+| Send your own OTLP | `localhost:24317` (gRPC), `localhost:24318` (HTTP) |
+
+Every port is bound to localhost, and the engine's API is served without a
+token: it is a local demo. `make demo-down` removes it, data included.
+
 ## Everything else
 
 ```bash

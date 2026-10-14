@@ -32,10 +32,12 @@ export function EngineGate<T>({ state, loading, notConfigured, children }: Props
     }
     return <LoadingPlaceholder text={loading} />;
   }
+  // One element, not a fragment: Grafana lays a page's content out in a flex
+  // row, where two siblings would sit side by side.
   return (
-    <>
+    <div>
       <Freshness updatedAt={state.updatedAt} error={state.error} reload={state.reload} />
       {children(state.data)}
-    </>
+    </div>
   );
 }
