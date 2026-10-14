@@ -3,7 +3,8 @@ import { lastValueFrom } from 'rxjs';
 import { css } from '@emotion/css';
 import { AppPluginMeta, GrafanaTheme2, PluginConfigPageProps, PluginMeta } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
-import { Button, Field, FieldSet, Input, SecretInput, useStyles2 } from '@grafana/ui';
+import { Alert, Button, Field, FieldSet, Input, SecretInput, useStyles2 } from '@grafana/ui';
+import { errorText } from '../../api/useEngineData';
 import { testIds } from '../testIds';
 
 type AppPluginSettings = {
@@ -27,16 +28,28 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
   // Grafana never sends a stored secret back, only whether one is set.
   const [apiToken, setApiToken] = useState('');
   const [isApiTokenSet, setIsApiTokenSet] = useState(Boolean(secureJsonFields?.apiToken));
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const onSubmit = (event: React.FormEvent) => {
+  const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!engineUrl) {
-      return;
-    }
+    setSaving(true);
+    setSaveError(null);
     // A stored token is left alone unless it was reset; a reset one is
     // replaced by what was typed (empty clears it).
     const secureJsonData: AppSecureSettings | undefined = isApiTokenSet ? undefined : { apiToken };
-    updatePluginAndReload(plugin.meta.id, { enabled, pinned, jsonData: { engineUrl }, secureJsonData });
+    try {
+      // An empty URL is saved as empty: the backend then uses the default.
+      await updatePlugin(plugin.meta.id, { enabled, pinned, jsonData: { engineUrl }, secureJsonData });
+    } catch (e) {
+      // The backend refuses a URL it cannot use, and says why.
+      setSaveError(errorText(e));
+      setSaving(false);
+      return;
+    }
+    // Settings reach the running plugin only on a reload; there is no
+    // supported way to update its state in place.
+    window.location.reload();
   };
 
   return (
@@ -44,7 +57,7 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
       <FieldSet label="Engine connection">
         <Field
           label="Engine URL"
-          description="Base URL of the argus engine HTTP API. The plugin backend proxies all browser requests through it; the health check pings its /healthz."
+          description="Base URL of the argus engine HTTP API, without credentials, query or fragment. The plugin backend proxies all browser requests through it; the health check pings its /healthz. Empty uses the default, http://argus-engine.argus.svc:8080."
         >
           <Input
             width={60}
@@ -76,9 +89,14 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
           />
         </Field>
 
+        {saveError && (
+          <Alert title="The settings were not saved" severity="error" className={s.marginTop}>
+            {saveError}
+          </Alert>
+        )}
         <div className={s.marginTop}>
-          <Button type="submit" data-testid={testIds.appConfig.submit} disabled={!engineUrl}>
-            Save engine settings
+          <Button type="submit" data-testid={testIds.appConfig.submit} disabled={saving}>
+            {saving ? 'Saving…' : 'Save engine settings'}
           </Button>
         </div>
       </FieldSet>
@@ -95,18 +113,6 @@ const getStyles = (theme: GrafanaTheme2) => ({
 });
 
 type PluginSettingsUpdate = Partial<PluginMeta<AppPluginSettings>> & { secureJsonData?: AppSecureSettings };
-
-const updatePluginAndReload = async (pluginId: string, data: PluginSettingsUpdate) => {
-  try {
-    await updatePlugin(pluginId, data);
-
-    // Reloading the page as the changes made here wouldn't be propagated to the actual plugin otherwise.
-    // This is not ideal, however unfortunately currently there is no supported way for updating the plugin state.
-    window.location.reload();
-  } catch (e) {
-    console.error('Error while updating the plugin', e);
-  }
-};
 
 const updatePlugin = async (pluginId: string, data: PluginSettingsUpdate) => {
   const response = await getBackendSrv().fetch({

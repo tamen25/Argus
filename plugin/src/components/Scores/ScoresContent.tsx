@@ -1,36 +1,39 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Alert, Badge, Button, ClipboardButton, Combobox, LoadingPlaceholder, useStyles2 } from '@grafana/ui';
 import { fetchRemediation, fetchReport } from '../../api/client';
 import { Finding, Remediation, Report, ServiceReport } from '../../api/types';
+import { errorText, useEngineData } from '../../api/useEngineData';
+import { EngineGate } from '../EngineGate/EngineGate';
 import { testIds } from '../testIds';
 
 // Scores answers: what exactly is wrong per service, how sure is Argus,
 // and what patch fixes it? Confidence is always shown — sampled findings
 // never masquerade as verified ones.
 export function ScoresContent() {
+  const state = useEngineData(fetchReport);
+  return (
+    <EngineGate state={state} loading="Loading findings…">
+      {(report) => <Scores report={report} />}
+    </EngineGate>
+  );
+}
+
+function Scores({ report }: { report: Report }) {
   const s = useStyles2(getStyles);
-  const [report, setReport] = useState<Report | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchReport().then(setReport, (e) => setError(e?.message ?? String(e)));
-  }, []);
-
-  if (error) {
+  // An engine before v1.1 sent null for an empty fleet.
+  const services = report.snapshot.services ?? [];
+  if (services.length === 0) {
     return (
-      <Alert title="Engine not reachable" severity="error">
-        {error}
+      <Alert title="No services observed yet" severity="info">
+        The engine has not received telemetry from any service, so there is nothing to evaluate.
       </Alert>
     );
   }
-  if (!report) {
-    return <LoadingPlaceholder text="Loading findings…" />;
-  }
-
-  const withFindings = report.snapshot.services.filter((svc) => (svc.findings?.length ?? 0) > 0);
+  const withFindings = services.filter((svc) => (svc.findings?.length ?? 0) > 0);
   if (withFindings.length === 0) {
     return (
       <Alert title="No findings" severity="success">
@@ -112,9 +115,7 @@ function FindingCard({ finding }: { finding: Finding }) {
           variant="secondary"
           onClick={() => {
             setOpen(true);
-            fetchRemediation(finding.rule_id, finding.service).then(setRem, (e) =>
-              setRemErr(e?.data?.message ?? e?.message ?? String(e))
-            );
+            fetchRemediation(finding.rule_id, finding.service).then(setRem, (e) => setRemErr(errorText(e)));
           }}
         >
           View remediation

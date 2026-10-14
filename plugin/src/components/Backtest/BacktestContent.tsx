@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
-import { Alert, LoadingPlaceholder, useStyles2 } from '@grafana/ui';
+import { Alert, useStyles2 } from '@grafana/ui';
 import { fetchBacktest } from '../../api/client';
 import { BacktestReport } from '../../api/types';
+import { useEngineData } from '../../api/useEngineData';
+import { EngineGate } from '../EngineGate/EngineGate';
 import { testIds } from '../testIds';
 
 // Backtest answers: would these alert rules have fired on real history, how
@@ -11,40 +13,26 @@ import { testIds } from '../testIds';
 // re-execution, so the fidelity caveats ride on every view and are never
 // hidden (architecture rule 7).
 export function BacktestContent() {
-  const s = useStyles2(getStyles);
-  const [data, setData] = useState<BacktestReport | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [notConfigured, setNotConfigured] = useState(false);
-
-  useEffect(() => {
-    fetchBacktest().then(setData, (e) => {
-      if (e?.status === 404) {
-        setNotConfigured(true);
-      } else {
-        setError(e?.message ?? String(e));
+  const state = useEngineData(fetchBacktest);
+  return (
+    <EngineGate
+      state={state}
+      loading="Replaying history…"
+      notConfigured={
+        <Alert title="Backtest is not configured" severity="info">
+          Start the engine with <code>--backtest-rules</code>, <code>--backtest-mimir-url</code>, and an{' '}
+          <code>--backtest-incidents</code> registry to replay your alert rules against history here. See the Backtest
+          docs.
+        </Alert>
       }
-    });
-  }, []);
+    >
+      {(data) => <Backtest data={data} />}
+    </EngineGate>
+  );
+}
 
-  if (notConfigured) {
-    return (
-      <Alert title="Backtest is not configured" severity="info">
-        Start the engine with <code>--backtest-rules</code>, <code>--backtest-mimir-url</code>, and an{' '}
-        <code>--backtest-incidents</code> registry to replay your alert rules against history here. See the Backtest
-        docs.
-      </Alert>
-    );
-  }
-  if (error) {
-    return (
-      <Alert title="Engine not reachable" severity="error">
-        {error}
-      </Alert>
-    );
-  }
-  if (!data) {
-    return <LoadingPlaceholder text="Replaying history…" />;
-  }
+function Backtest({ data }: { data: BacktestReport }) {
+  const s = useStyles2(getStyles);
 
   const rules = data.rules ?? [];
   const caveats = data.caveats ?? [];

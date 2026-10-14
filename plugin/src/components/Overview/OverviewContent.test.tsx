@@ -67,4 +67,16 @@ describe('OverviewContent', () => {
     render(<OverviewContent />);
     expect(await screen.findByText(/engine unreachable/i)).toBeInTheDocument();
   });
+
+  // R31: an empty fleet scores a vacuous 100; the page says nothing has been
+  // observed instead of showing it as a score.
+  it('does not show a score for an empty fleet', async () => {
+    mockGet.mockResolvedValue({
+      ...report,
+      snapshot: { fleet_score: 100, services: null, rules_evaluated: null },
+    });
+    render(<OverviewContent />);
+    expect(await screen.findByText('No services observed yet')).toBeInTheDocument();
+    expect(screen.queryByText(/Fleet Instrumentation Score/)).not.toBeInTheDocument();
+  });
 });

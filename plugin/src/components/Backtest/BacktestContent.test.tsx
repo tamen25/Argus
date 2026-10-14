@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { BacktestContent } from './BacktestContent';
 import { BacktestReport } from '../../api/types';
 
@@ -77,5 +77,41 @@ describe('BacktestContent', () => {
     mockGet.mockRejectedValue(new Error('engine unreachable: connection refused'));
     render(<BacktestContent />);
     expect(await screen.findByText(/engine unreachable/i)).toBeInTheDocument();
+  });
+
+  // R13: a replay longer than the engine's response wait is answered 503.
+  // The page says it is computing and asks again, rather than failing.
+  it('waits while the engine is still computing, then shows the report', async () => {
+    jest.useFakeTimers();
+    try {
+      mockGet.mockRejectedValueOnce({ status: 503 }).mockResolvedValue(report);
+      render(<BacktestContent />);
+      expect(await screen.findByText(/still computing it/)).toBeInTheDocument();
+      await act(async () => {
+        jest.advanceTimersByTime(10_000);
+      });
+      expect(await screen.findByText('HighSpanErrorRatio')).toBeInTheDocument();
+      expect(mockGet).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // R33: a refresh that fails keeps the last report on screen and says the
+  // refresh failed, so stale data never passes for live.
+  it('keeps the report when a refresh fails, and says so', async () => {
+    jest.useFakeTimers();
+    try {
+      mockGet.mockResolvedValueOnce(report).mockRejectedValue({ status: 502, message: 'engine down' });
+      render(<BacktestContent />);
+      expect(await screen.findByText('HighSpanErrorRatio')).toBeInTheDocument();
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+      });
+      expect(await screen.findByText(/Refresh failed: engine down/)).toBeInTheDocument();
+      expect(screen.getByText('HighSpanErrorRatio')).toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

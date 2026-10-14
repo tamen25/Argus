@@ -99,8 +99,8 @@ fixed; a finding that does not hold is marked so here, with the reason.
 
 **P2** — correctness, availability and privacy:
 
-- [ ] **R13** — the plugin proxy times out at 10s while a backtest replay can
-  take minutes, and the cancelled request prevents the cache from filling.
+- [x] **R13** — the plugin proxy times out at 10s while a backtest replay can
+  take minutes, and the cancelled request prevents the cache from filling. Done in #115: a computation runs detached from the request, shared by concurrent callers and bounded by its own timeout; a request waits 5 s, then gets 503 with Retry-After while it goes on; the plugin pages show "computing" and ask again.
 - [ ] **R14** — `argus score`'s 60s default never completes a trace window, so
   the trace rules are skipped while reported as evaluated.
 - [x] **R15** — the score gate passes an empty fleet (score 100). Done in #108: `--fail-below-score` exits 2 when no service was observed.
@@ -132,10 +132,10 @@ fixed; a finding that does not hold is marked so here, with the reason.
 - [x] **R29** — unbounded response decoding and subprocess output capture. Done in #111: backend and model responses are read through `internal/bounded` (an error past the limit, never a cut prefix); subprocess output is captured in capped buffers; a tool answer over 256 KiB is cut before the model sees it and logged as `cut`. Still open: redacting query text in bench reports.
 - [x] **R30** — the MCP transport and tool arguments need size and range limits. Done in #111: line framing capped at 1 MiB; a bad line costs one message; `jsonrpc` must be "2.0"; cancellation interrupts a blocked read; no trailing data in arguments; ranges, steps, points and limits checked before the backend. Request cancellation is documented as unsupported (requests are sequential).
 - [x] **R31** — an empty snapshot sends `services: null`, which crashes the
-  plugin's Overview and Scores pages. Done in #108: the snapshot's `services` and the trend's `lines` encode as `[]`.
-- [ ] **R32** — the service graph measures its width before it has mounted.
-- [ ] **R33** — plugin pages never refresh, a failed comparison hides the Bench
-  page, and settings errors only reach the console.
+  plugin's Overview and Scores pages. Done in #108 (engine) and #115 (plugin): empty lists encode as `[]`, and the Overview and Scores pages say no service was observed instead of showing a vacuous score or a success message.
+- [x] **R32** — the service graph measures its width before it has mounted. Done in #115: a callback ref with a ResizeObserver measures the graph container when it mounts and follows layout changes.
+- [x] **R33** — plugin pages never refresh, a failed comparison hides the Bench
+  page, and settings errors only reach the console. Done in #115: every page refreshes every minute, says when it was updated and when a refresh failed (keeping the last data), and ignores stale or late responses; a failed Bench comparison is shown beside the picker and the leaderboard stays; settings show why a save failed; an empty engine URL saves as the default.
 - [ ] **R34** — `stats.Percentile` rounds where nearest-rank takes the ceiling,
   and NaN passes range checks.
 - [ ] **R35** — `bench-matrix.sh` loses quoted agent flags, and port-forwards
@@ -145,12 +145,12 @@ fixed; a finding that does not hold is marked so here, with the reason.
 - [x] **R37** — reports are written in place (a partial file looks complete),
   and `fileSafe` maps `a/b` and `a_b` to the same patch file. Done in #110: artifacts are written atomically (`internal/atomicfile`), and `fileSafe` adds a hash when it changes a name. Still open: `bench-matrix.sh` validating a report before treating a cell as done (with R35/R36).
 - [ ] **R38** — CI never runs the plugin's Go tests, Playwright, the Postgres
-  integration tests, or a formatter check.
+  integration tests, or a formatter check. Partly done in #115: CI runs the plugin backend's Go tests (with -race), the typecheck, a Prettier check, and the Postgres integration tests (testcontainers); `test:ci` no longer passes with no tests; `make test` runs the plugin backend's tests. Still open: a Playwright job against a running Grafana.
 
-**Cleanups** (C01–C16, the table in the review): Prettier on six plugin files,
+**Cleanups** (C01–C16, the table in the review): Prettier on six plugin files (done, #115),
 comment trimming, stale phase claims (the backtest one is done, #106),
 `errors.Is(err, io.EOF)` in the rules loader (done, #108), template parsing once (done, #110), the
-numeric helper in remediate (done, #110), deterministic float sums (the trend sort, done in #108), typed API responses,
+numeric helper in remediate (done, #110), deterministic float sums (the trend sort, done in #108), typed API responses, the settings form's save state (C11, done, #115),
 pinned release tools, narrower gosec exclusions, and client ownership.
 
 ---

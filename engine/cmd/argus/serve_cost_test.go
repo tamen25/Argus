@@ -119,3 +119,46 @@ func TestRegisterCostEndpointConfigured(t *testing.T) {
 		t.Errorf("status = %d, want 502 (mimir unreachable)", rec.Code)
 	}
 }
+
+// blockingSeries answers only once released.
+type blockingSeries struct{ release chan struct{} }
+
+func (b blockingSeries) ActiveSeriesByService(ctx context.Context) (map[string]int64, error) {
+	select {
+	case <-b.release:
+		return map[string]int64{"checkout": 1}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// R13: a report that takes longer than the response wait is answered 503
+// with Retry-After, keeps computing, and is served from the cache once done.
+func TestCostEndpointAnswersWhileComputing(t *testing.T) {
+	defer func(w time.Duration) { maxResponseWait = w }(maxResponseWait)
+	maxResponseWait = 20 * time.Millisecond
+
+	release := make(chan struct{})
+	p := &cost.Pricing{Schema: cost.PricingSchema, Currency: "USD", ActiveSeries: cost.ActiveSeries{PerMillion: 8.0}}
+	ep := newCostEndpoint(p, cost.Sources{Series: blockingSeries{release: release}}, nil, time.Hour, time.Minute)
+
+	rec := httptest.NewRecorder()
+	ep.handler()(rec, httptest.NewRequest(http.MethodGet, "/api/cost", nil))
+	if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("while computing: %d, Retry-After %q; want 503 with Retry-After", rec.Code, rec.Header().Get("Retry-After"))
+	}
+
+	close(release)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		rec = httptest.NewRecorder()
+		ep.handler()(rec, httptest.NewRequest(http.MethodGet, "/api/cost", nil))
+		if rec.Code == http.StatusOK {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("still %d after the computation was released", rec.Code)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

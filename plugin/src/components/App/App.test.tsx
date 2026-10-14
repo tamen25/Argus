@@ -11,7 +11,11 @@ const mockGet = jest.fn().mockResolvedValue({
   spec_version: 'test-sha',
   window: '1m0s',
   rule_set_complete: false,
-  snapshot: { fleet_score: 100, services: [], rules_evaluated: [] },
+  snapshot: {
+    fleet_score: 100,
+    services: [{ service: 'cart', spec_score: 100, category: 'Excellent' }],
+    rules_evaluated: [],
+  },
 });
 
 jest.mock('@grafana/runtime', () => ({
@@ -58,7 +62,9 @@ describe('Components/App', () => {
     // The page fetched its data from the plugin backend and rendered it: the
     // route matched, the scene activated, and the content component mounted.
     expect(await screen.findByText(/Fleet Instrumentation Score/)).toBeInTheDocument();
-    expect(mockGet).toHaveBeenCalledWith('/api/plugins/tamen25-argus-app/resources/scores');
+    expect(mockGet).toHaveBeenCalledWith('/api/plugins/tamen25-argus-app/resources/scores', undefined, undefined, {
+      showErrorAlert: false,
+    });
     expect(screen.getByRole('link', { name: 'Drill into findings' })).toHaveAttribute(
       'href',
       '/a/tamen25-argus-app/scores'

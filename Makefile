@@ -24,6 +24,7 @@ dev-down: ## Delete the kind dev cluster
 
 test: ## Unit tests, all modules
 	cd $(ENGINE_DIR) && go test ./...
+	cd $(PLUGIN_DIR) && go test ./pkg/...
 	@if [ -f $(PLUGIN_DIR)/package.json ]; then cd $(PLUGIN_DIR) && npm run test:ci --if-present; fi
 
 coverage: ## Engine tests + the >=70% coverage gate CI enforces on the deterministic core
