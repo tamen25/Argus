@@ -68,6 +68,22 @@ describe('ScoresContent', () => {
     expect(screen.getByText(/MET-001/)).toBeInTheDocument();
   });
 
+  it('shows the estimated cost of a priced finding', async () => {
+    const priced: Report = JSON.parse(JSON.stringify(report)); // jsdom has no structuredClone
+    Object.assign(priced.snapshot.services[0].findings![0], { estimated_monthly_cost: 4, cost_currency: 'USD' });
+    mockGet.mockImplementation((url: string) =>
+      url.endsWith('/scores') ? Promise.resolve(priced) : Promise.resolve(remediation)
+    );
+    render(<ScoresContent />);
+    expect(await screen.findByText('Estimated cost: 4.00 USD per month')).toBeInTheDocument();
+  });
+
+  it('shows no cost for an unpriced finding', async () => {
+    render(<ScoresContent />);
+    await screen.findByText('bounded metric attribute cardinality');
+    expect(screen.queryByText(/Estimated cost/)).not.toBeInTheDocument();
+  });
+
   it('opens the remediation panel with the patch and a copy button', async () => {
     render(<ScoresContent />);
     await userEvent.click(await screen.findByRole('button', { name: /view remediation/i }));

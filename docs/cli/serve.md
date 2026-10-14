@@ -24,7 +24,7 @@ Every endpoint is a `GET`; anything else is answered `405`.
 |---|---|---|
 | `/healthz` | | `ok`: liveness and readiness |
 | `/metrics` | | Prometheus: engine metrics and, with ingest, the score gauges |
-| `/api/report` | `--otlp-grpc` | the score report, as `argus score` writes it |
+| `/api/report` | `--otlp-grpc` | the score report, as `argus score` writes it; findings are priced when `--cost-pricing` is set |
 | `/api/aggregates` | `--otlp-grpc` | raw aggregate rows (`argus rules calibrate` input) |
 | `/api/servicegraph` | `--otlp-grpc` | caller→callee edges joined with scores |
 | `/api/remediation?rule=&service=` | `--otlp-grpc` | the patch for a finding in the current snapshot; `404` for any other |

@@ -78,10 +78,10 @@ fixed; a finding that does not hold is marked so here, with the reason.
 - [x] **R04** — collector observations and violations are lifetime counters:
   one old violation fails a service forever in `serve`, and aggregate ticks are
   counted again on every export. Done in #108: item outcomes are windowed like the trackers, and each aggregate export replaces the last evaluation.
-- [ ] **R05** — the Mimir cardinality client reads a field the API does not
-  return (`distinct_label_values_count`); its test fixture invents it.
-- [ ] **R06** — cost attribution uses Mimir's default top-20 label values and
-  in-memory counting, so larger fleets lose services silently.
+- [x] **R05** — the Mimir cardinality client reads a field the API does not
+  return (`distinct_label_values_count`); its test fixture invents it. Done in #109: `label_values_count`, with fixtures from the documented response; a listed label without its count is an error, not 0.
+- [x] **R06** — cost attribution uses Mimir's default top-20 label values and
+  in-memory counting, so larger fleets lose services silently. Done in #109: `count_method=active`, `limit=500`, and the remainder past the list and series without the label attributed to named lines, so the total is complete. Still open: one `--service-label` serves both Mimir (`job`) and Loki (`service_name`).
 - [ ] **R07** — LLM redaction strips evidence values but sends the service name
   and the rendered patch, both telemetry-derived.
 - [ ] **R08** — remediation templates interpolate raw metric and attribute
@@ -108,10 +108,10 @@ fixed; a finding that does not hold is marked so here, with the reason.
   hashing and service identity.
 - [ ] **R17** — trace cap overflow can give a zero denominator (an infinite
   ratio JSON cannot encode) and a random set of graph edges.
-- [ ] **R18** — cardinality verification keeps one outcome per service and rule,
-  so a passing pair can overwrite a failing one; queries are not service-scoped.
-- [ ] **R19** — `PriceFindings` is not called on the score or serve paths, and
-  reads verified quantities from the wrong key.
+- [x] **R18** — cardinality verification keeps one outcome per service and rule,
+  so a passing pair can overwrite a failing one; queries are not service-scoped. Done in #109: distinct pairs, queries scoped to the service's `job`, one combined result per service. Still open: OTLP metric and attribute names are not translated to Mimir's (unit suffixes, dots).
+- [x] **R19** — `PriceFindings` is not called on the score or serve paths, and
+  reads verified quantities from the wrong key. Done in #109: `argus score --pricing` and `serve --cost-pricing` price findings; the pricer reads `details.poller.pairs`; the Scores page shows the amount and currency.
 - [ ] **R20** — the week-over-week trend compares against the latest earlier
   snapshot, not one a week old.
 - [x] **R21** — recording-rule synthesis at the root, and cycles. Done in #106

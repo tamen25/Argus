@@ -30,7 +30,7 @@ func testAPIState(t *testing.T) (*http.ServeMux, *ingest.Pipeline) {
 	col := rules.NewCollector(eng, rules.CollectorOptions{})
 	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{})
 	mux := http.NewServeMux()
-	registerAPI(mux, col, pipe, rs, "test-spec-sha", time.Minute)
+	registerAPI(mux, scoringAPI{col: col, pipe: pipe, rules: rs, specVersion: "test-spec-sha", window: time.Minute})
 	return mux, pipe
 }
 
@@ -133,7 +133,7 @@ func TestAPIServiceGraph(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	pipe := ingest.NewPipeline(col, ingest.TrackerOpts{Window: time.Minute, Now: func() time.Time { return now }})
 	mux := http.NewServeMux()
-	registerAPI(mux, col, pipe, rs, "test-spec-sha", time.Minute)
+	registerAPI(mux, scoringAPI{col: col, pipe: pipe, rules: rs, specVersion: "test-spec-sha", window: time.Minute})
 
 	// one distributed trace: frontend root + client span, checkout server
 	// span whose parent is frontend's client span

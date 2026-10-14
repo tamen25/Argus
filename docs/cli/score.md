@@ -26,6 +26,7 @@ argus score --listen-otlp :4317 --output json --store-dsn postgres://argus:...@d
 | `--output` | `markdown` | `markdown` or `json` |
 | `--out` | stdout | write report to a file |
 | `--fail-below-score` | `0` (off) | exit 2 when the fleet score is below this, or when no service was observed at all (an empty fleet scores a vacuous 100) |
+| `--pricing` | *(off)* | pricing.yaml: sets `estimated_monthly_cost` on each finding whose rule declares a `cost:` block ([cost](../cost.md)) |
 | `--store-dsn` | *(off)* | Postgres DSN; persists snapshot + findings (schema migrates automatically) |
 | `--spec-version-file` | `.instrumentation-score-version` | pinned spec version echoed in reports |
 

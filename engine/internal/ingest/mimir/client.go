@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -40,57 +41,102 @@ func (c *Client) LabelValues(ctx context.Context, label string) ([]string, error
 	return out.Data, nil
 }
 
-// LabelCardinality implements ingest.MimirAPI via Mimir's cardinality API,
-// returning the distinct-value count of a label on a metric.
-func (c *Client) LabelCardinality(ctx context.Context, metric, label string) (int64, error) {
-	var out struct {
-		Labels []struct {
-			LabelName           string `json:"label_name"`
-			SeriesCount         int64  `json:"series_count"`
-			DistinctLabelValues int64  `json:"distinct_label_values_count"`
-		} `json:"labels"`
-	}
+// labelValuesResponse is the response of Mimir's label-values cardinality
+// endpoint (GET <prefix>/api/v1/cardinality/label_values), as documented in
+// the Mimir HTTP API reference. The counts are pointers so a field Mimir did
+// not send is told apart from a measured zero.
+type labelValuesResponse struct {
+	SeriesCountTotal *int64 `json:"series_count_total"`
+	Labels           []struct {
+		LabelName        string `json:"label_name"`
+		LabelValuesCount *int64 `json:"label_values_count"`
+		SeriesCount      *int64 `json:"series_count"`
+		// Cardinality is the top values by series count, at most the limit
+		// asked for.
+		Cardinality []struct {
+			LabelValue  string `json:"label_value"`
+			SeriesCount int64  `json:"series_count"`
+		} `json:"cardinality"`
+	} `json:"labels"`
+}
+
+// maxCardinalityLimit is the largest limit the endpoint accepts.
+const maxCardinalityLimit = 500
+
+// labelValues calls the label-values cardinality endpoint for one label,
+// counting active series (what ingesters hold now, the cost driver) rather
+// than the in-memory default, which includes series no longer written.
+func (c *Client) labelValues(ctx context.Context, selector, label string, limit int) (labelValuesResponse, error) {
 	q := url.Values{}
-	q.Set("selector", fmt.Sprintf(`{__name__=%q}`, metric))
+	if selector != "" {
+		q.Set("selector", selector)
+	}
 	q.Add("label_names[]", label)
+	q.Set("count_method", "active")
+	q.Set("limit", strconv.Itoa(limit))
+	var out labelValuesResponse
 	u := fmt.Sprintf("%s/prometheus/api/v1/cardinality/label_values?%s", c.base, q.Encode())
 	if err := c.get(ctx, u, &out); err != nil {
+		return labelValuesResponse{}, err
+	}
+	return out, nil
+}
+
+// LabelCardinality implements ingest.MimirAPI: the number of distinct values
+// of label among the series selector matches. When no series matched, Mimir
+// does not list the label, and the answer is 0.
+func (c *Client) LabelCardinality(ctx context.Context, selector, label string) (int64, error) {
+	out, err := c.labelValues(ctx, selector, label, 0) // the count only, no per-value list
+	if err != nil {
 		return 0, err
 	}
 	for _, l := range out.Labels {
-		if l.LabelName == label {
-			return l.DistinctLabelValues, nil
+		if l.LabelName != label {
+			continue
 		}
+		if l.LabelValuesCount == nil {
+			return 0, fmt.Errorf("mimir cardinality for %s: response has no label_values_count", label)
+		}
+		return *l.LabelValuesCount, nil
 	}
 	return 0, nil
 }
 
-// SeriesCountByLabel returns the active series count per value of a label
-// (Mimir cardinality API) — the basis for active-series cost attribution
-// (e.g. label "service_name" → series per service).
+// SeriesCountByLabel returns the active series count per value of a label,
+// the basis for active-series cost attribution (label "job" → series per
+// service).
+//
+// Mimir lists at most 500 values. The counts always add up to the tenant's
+// total anyway: series of values past the list go to an "(other: N more
+// values)" entry, and series without the label to "(no <label> label)". A
+// fleet larger than the list is then visible in the report rather than
+// silently missing from it.
 func (c *Client) SeriesCountByLabel(ctx context.Context, label string) (map[string]int64, error) {
-	var out struct {
-		Labels []struct {
-			LabelName   string `json:"label_name"`
-			Cardinality []struct {
-				LabelValue  string `json:"label_value"`
-				SeriesCount int64  `json:"series_count"`
-			} `json:"cardinality"`
-		} `json:"labels"`
-	}
-	q := url.Values{}
-	q.Add("label_names[]", label)
-	u := fmt.Sprintf("%s/prometheus/api/v1/cardinality/label_values?%s", c.base, q.Encode())
-	if err := c.get(ctx, u, &out); err != nil {
+	out, err := c.labelValues(ctx, "", label, maxCardinalityLimit)
+	if err != nil {
 		return nil, err
 	}
 	counts := map[string]int64{}
+	var attributed int64
 	for _, l := range out.Labels {
 		if l.LabelName != label {
 			continue
 		}
 		for _, v := range l.Cardinality {
 			counts[v.LabelValue] = v.SeriesCount
+			attributed += v.SeriesCount
+		}
+		if l.LabelValuesCount == nil || l.SeriesCount == nil {
+			return nil, fmt.Errorf("mimir cardinality for %s: response has no label_values_count or series_count", label)
+		}
+		if more := *l.LabelValuesCount - int64(len(l.Cardinality)); more > 0 {
+			counts[fmt.Sprintf("(other: %d more values)", more)] = *l.SeriesCount - attributed
+		}
+		attributed = *l.SeriesCount
+	}
+	if out.SeriesCountTotal != nil {
+		if unlabeled := *out.SeriesCountTotal - attributed; unlabeled > 0 {
+			counts[fmt.Sprintf("(no %s label)", label)] = unlabeled
 		}
 	}
 	return counts, nil

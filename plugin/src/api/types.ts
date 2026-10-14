@@ -21,7 +21,10 @@ export interface Finding {
   confidence: 'sampled' | 'verified';
   stats: Stats;
   evidence?: Evidence[];
+  // Set only when the engine runs with pricing and the rule declares a cost
+  // block; absent means unpriced, never zero.
   estimated_monthly_cost?: number;
+  cost_currency?: string;
 }
 
 export interface ServiceReport {

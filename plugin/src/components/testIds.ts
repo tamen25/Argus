@@ -11,6 +11,7 @@ export const testIds = {
   scores: {
     container: 'data-testid scores-container',
     finding: 'data-testid scores-finding',
+    cost: 'data-testid scores-finding-cost',
     remediation: 'data-testid scores-remediation',
   },
   serviceGraph: {
