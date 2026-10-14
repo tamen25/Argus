@@ -89,56 +89,59 @@ func (p *Poller) verifyServicePresence(ctx context.Context, col *rules.Collector
 // Mimir cardinality API, which sees the unsampled stream.
 func (p *Poller) verifyCardinality(ctx context.Context, col *rules.Collector, r *rules.Rule, services []string) error {
 	limit := int64(10000)
-	if v, ok := r.Params["max_cardinality"]; ok {
-		switch x := v.(type) {
-		case int:
-			limit = int64(x)
-		case int64:
-			limit = x
-		case float64:
-			limit = int64(x)
-		}
+	if v, ok := rules.AsFloat(r.Params["max_cardinality"]); ok {
+		limit = int64(v)
 	}
 
-	snap := col.Snapshot()
 	var firstErr error
+	for _, pair := range flaggedPairs(col.Snapshot(), r.ID, services) {
+		n, err := p.api.LabelCardinality(ctx, pair.metric, pair.attribute)
+		switch {
+		case err != nil:
+			if firstErr == nil {
+				firstErr = err
+			}
+		case n == 0:
+			// Mimir has no series for this pair (e.g. the metric only exists
+			// on the sampled stream): nothing to verify, so the sampled
+			// finding stands.
+		default:
+			col.RecordPollerResult(rules.PollerResult{
+				Service: pair.service, RuleID: r.ID, Passed: n < limit,
+				Details: map[string]any{
+					"check": "mimir_label_cardinality", "metric": pair.metric,
+					"attribute": pair.attribute, "series": n,
+				},
+			})
+		}
+	}
+	return firstErr
+}
+
+// flaggedPair is one (metric, attribute) a cardinality finding named.
+type flaggedPair struct{ service, metric, attribute string }
+
+// flaggedPairs lists the (metric, attribute) pairs that rule ruleID's findings
+// name as evidence, for the given services.
+func flaggedPairs(snap *rules.Snapshot, ruleID string, services []string) []flaggedPair {
+	var pairs []flaggedPair
 	for _, svc := range services {
 		rep := snap.Service(svc)
 		if rep == nil {
 			continue
 		}
 		for _, f := range rep.Findings {
-			if f.RuleID != r.ID {
+			if f.RuleID != ruleID {
 				continue
 			}
 			for _, ev := range f.Evidence {
 				metric, _ := ev.Attrs["metric"].(string)
 				attr, _ := ev.Attrs["attribute"].(string)
-				if metric == "" || attr == "" {
-					continue
+				if metric != "" && attr != "" {
+					pairs = append(pairs, flaggedPair{svc, metric, attr})
 				}
-				n, err := p.api.LabelCardinality(ctx, metric, attr)
-				if err != nil {
-					if firstErr == nil {
-						firstErr = err
-					}
-					continue
-				}
-				if n == 0 {
-					// Mimir has no series for this metric/label (e.g. the
-					// metric only exists on the sampled stream): nothing to
-					// verify — the sampled finding must stand.
-					continue
-				}
-				col.RecordPollerResult(rules.PollerResult{
-					Service: svc, RuleID: r.ID, Passed: n < limit,
-					Details: map[string]any{
-						"check": "mimir_label_cardinality", "metric": metric,
-						"attribute": attr, "series": n,
-					},
-				})
 			}
 		}
 	}
-	return firstErr
+	return pairs
 }

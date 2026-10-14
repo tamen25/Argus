@@ -59,7 +59,7 @@ func Propose(in Input) []Proposal {
 				if row.Aggregate != c.Aggregate {
 					continue
 				}
-				if v, ok := toFloat(row.Fields[c.Field]); ok {
+				if v, ok := rules.AsFloat(row.Fields[c.Field]); ok {
 					vals = append(vals, v)
 				}
 			}
@@ -108,20 +108,8 @@ func currentParam(r *rules.Rule, key string) float64 {
 	if key == rules.ServiceViolationParam {
 		return r.ServiceViolation.ThresholdRatio
 	}
-	v, _ := toFloat(r.Params[key])
+	v, _ := rules.AsFloat(r.Params[key])
 	return v
-}
-
-func toFloat(v any) (float64, bool) {
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case int:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	}
-	return 0, false
 }
 
 // Render writes the human review table (Markdown). Disclosures — evidence

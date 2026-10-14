@@ -53,27 +53,14 @@ func priceQuantity(p *Pricing, driver string, qty float64) (float64, bool) {
 // value in Details wins (it saw the unsampled stream); otherwise the worst
 // (max) truncated evidence sample, so cost is never understated.
 func findingQuantity(f *rules.Finding, field string) (float64, bool) {
-	if v, ok := toFloat(f.Details[field]); ok {
+	if v, ok := rules.AsFloat(f.Details[field]); ok {
 		return v, true
 	}
 	best, found := 0.0, false
 	for _, ev := range f.Evidence {
-		if v, ok := toFloat(ev.Attrs[field]); ok && (!found || v > best) {
+		if v, ok := rules.AsFloat(ev.Attrs[field]); ok && (!found || v > best) {
 			best, found = v, true
 		}
 	}
 	return best, found
-}
-
-func toFloat(v any) (float64, bool) {
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case int64:
-		return float64(x), true
-	case int:
-		return float64(x), true
-	default:
-		return 0, false
-	}
 }

@@ -1,7 +1,6 @@
 package ingest
 
 import (
-	"container/list"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,14 +22,16 @@ const DefaultMaxTrackedPairs = 4096
 // matching MET-001's 1-hour criteria window.
 const DefaultWindow = time.Hour
 
+// sketchKey identifies one tracked entry: a service and its dim values,
+// joined with \x00 so the key is comparable.
 type sketchKey struct {
 	service string
-	dims    string // joined dim values, \x00-separated
+	dims    string
 }
 
+// sketchEntry is one HLL sketch, with its dim values kept for the rows.
 type sketchEntry struct {
 	sketch *hyperloglog.Sketch
-	elem   *list.Element // position in the LRU list (current generation only)
 	dims   []string
 }
 
@@ -38,31 +39,21 @@ type sketchEntry struct {
 // HyperLogLog sketches — never exact sets (architecture rule 3). One named
 // aggregate per tracker instance; dimNames label the dims in emitted rows.
 //
-// Window semantics: two-generation tumbling; estimates report
-// max(current, previous) — see docs/rules/authoring.md.
+// Window semantics: two-generation tumbling (see generations); estimates
+// report max(current, previous) — see docs/rules/authoring.md.
 // Admission: hard cap per generation with LRU eviction, evictions counted.
 type SketchTracker struct {
 	mu        sync.Mutex
 	aggregate string
 	dimNames  []string
-	max       int
-	window    time.Duration
-	now       func() time.Time
-	rotatedAt time.Time
-
-	cur  map[sketchKey]*sketchEntry
-	lru  *list.List // front = most recently observed; values are sketchKey
-	prev map[sketchKey]*sketchEntry
-
-	evictions int64
+	gens      *generations[sketchKey, *sketchEntry]
 }
 
 // NewSketchTracker builds a named tracker.
 func NewSketchTracker(aggregate string, dimNames []string, maxEntries int, window time.Duration, now func() time.Time) *SketchTracker {
 	return &SketchTracker{
 		aggregate: aggregate, dimNames: dimNames,
-		max: maxEntries, window: window, now: now, rotatedAt: now(),
-		cur: make(map[sketchKey]*sketchEntry), lru: list.New(),
+		gens: newGenerations[sketchKey, *sketchEntry](maxEntries, window, now),
 	}
 }
 
@@ -80,49 +71,19 @@ func NewCardinalityTrackerWithClock(maxPairs int, window time.Duration, now func
 	return NewSketchTracker("metric_attribute_cardinality", []string{"metric", "attribute"}, maxPairs, window, now)
 }
 
-// rotateLocked ages generations forward as needed. Called with mu held.
-func (t *SketchTracker) rotateLocked() {
-	now := t.now()
-	elapsed := now.Sub(t.rotatedAt)
-	if elapsed < t.window {
-		return
-	}
-	if elapsed >= 2*t.window {
-		t.prev = nil // idle for 2+ windows: everything ages out
-	} else {
-		t.prev = t.cur
-	}
-	t.cur = make(map[sketchKey]*sketchEntry)
-	t.lru.Init()
-	t.rotatedAt = now
-}
-
 // Observe records one value occurrence for (service, dims...).
 func (t *SketchTracker) Observe(service string, dims []string, value string) {
 	k := sketchKey{service, strings.Join(dims, "\x00")}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.rotateLocked()
+	t.gens.rotate()
 
-	e, ok := t.cur[k]
-	if !ok {
-		if len(t.cur) >= t.max {
-			back := t.lru.Back()
-			if back == nil {
-				return // max <= 0
-			}
-			victim := back.Value.(sketchKey)
-			delete(t.cur, victim)
-			t.lru.Remove(back)
-			t.evictions++
-		}
-		e = &sketchEntry{sketch: hyperloglog.New14(), dims: append([]string(nil), dims...)}
-		e.elem = t.lru.PushFront(k)
-		t.cur[k] = e
-	} else {
-		t.lru.MoveToFront(e.elem)
+	e, ok := t.gens.get(k, func() *sketchEntry {
+		return &sketchEntry{sketch: hyperloglog.New14(), dims: append([]string(nil), dims...)}
+	})
+	if ok {
+		e.sketch.Insert([]byte(value))
 	}
-	e.sketch.Insert([]byte(value))
 }
 
 // Evictions returns how many entries were LRU-evicted (reported as a
@@ -130,17 +91,17 @@ func (t *SketchTracker) Observe(service string, dims []string, value string) {
 func (t *SketchTracker) Evictions() int64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.evictions
+	return t.gens.evictions
 }
 
 // PairsTracked returns the live entry count across both generations.
 func (t *SketchTracker) PairsTracked() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.rotateLocked()
-	n := len(t.cur)
-	for k := range t.prev {
-		if _, in := t.cur[k]; !in {
+	t.gens.rotate()
+	n := len(t.gens.cur)
+	for k := range t.gens.prev {
+		if _, in := t.gens.cur[k]; !in {
 			n++
 		}
 	}
@@ -152,19 +113,19 @@ func (t *SketchTracker) PairsTracked() int {
 func (t *SketchTracker) Rows() []rules.AggregateRow {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.rotateLocked()
+	t.gens.rotate()
 
 	type acc struct {
 		dims []string
 		est  uint64
 	}
-	est := make(map[sketchKey]acc, len(t.cur)+len(t.prev))
-	for k, e := range t.cur {
-		est[k] = acc{e.dims, e.sketch.Estimate()}
+	est := make(map[sketchKey]acc, len(t.gens.cur)+len(t.gens.prev))
+	for k, s := range t.gens.cur {
+		est[k] = acc{s.val.dims, s.val.sketch.Estimate()}
 	}
-	for k, e := range t.prev {
-		if v := e.sketch.Estimate(); v > est[k].est {
-			est[k] = acc{e.dims, v}
+	for k, s := range t.gens.prev {
+		if v := s.val.sketch.Estimate(); v > est[k].est {
+			est[k] = acc{s.val.dims, v}
 		}
 	}
 

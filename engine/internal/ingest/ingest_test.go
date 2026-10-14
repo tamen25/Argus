@@ -32,6 +32,11 @@ evaluation:
 
 func newPipeline(t *testing.T) (*Pipeline, *rules.Collector) {
 	t.Helper()
+	return newPipelineWith(t, TrackerOpts{})
+}
+
+func newPipelineWith(t *testing.T, opts TrackerOpts) (*Pipeline, *rules.Collector) {
+	t.Helper()
 	rs, err := rules.LoadBytes([]byte(res005))
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +46,7 @@ func newPipeline(t *testing.T) (*Pipeline, *rules.Collector) {
 		t.Fatal(err)
 	}
 	col := rules.NewCollector(eng)
-	return NewPipeline(col, TrackerOpts{}), col
+	return NewPipeline(col, opts), col
 }
 
 func testTraces(svc string, n int) ptrace.Traces {
@@ -403,5 +408,32 @@ func TestExemplarCoverageAggregate(t *testing.T) {
 	f = rowsFor(p.AggregateRows(), "exemplar_coverage", "quote")
 	if f["with_exemplars"].(int64) != 1 {
 		t.Errorf("with_exemplars = %v, want 1", f["with_exemplars"])
+	}
+}
+
+// ARG-MET-001 asks whether a point *in the window* carried an exemplar. The
+// counts used to accumulate for the engine's lifetime, so in `argus serve` a
+// service that sent one exemplar at startup passed forever, and an exemplar
+// bridge that broke later was never caught. They are windowed now.
+func TestExemplarCoverageIsWindowed(t *testing.T) {
+	now := time.Unix(0, 0)
+	p, _ := newPipelineWith(t, TrackerOpts{Window: time.Hour, Now: func() time.Time { return now }})
+
+	withExemplar := testHistogram("quote", []float64{0.1, 1})
+	withExemplar.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0).Histogram().DataPoints().At(0).Exemplars().AppendEmpty()
+	p.ConsumeMetrics(withExemplar)
+	if f := rowsFor(p.CurrentRows(), "exemplar_coverage", "quote"); f["with_exemplars"].(int64) != 1 {
+		t.Fatalf("with_exemplars = %v, want 1", f["with_exemplars"])
+	}
+
+	// The bridge breaks: points keep coming, without exemplars. Within two
+	// windows the exemplar ages out.
+	for range 3 {
+		now = now.Add(61 * time.Minute)
+		p.ConsumeMetrics(testHistogram("quote", []float64{0.1, 1}))
+	}
+	f := rowsFor(p.CurrentRows(), "exemplar_coverage", "quote")
+	if f["with_exemplars"].(int64) != 0 || f["histogram_points"].(int64) == 0 {
+		t.Errorf("after the bridge broke: %v, want points but no exemplars", f)
 	}
 }

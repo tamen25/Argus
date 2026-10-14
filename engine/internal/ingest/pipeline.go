@@ -5,6 +5,7 @@
 package ingest
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,16 +58,17 @@ type Pipeline struct {
 	traces     *TraceTracker  // trace_health
 
 	mu        sync.Mutex
-	exemplars map[string]*exemplarCounts // per service, current window only
+	exemplars *generations[string, *exemplarCounts] // per service, windowed like the sketches
 
 	// monotonic per-signal item counts (soak/serve self-metrics)
 	traceItems, metricItems, logItems atomic.Int64
 }
 
-// exemplarCounts backs the exemplar_coverage aggregate: cheap counters, reset
-// with AggregateRows consumption cycles via the same tumbling clock as the
-// sketches is unnecessary — counts accumulate per run window (score CLI) or
-// between exports (serve); bounded by service count.
+// exemplarCounts backs the exemplar_coverage aggregate (ARG-MET-001: a
+// service passes if a histogram point in the window carried an exemplar).
+// The counts are windowed like the sketches: they once accumulated for the
+// engine's lifetime, so in `argus serve` one exemplar at startup passed the
+// rule forever and a bridge that broke later was never caught.
 type exemplarCounts struct {
 	histogramPoints int64
 	withExemplars   int64
@@ -77,7 +79,7 @@ func NewPipeline(col *rules.Collector, opts TrackerOpts) *Pipeline {
 	o := opts.withDefaults()
 	return &Pipeline{
 		col:        col,
-		exemplars:  map[string]*exemplarCounts{},
+		exemplars:  newGenerations[string, *exemplarCounts](o.MaxPairs, o.Window, o.Now),
 		card:       NewSketchTracker("metric_attribute_cardinality", []string{"metric", "attribute"}, o.MaxPairs, o.Window, o.Now),
 		spanNames:  NewSketchTracker("span_name_cardinality", []string{"attribute"}, o.MaxPairs, o.Window, o.Now),
 		bucketSigs: NewSketchTracker("histogram_bucket_signatures", []string{"metric"}, o.MaxPairs, o.Window, o.Now),
@@ -108,19 +110,25 @@ func (p *Pipeline) ConsumeMetrics(md pmetric.Metrics) {
 		}
 		if it.Metric.Type == "histogram" {
 			p.bucketSigs.Observe(it.Service, []string{it.Metric.Name}, bucketSignature(it.Metric.BucketBounds))
-			p.mu.Lock()
-			ec, ok := p.exemplars[it.Service]
-			if !ok {
-				ec = &exemplarCounts{}
-				p.exemplars[it.Service] = ec
-			}
-			ec.histogramPoints++
-			if it.Metric.ExemplarCount > 0 {
-				ec.withExemplars++
-			}
-			p.mu.Unlock()
+			p.countExemplars(it.Service, it.Metric.ExemplarCount > 0)
 		}
 		p.observeResource(it)
+	}
+}
+
+// countExemplars counts one histogram point for a service, and whether it
+// carried exemplars.
+func (p *Pipeline) countExemplars(service string, hasExemplars bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.exemplars.rotate()
+	ec, ok := p.exemplars.get(service, func() *exemplarCounts { return &exemplarCounts{} })
+	if !ok {
+		return
+	}
+	ec.histogramPoints++
+	if hasExemplars {
+		ec.withExemplars++
 	}
 }
 
@@ -153,24 +161,44 @@ func (p *Pipeline) AggregateRows() []rules.AggregateRow {
 // the collector — the read-only view for HTTP handlers, where repeated
 // scrapes must not inflate observation counts.
 func (p *Pipeline) CurrentRows() []rules.AggregateRow {
-	var rows []rules.AggregateRow
-	p.mu.Lock()
-	for svc, ec := range p.exemplars {
-		rows = append(rows, rules.AggregateRow{
-			Service:   svc,
-			Aggregate: "exemplar_coverage",
-			Fields: map[string]any{
-				"histogram_points": ec.histogramPoints,
-				"with_exemplars":   ec.withExemplars,
-			},
-		})
-	}
-	p.mu.Unlock()
+	rows := p.exemplarRows()
 	rows = append(rows, p.card.Rows()...)
 	rows = append(rows, p.spanNames.Rows()...)
 	rows = append(rows, p.bucketSigs.Rows()...)
 	rows = append(rows, p.resAttrs.Rows()...)
 	rows = append(rows, p.traces.Rows()...)
+	return rows
+}
+
+// exemplarRows renders exemplar_coverage rows over the current and the
+// previous generation (between one and two windows of points), so a bridge
+// that stops sending exemplars shows within two windows.
+func (p *Pipeline) exemplarRows() []rules.AggregateRow {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.exemplars.rotate()
+
+	total := map[string]exemplarCounts{}
+	for _, gen := range []map[string]*slot[*exemplarCounts]{p.exemplars.prev, p.exemplars.cur} {
+		for svc, s := range gen {
+			t := total[svc]
+			t.histogramPoints += s.val.histogramPoints
+			t.withExemplars += s.val.withExemplars
+			total[svc] = t
+		}
+	}
+	rows := make([]rules.AggregateRow, 0, len(total))
+	for svc, t := range total {
+		rows = append(rows, rules.AggregateRow{
+			Service:   svc,
+			Aggregate: "exemplar_coverage",
+			Fields: map[string]any{
+				"histogram_points": t.histogramPoints,
+				"with_exemplars":   t.withExemplars,
+			},
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Service < rows[j].Service })
 	return rows
 }
 
