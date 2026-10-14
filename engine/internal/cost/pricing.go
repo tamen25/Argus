@@ -11,6 +11,7 @@ package cost
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -85,7 +86,9 @@ func LoadPricing(path string) (*Pricing, error) {
 	return &p, nil
 }
 
-// Validate enforces the schema tag, a currency, and non-negative rates.
+// Validate enforces the schema tag, a currency, and rates that are finite
+// and non-negative. A NaN rate would pass a plain "< 0" check (every
+// comparison with NaN is false) and price everything as NaN.
 func (p *Pricing) Validate() error {
 	if p.Schema != PricingSchema {
 		return fmt.Errorf("schema %q, want %q", p.Schema, PricingSchema)
@@ -97,18 +100,18 @@ func (p *Pricing) Validate() error {
 		"ingest.per_gb":             p.Ingest.PerGB,
 		"active_series.per_million": p.ActiveSeries.PerMillion,
 	} {
-		if r < 0 {
-			return fmt.Errorf("%s is negative (%v)", name, r)
+		if r < 0 || math.IsNaN(r) || math.IsInf(r, 0) {
+			return fmt.Errorf("%s must be a finite number >= 0, got %v", name, r)
 		}
 	}
 	for sig, r := range p.Ingest.PerGBBySignal {
-		if r < 0 {
-			return fmt.Errorf("ingest.per_gb_by_signal[%s] is negative (%v)", sig, r)
+		if r < 0 || math.IsNaN(r) || math.IsInf(r, 0) {
+			return fmt.Errorf("ingest.per_gb_by_signal[%s] must be a finite number >= 0, got %v", sig, r)
 		}
 	}
 	for class, r := range p.Storage.PerGBMonthByClass {
-		if r < 0 {
-			return fmt.Errorf("storage.per_gb_month_by_class[%s] is negative (%v)", class, r)
+		if r < 0 || math.IsNaN(r) || math.IsInf(r, 0) {
+			return fmt.Errorf("storage.per_gb_month_by_class[%s] must be a finite number >= 0, got %v", class, r)
 		}
 	}
 	return nil

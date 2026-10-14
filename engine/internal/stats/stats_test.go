@@ -49,3 +49,24 @@ func TestStatsInputOrderIndependent(t *testing.T) {
 		t.Error("stats must not mutate the caller's slice")
 	}
 }
+
+// R34: nearest-rank takes the ceiling of the rank. Rounding it gave P95 of
+// 1..11 as 10, a value only 91% of the data is at or below.
+func TestPercentileNearestRank(t *testing.T) {
+	vals := []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
+	cases := map[float64]float64{
+		95:  11, // rank 10.45 → 11
+		50:  6,  // rank 5.5 → 6
+		10:  2,  // rank 1.1 → 2
+		0:   1,  // the smallest value
+		100: 11,
+	}
+	for p, want := range cases {
+		if got := Percentile(vals, p); got != want {
+			t.Errorf("P%v = %v, want %v", p, got, want)
+		}
+	}
+	if got := Max([]float64{3, -1, 7, 2}); got != 7 {
+		t.Errorf("Max = %v, want 7", got)
+	}
+}

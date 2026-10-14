@@ -1,6 +1,7 @@
 package cost_test
 
 import (
+	"math"
 	"path/filepath"
 	"testing"
 
@@ -51,5 +52,16 @@ func TestLoadPricingRejectsNegativeRate(t *testing.T) {
 	_, err := cost.LoadPricing(filepath.Join("testdata", "pricing-negative.yaml"))
 	if err == nil {
 		t.Fatal("want error for negative rate, got nil")
+	}
+}
+
+// R34: a NaN or infinite rate would pass a plain "< 0" check and price
+// everything as NaN.
+func TestPricingRejectsNonFiniteRates(t *testing.T) {
+	for _, r := range []float64{math.NaN(), math.Inf(1), -1} {
+		p := cost.Pricing{Schema: cost.PricingSchema, Currency: "USD", ActiveSeries: cost.ActiveSeries{PerMillion: r}}
+		if err := p.Validate(); err == nil {
+			t.Errorf("rate %v accepted", r)
+		}
 	}
 }

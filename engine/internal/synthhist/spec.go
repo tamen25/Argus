@@ -14,6 +14,7 @@ package synthhist
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"os"
 	"time"
 
@@ -77,7 +78,11 @@ func LoadSpec(path string) (Spec, error) {
 	return s, nil
 }
 
-// Validate enforces the schema tag and internally consistent windows.
+// Validate enforces the schema tag, internally consistent windows, and
+// values the generator can turn into sensible series: a negative rate or a
+// jitter of 1 or more would make a counter decrease, and a duplicated name
+// or incident ID would make the ground truth ambiguous. A step left out
+// defaults to 30s; one given as zero or less is an error.
 func (s *Spec) Validate() error {
 	if s.Schema != SpecSchema {
 		return fmt.Errorf("schema %q, want %q", s.Schema, SpecSchema)
@@ -85,8 +90,11 @@ func (s *Spec) Validate() error {
 	if !s.To.After(s.From) {
 		return fmt.Errorf("to must be after from")
 	}
-	if s.Step <= 0 {
+	switch {
+	case s.Step == 0:
 		s.Step = 30 * time.Second
+	case s.Step < 0:
+		return fmt.Errorf("step %s must be positive", s.Step)
 	}
 	if len(s.Services) == 0 {
 		return fmt.Errorf("at least one service is required")
@@ -96,12 +104,26 @@ func (s *Spec) Validate() error {
 		if svc.Name == "" {
 			return fmt.Errorf("service with empty name")
 		}
+		if names[svc.Name] {
+			return fmt.Errorf("service %s is listed twice", svc.Name)
+		}
 		names[svc.Name] = true
-		if svc.ErrorRatio < 0 || svc.ErrorRatio > 1 {
+		if !finite(svc.RatePerSec) || svc.RatePerSec < 0 {
+			return fmt.Errorf("service %s: rate_per_sec %v must be a number >= 0", svc.Name, svc.RatePerSec)
+		}
+		if !unitRange(svc.ErrorRatio) {
 			return fmt.Errorf("service %s: error_ratio %v outside [0,1]", svc.Name, svc.ErrorRatio)
 		}
+		if !finite(svc.Jitter) || svc.Jitter < 0 || svc.Jitter >= 1 {
+			return fmt.Errorf("service %s: jitter %v outside [0,1)", svc.Name, svc.Jitter)
+		}
 	}
+	ids := map[string]bool{}
 	for _, inc := range s.Incidents {
+		if inc.ID == "" || ids[inc.ID] {
+			return fmt.Errorf("incident id %q is empty or listed twice", inc.ID)
+		}
+		ids[inc.ID] = true
 		if !names[inc.Service] {
 			return fmt.Errorf("incident %s references unknown service %q", inc.ID, inc.Service)
 		}
@@ -111,6 +133,17 @@ func (s *Spec) Validate() error {
 		if inc.Start.Before(s.From) || inc.End.After(s.To) {
 			return fmt.Errorf("incident %s falls outside the generated window", inc.ID)
 		}
+		if !unitRange(inc.ErrorRatio) {
+			return fmt.Errorf("incident %s: error_ratio %v outside [0,1]", inc.ID, inc.ErrorRatio)
+		}
 	}
 	return nil
 }
+
+// finite reports whether v is a number: neither NaN nor infinite. YAML reads
+// .nan and .inf as floats, and NaN passes every range check written as
+// "v < lo || v > hi", because every comparison with NaN is false.
+func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+
+// unitRange reports whether v is a finite number in [0,1].
+func unitRange(v float64) bool { return finite(v) && v >= 0 && v <= 1 }

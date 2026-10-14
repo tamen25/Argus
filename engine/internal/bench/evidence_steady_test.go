@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"math"
 	"reflect"
 	"testing"
 	"time"
@@ -60,6 +61,9 @@ func TestSteadyStateValidate(t *testing.T) {
 		{"no bound", SteadyState{Query: "q"}, true},
 		{"inverted band", SteadyState{Query: "q", Min: f(5), Max: f(1)}, true},
 		{"bad settle", SteadyState{Query: "q", Min: f(1), Settle: "soon"}, true},
+		// R34: NaN passes "min > max" (every comparison with NaN is false).
+		{"NaN bound", SteadyState{Query: "q", Min: f(math.NaN())}, true},
+		{"infinite bound", SteadyState{Query: "q", Max: f(math.Inf(1))}, true},
 	}
 	for _, tc := range cases {
 		if err := tc.ss.validate(); (err != nil) != tc.wantErr {

@@ -2,6 +2,7 @@ package synthhist_test
 
 import (
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -101,5 +102,33 @@ func TestLoadSpecRejectsUnknownServiceIncident(t *testing.T) {
 	spec.Incidents[0].Service = "nope"
 	if err := spec.Validate(); err == nil {
 		t.Error("incident on unknown service validated")
+	}
+}
+
+// R34: values the generator cannot turn into sensible series are refused.
+// NaN passes a plain "v < 0 || v > 1" check, so it is tested directly.
+func TestValidateRejectsBadValues(t *testing.T) {
+	cases := map[string]func(*synthhist.Spec){
+		"duplicate service":      func(s *synthhist.Spec) { s.Services = append(s.Services, s.Services[0]) },
+		"negative rate":          func(s *synthhist.Spec) { s.Services[0].RatePerSec = -1 },
+		"NaN rate":               func(s *synthhist.Spec) { s.Services[0].RatePerSec = math.NaN() },
+		"NaN error ratio":        func(s *synthhist.Spec) { s.Services[0].ErrorRatio = math.NaN() },
+		"jitter of 1":            func(s *synthhist.Spec) { s.Services[0].Jitter = 1 },
+		"negative step":          func(s *synthhist.Spec) { s.Step = -time.Second },
+		"duplicate incident id":  func(s *synthhist.Spec) { s.Incidents = append(s.Incidents, s.Incidents[0]) },
+		"incident ratio above 1": func(s *synthhist.Spec) { s.Incidents[0].ErrorRatio = 2 },
+	}
+	for name, mutate := range cases {
+		spec := testSpec(t)
+		mutate(&spec)
+		if err := spec.Validate(); err == nil {
+			t.Errorf("%s: validated", name)
+		}
+	}
+
+	spec := testSpec(t)
+	spec.Step = 0
+	if err := spec.Validate(); err != nil || spec.Step != 30*time.Second {
+		t.Errorf("a missing step: err %v, step %s; want the 30s default", err, spec.Step)
 	}
 }
