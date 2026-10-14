@@ -2,6 +2,7 @@ package rules
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -342,5 +343,27 @@ func TestSnapshotFleetScore(t *testing.T) {
 	snap := c.Snapshot()
 	if snap.FleetScore != 50 {
 		t.Errorf("fleet = %v, want 50 (mean of 100 and 0)", snap.FleetScore)
+	}
+}
+
+// R16: evidence outlives the item it came from, so it is bounded and copied:
+// at most maxEvidenceAttrs attributes, and long values and summaries cut.
+func TestEvidenceIsBounded(t *testing.T) {
+	res := map[string]any{"service.name": "ad"}
+	for i := range 100 {
+		res[fmt.Sprintf("k%03d", i)] = strings.Repeat("v", 5000)
+	}
+	it := model.Item{Kind: model.KindSpan, Service: "ad", Resource: res, Span: &model.Span{Name: strings.Repeat("n", 5000)}}
+	e := evidenceFor(it)
+	if len(e.Attrs) != maxEvidenceAttrs {
+		t.Errorf("attrs = %d, want %d", len(e.Attrs), maxEvidenceAttrs)
+	}
+	for k, v := range e.Attrs {
+		if s, ok := v.(string); ok && len(s) > model.MaxAttrValueLen {
+			t.Errorf("%s = %d bytes", k, len(s))
+		}
+	}
+	if len(e.Summary) > model.MaxAttrValueLen {
+		t.Errorf("summary = %d bytes", len(e.Summary))
 	}
 }

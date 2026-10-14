@@ -70,6 +70,8 @@ export interface ServiceGraph {
   window: string;
   nodes: GraphNode[];
   edges: GraphEdge[];
+  // Edges left out past the engine's cap; the busiest are kept.
+  edges_omitted?: number;
 }
 
 export interface Remediation {

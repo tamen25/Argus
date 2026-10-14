@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
+	"github.com/tamen25/Argus/engine/internal/model"
 	"github.com/tamen25/Argus/engine/internal/rules"
 )
 
@@ -24,12 +25,17 @@ const maxSpansPerTrace = 512
 // maxServicesPerTrace caps the participating-service set per trace.
 const maxServicesPerTrace = 64
 
-// svcOverflow marks spans from services beyond maxServicesPerTrace: they
-// still resolve parent references but carry no caller attribution.
+// svcOverflow marks spans from services beyond maxServicesPerTrace. Their
+// span IDs still resolve other spans' parent references, but they are not
+// counted as participants, so they record no parent references of their own:
+// a service that breaks a trace it was never counted in would have a ratio
+// with a zero denominator.
 const svcOverflow = 0xFF
 
-// maxGraphEdges caps distinct (caller, callee) pairs per Rows() call — a
-// defensive bound; real fleets sit at (distinct services)² far below it.
+// maxGraphEdges caps the (caller, callee) pairs one Rows call reports. When
+// there are more, the pairs seen in the most traces are kept (then by name),
+// so the graph shows the busiest paths and is the same on every call; the
+// number left out is reported (EdgesOmitted).
 const maxGraphEdges = 4096
 
 // traceState is GLOBAL per trace ID — spans from every service resolve into
@@ -63,6 +69,8 @@ type traceState struct {
 type TraceTracker struct {
 	mu   sync.Mutex
 	gens *generations[pcommon.TraceID, *traceState]
+	// edgesOmitted is how many edges the last Rows call left out.
+	edgesOmitted int
 }
 
 // NewTraceTracker builds a tracker capped at maxTraces per generation.
@@ -79,9 +87,9 @@ func (t *TraceTracker) ObserveTraces(td ptrace.Traces) {
 	rss := td.ResourceSpans()
 	for i := 0; i < rss.Len(); i++ {
 		rs := rss.At(i)
-		svc := "<unknown>"
+		svc := model.UnknownService
 		if v, ok := rs.Resource().Attributes().Get("service.name"); ok && v.Str() != "" {
-			svc = v.Str()
+			svc = model.ServiceName(v.Str()) // the same identity the collector uses
 		}
 		sss := rs.ScopeSpans()
 		for j := 0; j < sss.Len(); j++ {
@@ -108,6 +116,8 @@ func (t *TraceTracker) observeSpanLocked(svc string, sp ptrace.Span) {
 	switch refs, seen := st.parents[parent]; {
 	case parent.IsEmpty():
 		st.hasRoot = true
+	case idx == svcOverflow:
+		// Past the service cap: not a participant, so not blamed either.
 	case seen:
 		if len(refs) < maxServicesPerTrace {
 			refs[svc] = struct{}{}
@@ -173,12 +183,30 @@ func (t *TraceTracker) Rows() []rules.AggregateRow {
 		breaks, edges := st.analyze()
 		tallyHealth(health, st, breaks)
 		for e := range edges {
-			if _, known := edgeTraces[e]; known || len(edgeTraces) < maxGraphEdges {
-				edgeTraces[e]++
-			}
+			edgeTraces[e]++
 		}
 	}
-	return append(healthRows(health), dependencyRows(edgeTraces)...)
+	deps, omitted := dependencyRows(edgeTraces)
+	t.edgesOmitted = omitted
+	return append(healthRows(health), deps...)
+}
+
+// EdgesOmitted is how many caller→callee edges the last Rows call left out
+// because there were more than maxGraphEdges.
+func (t *TraceTracker) EdgesOmitted() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.edgesOmitted
+}
+
+// CloseWindow ends the current window now, so Rows judges the traces seen so
+// far. For a finite collection (argus score), which would otherwise never
+// complete a window: once collection has stopped no more spans can arrive,
+// though a trace still in progress at that moment can look broken.
+func (t *TraceTracker) CloseWindow() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.gens.closeWindow()
 }
 
 // edge is a caller→callee service pair.
@@ -249,10 +277,13 @@ func tallyHealth(health map[string]*traceHealth, st *traceState, breaks map[stri
 }
 
 // healthRows renders the per-service counts as trace_health rows, sorted by
-// service.
+// service. A service with no counted trace has no ratio, and gets no row.
 func healthRows(health map[string]*traceHealth) []rules.AggregateRow {
 	rows := make([]rules.AggregateRow, 0, len(health))
 	for svc, h := range health {
+		if h.traces == 0 {
+			continue
+		}
 		rows = append(rows, rules.AggregateRow{
 			Service:   svc,
 			Aggregate: "trace_health",
@@ -268,19 +299,31 @@ func healthRows(health map[string]*traceHealth) []rules.AggregateRow {
 }
 
 // dependencyRows renders the edge counts as service_dependency rows, sorted by
-// caller then callee.
-func dependencyRows(edgeTraces map[edge]int64) []rules.AggregateRow {
+// caller then callee. Past maxGraphEdges it keeps the edges seen in the most
+// traces (ties by name) and returns how many it left out.
+func dependencyRows(edgeTraces map[edge]int64) (rows []rules.AggregateRow, omitted int) {
 	edges := make([]edge, 0, len(edgeTraces))
 	for e := range edgeTraces {
 		edges = append(edges, e)
 	}
-	sort.Slice(edges, func(i, j int) bool {
-		if edges[i].caller != edges[j].caller {
-			return edges[i].caller < edges[j].caller
+	byName := func(a, b edge) bool {
+		if a.caller != b.caller {
+			return a.caller < b.caller
 		}
-		return edges[i].callee < edges[j].callee
-	})
-	rows := make([]rules.AggregateRow, 0, len(edges))
+		return a.callee < b.callee
+	}
+	if len(edges) > maxGraphEdges {
+		sort.Slice(edges, func(i, j int) bool {
+			if ti, tj := edgeTraces[edges[i]], edgeTraces[edges[j]]; ti != tj {
+				return ti > tj
+			}
+			return byName(edges[i], edges[j])
+		})
+		omitted = len(edges) - maxGraphEdges
+		edges = edges[:maxGraphEdges]
+	}
+	sort.Slice(edges, func(i, j int) bool { return byName(edges[i], edges[j]) })
+	rows = make([]rules.AggregateRow, 0, len(edges))
 	for _, e := range edges {
 		rows = append(rows, rules.AggregateRow{
 			Service:   e.caller,
@@ -288,5 +331,5 @@ func dependencyRows(edgeTraces map[edge]int64) []rules.AggregateRow {
 			Fields:    map[string]any{"callee": e.callee, "traces": edgeTraces[e]},
 		})
 	}
-	return rows
+	return rows, omitted
 }

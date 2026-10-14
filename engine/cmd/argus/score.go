@@ -117,6 +117,10 @@ func runScore(ctx context.Context, opts *scoreOptions) (*report.Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A run of --window (60s by default) never completes the 1h trace window
+	// the trace rules judge, so they were skipped. Collection has stopped and
+	// no more spans can arrive: close the window and judge what was seen.
+	pipe.CloseWindow()
 	pipe.AggregateRows()
 	notes := ingestNotes(pipe.Evictions(), col.Snapshot(), listened)
 

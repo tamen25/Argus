@@ -45,8 +45,12 @@ attribute); false is a violation. It must type-check as `bool`.
 | `agg` | map — fields of the aggregate row | aggregate mode |
 | `params` | map — the rule's `params` block | both |
 
-Attribute values are truncated to 256 bytes before evaluation (bounded
-memory); write criteria accordingly.
+Criteria see attribute values in full, and cardinality sketches hash them in
+full, so two long values that share a prefix are still two values. What is
+kept beyond one payload is bounded instead: a finding's evidence holds at most
+32 attributes, with keys, values and the summary cut to 256 bytes. A service
+name longer than 256 bytes is keyed by a prefix plus a hash of the whole, so
+long names stay distinct.
 
 ## Aggregates
 
@@ -145,5 +149,5 @@ cost:
 ```
 
 The quantity is taken from the finding's poller-verified `Details` first, then
-the worst (max) truncated evidence sample. Unpriceable findings are left unset,
+the largest sampled evidence value. Unpriceable findings are left unset,
 never zero. See [Cost & showback](../cost.md).

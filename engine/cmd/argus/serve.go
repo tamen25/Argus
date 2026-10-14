@@ -447,6 +447,8 @@ func serviceGraphHandler(col *rules.Collector, pipe *ingest.Pipeline, window tim
 			"window":       window.String(),
 			"nodes":        nodeList,
 			"edges":        edges,
+			// Edges left out past the graph's cap (the busiest are kept).
+			"edges_omitted": pipe.EdgesOmitted(),
 		})
 	}
 }

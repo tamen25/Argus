@@ -101,13 +101,13 @@ fixed; a finding that does not hold is marked so here, with the reason.
 
 - [x] **R13** — the plugin proxy times out at 10s while a backtest replay can
   take minutes, and the cancelled request prevents the cache from filling. Done in #115: a computation runs detached from the request, shared by concurrent callers and bounded by its own timeout; a request waits 5 s, then gets 503 with Retry-After while it goes on; the plugin pages show "computing" and ask again.
-- [ ] **R14** — `argus score`'s 60s default never completes a trace window, so
-  the trace rules are skipped while reported as evaluated.
+- [x] **R14** — `argus score`'s 60s default never completes a trace window, so
+  the trace rules are skipped while reported as evaluated. Done in #118: `argus score` closes the trace window when collection stops, so a short run judges the traces it saw.
 - [x] **R15** — the score gate passes an empty fleet (score 100). Done in #108: `--fail-below-score` exits 2 when no service was observed.
-- [ ] **R16** — attribute values are truncated to 256 bytes before cardinality
-  hashing and service identity.
-- [ ] **R17** — trace cap overflow can give a zero denominator (an infinite
-  ratio JSON cannot encode) and a random set of graph edges.
+- [x] **R16** — attribute values are truncated to 256 bytes before cardinality
+  hashing and service identity. Done in #118: items keep full values (sketches and rules see what was sent); evidence is bounded and copied (32 attributes, 256-byte keys, values and summaries, cut on a UTF-8 boundary); long service names become a prefix plus a hash, the same in scores and the service graph.
+- [x] **R17** — trace cap overflow can give a zero denominator (an infinite
+  ratio JSON cannot encode) and a random set of graph edges. Done in #118: services past the per-trace cap record no parent references, a service with no counted trace gets no ratio, and past the edge cap the busiest edges are kept deterministically, with the count left out in `edges_omitted`.
 - [x] **R18** — cardinality verification keeps one outcome per service and rule,
   so a passing pair can overwrite a failing one; queries are not service-scoped. Done in #109: distinct pairs, queries scoped to the service's `job`, one combined result per service. Still open: OTLP metric and attribute names are not translated to Mimir's (unit suffixes, dots).
 - [x] **R19** — `PriceFindings` is not called on the score or serve paths, and

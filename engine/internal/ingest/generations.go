@@ -43,6 +43,15 @@ func newGenerations[K comparable, V any](maxEntries int, window time.Duration, n
 	}
 }
 
+// closeWindow ends the current window now, whatever its age: cur becomes
+// prev and a fresh cur starts.
+func (g *generations[K, V]) closeWindow() {
+	g.prev = g.cur
+	g.cur = make(map[K]*slot[V])
+	g.lru.Init()
+	g.rotatedAt = g.now()
+}
+
 // rotate moves the window forward if it has elapsed.
 func (g *generations[K, V]) rotate() {
 	now := g.now()
