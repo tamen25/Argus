@@ -129,6 +129,14 @@ Not defects. Tracked here so nothing is lost between sessions.
   SIGINT/SIGTERM cancel the run, cleanup runs on a detached context with its own
   limit, no partial report is written, and `agent_timeout` is recorded and
   caveated by `--compare` when it differs.
+- [x] **B-60** (#106) — found reviewing `internal/backtest`: (1) burn-rate
+  windows lost a tens digit when rendered: 30m became `[3]`, which Prometheus
+  reads as 3 seconds, so the default slow-burn alert was replayed over a 3s
+  window and almost never fired (90s and 90m broke the same way);
+  (2) `Synthesize` treated a bare recording rule at the root of an expression
+  differently: rules it referenced were left in, and an undefined one passed
+  silently; (3) recording rules defined in terms of each other recursed until
+  the stack overflowed.
 - [x] **B-59** (#103) — found reviewing `cmd/argus`: (1) `cost`, `backtest`,
   `calibrate` and `remediate` printed reports with cobra's `cmd.Print`, which
   writes to **stderr**, so `argus cost > report.md` produced an empty file;

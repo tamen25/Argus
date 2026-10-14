@@ -134,31 +134,7 @@ func RenderReportMarkdown(r Report) string {
 	fmt.Fprintf(&b, "- **Coverage: %s of %s (%d segment(s))**\n\n", r.Coverage, r.To.Sub(r.From), r.Segments)
 
 	for _, sc := range r.Rules {
-		fmt.Fprintf(&b, "## %s\n\n", sc.Rule)
-		fmt.Fprintf(&b, "| Detected | Missed | Unverifiable | False positives | Pages/week* | Flappiness |\n")
-		fmt.Fprintf(&b, "|---:|---:|---:|---:|---:|---:|\n")
-		fmt.Fprintf(&b, "| %d | %d | %d | %d | %.1f | %.1f |\n\n",
-			len(sc.Detections), len(sc.Missed), len(sc.Unverifiable), len(sc.FalsePositives), sc.PagesPerWeek, sc.Flappiness)
-
-		if len(sc.Detections) > 0 {
-			fmt.Fprintf(&b, "| Incident | TTD |\n|---|---:|\n")
-			for _, d := range sc.Detections {
-				fmt.Fprintf(&b, "| %s | %s |\n", d.IncidentID, d.TTD)
-			}
-			fmt.Fprintf(&b, "\n")
-		}
-		for _, id := range sc.Missed {
-			fmt.Fprintf(&b, "- **missed**: %s\n", id)
-		}
-		for _, id := range sc.Unverifiable {
-			fmt.Fprintf(&b, "- unverifiable (no telemetry coverage): %s\n", id)
-		}
-		for _, f := range sc.FalsePositives {
-			fmt.Fprintf(&b, "- false positive: %s fired %s\n", f.Series, f.FiredAt.Format(time.RFC3339))
-		}
-		if len(sc.Missed)+len(sc.Unverifiable)+len(sc.FalsePositives) > 0 {
-			fmt.Fprintf(&b, "\n")
-		}
+		writeScorecard(&b, sc)
 	}
 
 	fmt.Fprintf(&b, "*Pages/week extrapolates firing intervals over covered time only.\n\n")
@@ -168,4 +144,34 @@ func RenderReportMarkdown(r Report) string {
 		fmt.Fprintf(&b, "- %s\n", c)
 	}
 	return b.String()
+}
+
+// writeScorecard writes one rule's section: the counts, a TTD table for what
+// it detected, then every miss, unverifiable incident and false positive.
+func writeScorecard(b *strings.Builder, sc Scorecard) {
+	fmt.Fprintf(b, "## %s\n\n", sc.Rule)
+	fmt.Fprintf(b, "| Detected | Missed | Unverifiable | False positives | Pages/week* | Flappiness |\n")
+	fmt.Fprintf(b, "|---:|---:|---:|---:|---:|---:|\n")
+	fmt.Fprintf(b, "| %d | %d | %d | %d | %.1f | %.1f |\n\n",
+		len(sc.Detections), len(sc.Missed), len(sc.Unverifiable), len(sc.FalsePositives), sc.PagesPerWeek, sc.Flappiness)
+
+	if len(sc.Detections) > 0 {
+		fmt.Fprintf(b, "| Incident | TTD |\n|---|---:|\n")
+		for _, d := range sc.Detections {
+			fmt.Fprintf(b, "| %s | %s |\n", d.IncidentID, d.TTD)
+		}
+		fmt.Fprintf(b, "\n")
+	}
+	for _, id := range sc.Missed {
+		fmt.Fprintf(b, "- **missed**: %s\n", id)
+	}
+	for _, id := range sc.Unverifiable {
+		fmt.Fprintf(b, "- unverifiable (no telemetry coverage): %s\n", id)
+	}
+	for _, f := range sc.FalsePositives {
+		fmt.Fprintf(b, "- false positive: %s fired %s\n", f.Series, f.FiredAt.Format(time.RFC3339))
+	}
+	if len(sc.Missed)+len(sc.Unverifiable)+len(sc.FalsePositives) > 0 {
+		fmt.Fprintf(b, "\n")
+	}
 }

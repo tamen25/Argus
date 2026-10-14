@@ -33,15 +33,7 @@ type Dependency struct {
 // classified. Rules whose expressions fail to parse are absent (the strict
 // loader should have rejected them already).
 func Dependencies(rs RuleSet) map[string][]Dependency {
-	defined := map[string]bool{}
-	for _, g := range rs.Groups {
-		for _, r := range g.Rules {
-			if !r.Alert {
-				defined[r.Name] = true
-			}
-		}
-	}
-
+	defined := rs.recordingRules()
 	out := map[string][]Dependency{}
 	promql := parser.NewParser(parser.Options{})
 	for _, g := range rs.Groups {
@@ -70,8 +62,8 @@ func Dependencies(rs RuleSet) map[string][]Dependency {
 
 // classify: defined in the loaded set beats the naming heuristic; a colon in
 // the name is the Prometheus recording-rule convention (level:metric:ops).
-func classify(name string, defined map[string]bool) DepKind {
-	if defined[name] {
+func classify(name string, defined map[string]string) DepKind {
+	if _, ok := defined[name]; ok {
 		return DepDefinedRecording
 	}
 	if strings.Contains(name, ":") {

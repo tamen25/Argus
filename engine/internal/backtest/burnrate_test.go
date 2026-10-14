@@ -96,3 +96,25 @@ func TestBurnRateRulesExpression(t *testing.T) {
 		t.Errorf("generated expression failed to parse: %s", r.Expr)
 	}
 }
+
+// Every window renders as the range it is. The renderer used to trim Go's
+// "0s" and "0m" suffixes, so 30m became [3] (3 seconds to Prometheus) and the
+// default slow-burn alert replayed over a 3s window.
+func TestBurnRateRulesWindowRanges(t *testing.T) {
+	p := backtest.SLOPolicy{
+		Name:      "slo",
+		Objective: 0.99,
+		SLI:       backtest.SLI{Errors: "errors_total", Total: "requests_total"},
+		Windows: append(backtest.DefaultBurnRateWindows(), backtest.BurnRateWindow{
+			Short: 90 * time.Second, Long: 90 * time.Minute, Factor: 2, Severity: "info",
+		}),
+	}
+	rules := backtest.BurnRateRules(p)
+	for i, want := range [][2]string{{"[5m]", "[1h]"}, {"[30m]", "[6h]"}, {"[1m30s]", "[1h30m]"}} {
+		for _, rng := range want {
+			if !strings.Contains(rules[i].Expr, "errors_total"+rng) || !strings.Contains(rules[i].Expr, "requests_total"+rng) {
+				t.Errorf("rule %s: want both rates over %s:\n%s", rules[i].Name, rng, rules[i].Expr)
+			}
+		}
+	}
+}

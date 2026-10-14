@@ -70,3 +70,85 @@ func TestSynthesizePassthrough(t *testing.T) {
 		t.Errorf("got %q caveats %v, want passthrough with none", got, caveats)
 	}
 }
+
+func recordingRules(defs ...[2]string) backtest.RuleSet {
+	g := backtest.Group{Name: "g"}
+	for _, d := range defs {
+		g.Rules = append(g.Rules, backtest.Rule{Name: d[0], Expr: d[1]})
+	}
+	return backtest.RuleSet{Groups: []backtest.Group{g}}
+}
+
+// A bare reference at the root is inlined like any other, including the
+// recording rules its own definition refers to. The root used to take a
+// separate path that stopped one level down.
+func TestSynthesizeRootReferenceIsFullyInlined(t *testing.T) {
+	rs := recordingRules(
+		[2]string{"job:errors:rate5m", `sum by (job) (rate(errors_total[5m]))`},
+		[2]string{"job:errors:high", `job:errors:rate5m > 1`},
+	)
+	got, caveats, err := backtest.Synthesize(rs, `job:errors:high`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "job:errors") || !strings.Contains(got, "rate(errors_total[5m])") {
+		t.Errorf("synthesized = %q, want both rules inlined down to raw series", got)
+	}
+	if len(caveats) != 2 {
+		t.Errorf("caveats = %v, want one per inlined rule", caveats)
+	}
+}
+
+// An undefined recording rule is refused at the root too, as it is nested.
+func TestSynthesizeRefusesExternalAtRoot(t *testing.T) {
+	if _, _, err := backtest.Synthesize(recordingRules(), `slo:sli_error:ratio_rate5m`); err == nil {
+		t.Error("want an error for a bare external recording rule")
+	}
+}
+
+// Rules defined in terms of each other cannot be inlined; refusing beats
+// recursing until the stack runs out.
+func TestSynthesizeRefusesCycle(t *testing.T) {
+	rs := recordingRules(
+		[2]string{"a:x", `b:x + 1`},
+		[2]string{"b:x", `a:x + 1`},
+	)
+	_, _, err := backtest.Synthesize(rs, `a:x > 0`)
+	if err == nil || !strings.Contains(err.Error(), "in terms of itself") {
+		t.Errorf("err = %v, want the cycle named", err)
+	}
+}
+
+// A reference is inlined wherever it sits: under a function call, an
+// aggregation, a unary minus, a subquery, or either side of a binary operator.
+func TestSynthesizeInlinesInEveryPosition(t *testing.T) {
+	rs := recordingRules([2]string{"job:x:rate5m", `rate(x_total[5m])`})
+	for _, expr := range []string{
+		`abs(job:x:rate5m)`,
+		`sum by (job) (job:x:rate5m)`,
+		`topk(3, job:x:rate5m)`,
+		`-job:x:rate5m`,
+		`max_over_time(job:x:rate5m[10m:1m])`,
+		`1 - job:x:rate5m`,
+		`(job:x:rate5m)`,
+	} {
+		got, _, err := backtest.Synthesize(rs, expr)
+		if err != nil {
+			t.Errorf("%s: %v", expr, err)
+			continue
+		}
+		if strings.Contains(got, "job:x") || !strings.Contains(got, "rate(x_total[5m])") {
+			t.Errorf("%s synthesized to %q, want the rule inlined", expr, got)
+		}
+	}
+}
+
+// Inside a range selector the stored series is needed: an expression cannot
+// stand in for it, so synthesis refuses.
+func TestSynthesizeRefusesRangeSelector(t *testing.T) {
+	rs := recordingRules([2]string{"job:x:rate5m", `rate(x_total[5m])`})
+	_, _, err := backtest.Synthesize(rs, `avg_over_time(job:x:rate5m[1h])`)
+	if err == nil || !strings.Contains(err.Error(), "range selector") {
+		t.Errorf("err = %v, want the range selector named", err)
+	}
+}

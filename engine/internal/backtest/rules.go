@@ -1,10 +1,21 @@
 // Package backtest replays historical Mimir data against Prometheus/Mimir
-// alert rules (module B). Phase 3 starts with the mandatory fidelity spike:
-// this package currently holds the spike probes — rule loading, recording-rule
-// dependency detection, and usable-window discovery — that seed the full
-// engine. Deterministic core: never imports the LLM client (depguard,
-// architecture rule 2). Backends sit behind interfaces defined here
-// (architecture rule 1); concrete Mimir clients live in adapter packages.
+// alert rules and SLO burn-rate policies (module B), and scores the firings
+// against the incident registry. The pipeline, in Run:
+//
+//   - Segments maps where telemetry exists in the window;
+//   - Synthesize inlines recording rules that never ran over that history;
+//   - Replay steps each alerting rule through every segment, rebuilding its
+//     for: state;
+//   - Score judges the firings against the labeled incidents.
+//
+// DiffReports compares two rule sets for the CI gate. What replay cannot
+// reproduce is listed in docs/backtest-fidelity.md, and every report carries
+// those caveats.
+//
+// Deterministic core: never imports the LLM client (depguard, architecture
+// rule 2). Backends sit behind the EvalQuerier and InstantQuerier interfaces
+// defined here (architecture rule 1); concrete Mimir clients live in adapter
+// packages.
 package backtest
 
 import (
@@ -51,42 +62,63 @@ type Rule struct {
 func LoadRuleFiles(paths ...string) (RuleSet, error) {
 	var rs RuleSet
 	for _, path := range paths {
-		b, err := os.ReadFile(path)
+		groups, err := parseRuleFile(path)
 		if err != nil {
 			return RuleSet{}, err
-		}
-		// strict: unknown fields rejected, expressions validated by the real
-		// PromQL parser, UTF-8 metric names allowed (Prometheus 3.x default)
-		discard := slog.New(slog.NewTextHandler(io.Discard, nil))
-		promql := parser.NewParser(parser.Options{})
-		groups, errs := rulefmt.Parse(b, false, model.UTF8Validation, promql, discard)
-		if len(errs) > 0 {
-			// retry as a bare ruler-API group (name/interval/rules top-level)
-			wrapped := append([]byte("groups:\n"), indent(b)...)
-			var errs2 []error
-			if groups, errs2 = rulefmt.Parse(wrapped, false, model.UTF8Validation, promql, discard); len(errs2) > 0 {
-				return RuleSet{}, fmt.Errorf("parsing rules %s: %w", path, errs[0])
-			}
 		}
 		for _, g := range groups.Groups {
 			grp := Group{Name: g.Name, Interval: time.Duration(g.Interval)}
 			for _, r := range g.Rules {
-				rule := Rule{
-					Name:   r.Record,
-					Expr:   r.Expr,
-					Labels: r.Labels,
-				}
-				if r.Alert != "" {
-					rule.Name = r.Alert
-					rule.Alert = true
-					rule.For = time.Duration(r.For)
-				}
-				grp.Rules = append(grp.Rules, rule)
+				grp.Rules = append(grp.Rules, fromRulefmt(r))
 			}
 			rs.Groups = append(rs.Groups, grp)
 		}
 	}
 	return rs, nil
+}
+
+// parseRuleFile parses one rule file with Prometheus's own loader: unknown
+// fields are rejected, expressions are checked by the real PromQL parser, and
+// UTF-8 metric names are allowed (the Prometheus 3.x default). A file that
+// fails is tried again as a bare ruler-API group; if that fails too, the
+// error reported is the first one, which describes the file as written.
+func parseRuleFile(path string) (*rulefmt.RuleGroups, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	discard := slog.New(slog.NewTextHandler(io.Discard, nil))
+	promql := parser.NewParser(parser.Options{})
+	groups, errs := rulefmt.Parse(b, false, model.UTF8Validation, promql, discard)
+	if len(errs) == 0 {
+		return groups, nil
+	}
+	wrapped := append([]byte("groups:\n"), indent(b)...)
+	if groups, bareErrs := rulefmt.Parse(wrapped, false, model.UTF8Validation, promql, discard); len(bareErrs) == 0 {
+		return groups, nil
+	}
+	return nil, fmt.Errorf("parsing rules %s: %w", path, errs[0])
+}
+
+// fromRulefmt converts one parsed rule into backtest's model.
+func fromRulefmt(r rulefmt.Rule) Rule {
+	if r.Alert != "" {
+		return Rule{Name: r.Alert, Alert: true, Expr: r.Expr, For: time.Duration(r.For), Labels: r.Labels}
+	}
+	return Rule{Name: r.Record, Expr: r.Expr, Labels: r.Labels}
+}
+
+// recordingRules maps each recording rule in the set to its expression.
+func (rs RuleSet) recordingRules() map[string]string {
+	defined := map[string]string{}
+	for _, g := range rs.Groups {
+		for _, r := range g.Rules {
+			if !r.Alert {
+				defined[r.Name] = r.Expr
+			}
+		}
+	}
+	return defined
 }
 
 // indent re-indents a bare ruler-API group document as one list item under a

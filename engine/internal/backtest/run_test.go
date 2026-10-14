@@ -2,6 +2,7 @@ package backtest_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,5 +72,67 @@ func TestRunRejectsInvertedWindow(t *testing.T) {
 	})
 	if err == nil {
 		t.Error("inverted window accepted")
+	}
+}
+
+// exprLog records every expression it is asked to evaluate, and never fires.
+type exprLog struct{ exprs map[string]bool }
+
+func (e *exprLog) Eval(_ context.Context, expr string, _ time.Time) (map[string]float64, error) {
+	e.exprs[expr] = true
+	return map[string]float64{}, nil
+}
+
+// firstHalf has data only in the first half hour of the window.
+type firstHalf struct{ from time.Time }
+
+func (f firstHalf) HasData(_ context.Context, t time.Time) (bool, error) {
+	return t.Before(f.from.Add(30 * time.Minute)), nil
+}
+
+// With synthesis on, alerts are replayed with their recording rules inlined;
+// an alert that cannot be synthesized is skipped with a caveat, not fatal; a
+// caveat repeated by several rules is reported once; and partial coverage is
+// disclosed.
+func TestRunSynthesizesAndDisclosesCoverage(t *testing.T) {
+	from := time.Date(2026, 7, 18, 5, 0, 0, 0, time.UTC)
+	rs := backtest.RuleSet{Groups: []backtest.Group{{
+		Name: "g", Rules: []backtest.Rule{
+			{Name: "job:errs:rate5m", Expr: `sum by (job) (rate(errs_total[5m]))`},
+			{Name: "ErrsHigh", Alert: true, Expr: `job:errs:rate5m > 1`},
+			{Name: "ErrsVeryHigh", Alert: true, Expr: `job:errs:rate5m > 10`},
+			{Name: "External", Alert: true, Expr: `slo:ratio:rate5m > 0.1`},
+		},
+	}}}
+	eval := &exprLog{exprs: map[string]bool{}}
+
+	rep, err := backtest.Run(context.Background(), eval, firstHalf{from: from}, backtest.RunInput{
+		Rules: rs, From: from, To: from.Add(time.Hour), Step: time.Minute, Synthesize: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(rep.Rules) != 2 {
+		t.Errorf("scorecards = %d, want the two synthesizable alerts", len(rep.Rules))
+	}
+	for expr := range eval.exprs {
+		if strings.Contains(expr, "job:errs") {
+			t.Errorf("replayed %q, want the recording rule inlined", expr)
+		}
+	}
+	var notReplayed, inlined, coverage int
+	for _, c := range rep.Caveats {
+		switch {
+		case strings.HasPrefix(c, "External not replayed"):
+			notReplayed++
+		case strings.Contains(c, `"job:errs:rate5m" synthesized inline`):
+			inlined++
+		case strings.HasPrefix(c, "telemetry covers 29m0s of the 1h0m0s window"):
+			coverage++
+		}
+	}
+	if notReplayed != 1 || inlined != 1 || coverage != 1 {
+		t.Errorf("caveats = %q, want one each: not replayed, inlined, partial coverage", rep.Caveats)
 	}
 }
