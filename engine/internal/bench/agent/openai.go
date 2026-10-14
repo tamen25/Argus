@@ -58,117 +58,74 @@ func NewOpenAI(cfg OpenAIConfig) *OpenAIAgent {
 // Name identifies the agent in the run record.
 func (a *OpenAIAgent) Name() string { return a.cfg.Name }
 
-// Diagnose runs the tool-use loop. The agent is told its budget up front.
-// Tool calls are counted (submit_diagnosis is terminal and not counted), and
-// cumulative reported tokens are summed as a conservative upper bound. When the
-// last permitted tool call has been used the agent is told so and gets one more
-// turn, in which only submit_diagnosis is accepted.
+// Diagnose runs the shared tool-use loop (runTurns) over the OpenAI
+// chat-completions format.
 func (a *OpenAIAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
-	tools := a.toolDefs(task.Tools, task.Categories)
-	msgs := []oaMessage{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: task.Brief + categoryBrief(task.Categories) + "\n\nWhen you have identified the root cause, call " +
-			submitToolName + "." + budgetBrief(task.Budget)},
+	conv := &oaConversation{
+		agent: a,
+		tools: a.toolDefs(task.Tools, task.Categories),
+		msgs: []oaMessage{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: openingBrief(task)},
+		},
 	}
+	return runTurns(ctx, a.cfg.Name, task, conv, a.cfg.MaxTurnTokens)
+}
 
-	s := &session{budget: task.Budget}
-	hardStep := 20
-	if task.Budget.MaxToolCalls > 0 {
-		hardStep = task.Budget.MaxToolCalls + 2 // room for the terminal submit + a final turn
+// oaConversation is a run's message list in the chat-completions format.
+type oaConversation struct {
+	agent *OpenAIAgent
+	tools []oaTool
+	msgs  []oaMessage
+	last  oaMessage // the model's last reply
+}
+
+func (c *oaConversation) next(ctx context.Context) (reply, error) {
+	resp, err := c.agent.chat(ctx, oaRequest{
+		Model:      c.agent.cfg.Model,
+		MaxTokens:  c.agent.cfg.MaxTurnTokens,
+		Messages:   c.msgs,
+		Tools:      c.tools,
+		ToolChoice: "auto",
+	})
+	if err != nil {
+		return reply{}, err
 	}
-
-	for step := 0; step < hardStep; step++ {
-		s.usage.Steps++
-		resp, err := a.chat(ctx, oaRequest{
-			Model:      a.cfg.Model,
-			MaxTokens:  a.cfg.MaxTurnTokens,
-			Messages:   msgs,
-			Tools:      tools,
-			ToolChoice: "auto",
-		})
-		if err != nil {
-			if s.retry(err) {
-				// The same turn again: a repeated call is not another step.
-				step--
-				s.usage.Steps--
-				continue
-			}
-			return s.result(nil), err
-		}
-		s.addTokens(resp.Usage.TotalTokens)
-		if len(resp.Choices) == 0 {
-			return s.result(nil), fmt.Errorf("agent %s: endpoint returned no choices", a.cfg.Name)
-		}
-		msg := resp.Choices[0].Message
-
-		if len(msg.ToolCalls) == 0 && resp.Choices[0].FinishReason == "length" {
-			return s.result(nil), fmt.Errorf("agent %s: a turn reached the per-turn output cap (%d tokens) without calling a tool",
-				a.cfg.Name, a.cfg.MaxTurnTokens)
-		}
-		if len(msg.ToolCalls) == 0 {
-			// The model answered without calling submit_diagnosis. It is reminded
-			// once; after that there is no structured diagnosis, and the run is
-			// failed rather than silently empty.
-			if s.nudge() {
-				// An assistant message needs content or tool calls: Ollama answers
-				// one with neither (a reasoning model whose visible reply was
-				// empty) with HTTP 400, so an empty reply is not echoed.
-				if msg.Content != "" {
-					msgs = append(msgs, oaMessage{Role: "assistant", Content: msg.Content})
-				}
-				msgs = append(msgs, oaMessage{Role: "user", Content: noToolNotice})
-				continue
-			}
-			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s (last reply: %q)",
-				a.cfg.Name, submitToolName, truncateMiddle(msg.Content, maxLoggedReply))
-		}
-
-		// A diagnosis ends the run wherever it appears in the turn — even on a
-		// turn that crossed the token cap: those tokens were spent producing it,
-		// and the agent was warned when the budget ran low.
-		// A submission with a problem reviewSubmission names is answered with that
-		// problem instead, and the run goes on.
-		rejected := map[string]string{}
-		for _, tc := range msg.ToolCalls {
-			if tc.Function.Name == submitToolName {
-				raw := json.RawMessage(tc.Function.Arguments)
-				problem := s.reviewSubmission(raw, task.Categories)
-				if problem == "" {
-					return s.result(raw), nil
-				}
-				rejected[tc.ID] = problem
-			}
-		}
-		// Past a cap, or told the budget is spent and asking for a tool anyway:
-		// the run ends. Nothing more is executed, so nothing more is counted — a
-		// run capped at 12 tool calls must never report 13. A rejected submission
-		// is the exception: the agent gets to correct it.
-		if (s.overTokens() || s.warned) && len(rejected) == 0 {
-			return s.result(nil), s.exhausted()
-		}
-
-		msgs = append(msgs, msg) // assistant turn carrying the tool_calls
-		for _, tc := range msg.ToolCalls {
-			content := budgetRefusal
-			if problem, ok := rejected[tc.ID]; ok {
-				content = submitRejection(problem)
-			} else if !s.spent() && !s.warned {
-				content = s.call(ctx, task.Tools, tc.Function.Name, json.RawMessage(tc.Function.Arguments))
-			}
-			// Every tool_call id needs an answer, so a call made past the cap
-			// in the same turn gets the refusal rather than silence.
-			msgs = append(msgs, oaMessage{
-				Role:       "tool",
-				ToolCallID: tc.ID,
-				Name:       tc.Function.Name,
-				Content:    content,
-			})
-		}
-		if n := s.notice(); n != "" {
-			msgs = append(msgs, oaMessage{Role: "user", Content: n})
-		}
+	if len(resp.Choices) == 0 {
+		return reply{}, fmt.Errorf("agent %s: endpoint returned no choices", c.agent.cfg.Name)
 	}
-	return s.result(nil), fmt.Errorf("agent %s: exceeded %d steps without submitting", a.cfg.Name, hardStep)
+	choice := resp.Choices[0]
+	c.last = choice.Message
+	r := reply{text: choice.Message.Content, truncated: choice.FinishReason == "length", tokens: resp.Usage.TotalTokens}
+	for _, tc := range choice.Message.ToolCalls {
+		r.calls = append(r.calls, toolUse{id: tc.ID, name: tc.Function.Name, args: json.RawMessage(tc.Function.Arguments)})
+	}
+	return r, nil
+}
+
+// keepReply appends the last reply. An assistant message needs content or
+// tool calls: Ollama answers one with neither (a reasoning model whose visible
+// reply was empty) with HTTP 400.
+func (c *oaConversation) keepReply() {
+	if c.last.Content == "" && len(c.last.ToolCalls) == 0 {
+		return
+	}
+	c.msgs = append(c.msgs, c.last)
+}
+
+// answerTools appends one "tool" message per call, then the notice as a user
+// message.
+func (c *oaConversation) answerTools(results []toolResult, notice string) {
+	for _, r := range results {
+		c.msgs = append(c.msgs, oaMessage{Role: "tool", ToolCallID: r.id, Name: r.name, Content: r.content})
+	}
+	if notice != "" {
+		c.say(notice)
+	}
+}
+
+func (c *oaConversation) say(text string) {
+	c.msgs = append(c.msgs, oaMessage{Role: "user", Content: text})
 }
 
 // toolDefs converts the read-only MCP tools into OpenAI function definitions and

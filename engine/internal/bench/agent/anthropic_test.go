@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -139,5 +140,24 @@ func TestAnthropic_HTTPError(t *testing.T) {
 	_, err := newAnt(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
 	if err == nil {
 		t.Fatal("expected HTTP error")
+	}
+}
+
+// Behaviour the shared loop gave the Anthropic adapter, which its own copy of
+// the loop lacked: a turn cut off at the output cap ends the run at once, and
+// a run that ends in prose quotes the last reply.
+func TestAnthropic_SharedLoopParity(t *testing.T) {
+	srv := scripted(t, `{"content":[{"type":"text","text":"thinking about"}],"stop_reason":"max_tokens","usage":{"input_tokens":10,"output_tokens":1024}}`)
+	defer srv.Close()
+	_, err := newAnt(t, srv).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	if err == nil || !strings.Contains(err.Error(), "per-turn output cap") {
+		t.Errorf("truncated turn: err = %v, want the output cap named", err)
+	}
+
+	srv2 := scripted(t, antTextResp("probably checkout"), antTextResp("it is checkout"))
+	defer srv2.Close()
+	_, err = newAnt(t, srv2).Diagnose(context.Background(), Task{Scenario: "s", Tools: &fakeTools{}, Budget: Budget{MaxToolCalls: 3}})
+	if err == nil || !strings.Contains(err.Error(), `last reply: "it is checkout"`) {
+		t.Errorf("prose run: err = %v, want the last reply quoted", err)
 	}
 }
