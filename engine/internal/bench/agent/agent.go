@@ -115,8 +115,12 @@ type ToolCall struct {
 	Tool      string `json:"tool"`
 	Arguments string `json:"arguments,omitempty"`
 	// Error is the error returned to the agent, if the call failed.
-	Error       string `json:"error,omitempty"`
-	ResultBytes int    `json:"result_bytes"`
+	Error string `json:"error,omitempty"`
+	// ResultBytes is the size of the tool's answer. When it was larger than
+	// maxToolAnswer the model was shown only the first maxToolAnswer bytes,
+	// and Cut is set.
+	ResultBytes int  `json:"result_bytes"`
+	Cut         bool `json:"cut,omitempty"`
 }
 
 // Result is an agent's raw answer plus usage. Raw is fed to a bench.Normalizer
@@ -271,6 +275,13 @@ const noToolNotice = "You replied without calling a tool. A diagnosis is accepte
 // budgetRefusal is what a tool call made past the cap receives instead of a
 // result. It is not executed and not counted.
 const budgetRefusal = `{"error":"tool-call budget spent: this call was not executed"}`
+
+// maxToolAnswer caps the tool answer a model is shown. Every turn resends
+// the whole conversation, so one oversized answer (a query matching
+// thousands of series) is paid for again on every later turn. It is set well
+// above a useful answer, so it changes nothing for a run that queries with
+// care.
+const maxToolAnswer = 256 << 10
 
 // Limits on what a run report keeps of each tool call.
 const (
@@ -471,6 +482,12 @@ func (s *session) call(ctx context.Context, tools Tools, name string, args json.
 		content = string(out)
 	}
 	rec.ResultBytes = len(content)
+	if len(content) > maxToolAnswer {
+		rec.Cut = true
+		content = content[:maxToolAnswer] + fmt.Sprintf(
+			"\n[answer cut: it was %d bytes, and only the first %d are shown. Narrow the query: a shorter range, a larger step, or a more selective matcher.]",
+			rec.ResultBytes, maxToolAnswer)
+	}
 	s.calls = append(s.calls, rec)
 	return content
 }

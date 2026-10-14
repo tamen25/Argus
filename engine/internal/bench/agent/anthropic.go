@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bench"
+	"github.com/tamen25/Argus/engine/internal/bounded"
 )
 
 // AnthropicConfig configures an Anthropic Messages API agent. It is a second
@@ -173,7 +174,7 @@ func (a *AnthropicAgent) messages(ctx context.Context, body antRequest) (antResp
 		return antResponse{}, &httpStatusError{Agent: a.cfg.Name, Status: resp.StatusCode, Body: string(b)}
 	}
 	var out antResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := bounded.DecodeJSON(resp.Body, bounded.ModelResponse, &out); err != nil {
 		return antResponse{}, err
 	}
 	return out, nil

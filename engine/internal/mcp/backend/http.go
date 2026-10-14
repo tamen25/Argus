@@ -9,14 +9,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/tamen25/Argus/engine/internal/bounded"
 )
 
 // httpClient is the shared transport; a modest timeout bounds a hung backend.
+// maxToolAnswer caps one backend answer handed to an agent.
+const maxToolAnswer = 8 << 20
+
 func newHTTP() *http.Client { return &http.Client{Timeout: 30 * time.Second} }
 
 // getRaw performs a GET and returns the response body verbatim. Non-2xx is an
@@ -34,9 +38,11 @@ func getRaw(ctx context.Context, hc *http.Client, u, tenant string) (json.RawMes
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20)) // 8 MiB cap
+	// An answer this large is no use to an agent anyway: an error asking for
+	// a narrower query beats a cut-off document that looks complete.
+	body, err := bounded.ReadAll(resp.Body, maxToolAnswer)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("backend %s: %w; narrow the query (a shorter range, a larger step, or a more selective matcher)", u, err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("backend %s: HTTP %d: %s", u, resp.StatusCode, truncate(body, 512))

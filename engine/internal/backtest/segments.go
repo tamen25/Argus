@@ -21,6 +21,9 @@ type Segment struct {
 // Cost: one instant query per stride step — a 6-day range at 1h stride is 145
 // queries. Callers pick the stride to trade boundary precision for query load.
 func Segments(ctx context.Context, q InstantQuerier, from, to time.Time, stride time.Duration) ([]Segment, error) {
+	if err := checkStepping("stride", from, to, stride); err != nil {
+		return nil, err
+	}
 	var segs []Segment
 	var open *Segment
 	for t := from; !t.After(to); t = t.Add(stride) {

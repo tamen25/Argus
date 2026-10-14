@@ -81,5 +81,8 @@ func strictUnmarshal(args json.RawMessage, v any) error {
 	if err := dec.Decode(v); err != nil {
 		return fmt.Errorf("mcp: bad arguments: %w", err)
 	}
+	if dec.More() {
+		return fmt.Errorf("mcp: bad arguments: more than one JSON value")
+	}
 	return nil
 }

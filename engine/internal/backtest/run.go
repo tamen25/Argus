@@ -28,6 +28,14 @@ func Run(ctx context.Context, eval EvalQuerier, probe InstantQuerier, in RunInpu
 	if !in.To.After(in.From) {
 		return Report{}, fmt.Errorf("to must be after from")
 	}
+	if in.Grace < 0 {
+		return Report{}, fmt.Errorf("grace must not be negative, got %s", in.Grace)
+	}
+	// Checked here as well as in Segments and Replay, so a bad step fails
+	// before the first backend call rather than after the presence sweep.
+	if err := checkStepping("step", in.From, in.To, in.Step); err != nil {
+		return Report{}, err
+	}
 	segs, err := Segments(ctx, probe, in.From, in.To, in.Step)
 	if err != nil {
 		return Report{}, fmt.Errorf("presence mapping: %w", err)

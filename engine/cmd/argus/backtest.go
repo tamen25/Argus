@@ -72,6 +72,9 @@ Numbers without their caveats are not Argus output.`,
 // the window and returns the Markdown report: coverage, the firings per rule,
 // and the fidelity caveats that applied.
 func runBacktestReplay(ctx context.Context, opts *backtestReplayOptions) (string, error) {
+	if err := positive("step", opts.step); err != nil {
+		return "", err
+	}
 	from, to, err := parseWindow(opts.from, opts.to)
 	if err != nil {
 		return "", err

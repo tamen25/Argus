@@ -10,7 +10,6 @@
 package kube
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os/exec"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bench"
+	"github.com/tamen25/Argus/engine/internal/bounded"
 )
 
 // Injector applies and removes a scenario's manifest-based faults.
@@ -165,8 +165,8 @@ func (i *Injector) runIn(ctx context.Context, ns string, args ...string) error {
 	// stdout is left nil (discarded to the null device); only stderr is captured,
 	// and only to enrich the error — kubectl's "deployment.apps/x configured"
 	// chatter is noise the orchestrator has no use for.
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	stderr := &bounded.Buffer{Limit: bounded.ProcessErrors}
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s %v: %w (stderr: %s)", bin, full, err, truncate(stderr.String(), 512))
 	}

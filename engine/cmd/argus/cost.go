@@ -74,6 +74,9 @@ trends. Costs are modeled from your rates, not billed.`,
 }
 
 func runCost(ctx context.Context, opts *costOptions) (cost.Showback, error) {
+	if err := positive("window", opts.window); err != nil {
+		return cost.Showback{}, err
+	}
 	pricing, err := cost.LoadPricing(opts.pricingPath)
 	if err != nil {
 		return cost.Showback{}, err

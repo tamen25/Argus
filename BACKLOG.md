@@ -87,8 +87,8 @@ fixed; a finding that does not hold is marked so here, with the reason.
 - [x] **R08** — remediation templates interpolate raw metric and attribute
   names into OTTL strings, and the high-cardinality patch is not scoped to the
   service. Done in #110: names reach configuration only if config-safe, else `REPLACE_WITH_…`; comments quote values on one line; metric-changing patches are scoped to `service.name`.
-- [ ] **R09** — zero or negative step, stride and interval values hang replay
-  or panic `serve` (`time.NewTicker`).
+- [x] **R09** — zero or negative step, stride and interval values hang replay
+  or panic `serve` (`time.NewTicker`). Done in #111: every duration flag is checked at command start (`serve` can no longer reach `time.NewTicker(0)`); the backtest entry points refuse a non-positive step, and a walk of more than 100,000 evaluations, before any query.
 - [ ] **R10** — bench cleanup errors are discarded; a failed restore leaves the
   next repeat on a contaminated cluster.
 - [ ] **R11** — reset sweeps argus-managed faults cluster-wide, so parallel
@@ -129,8 +129,8 @@ fixed; a finding that does not hold is marked so here, with the reason.
 - [ ] **R27** — an `https://` self-telemetry endpoint is sent in plaintext.
 - [ ] **R28** — HTTP clients follow redirects with custom credentials
   (`x-api-key`, `X-Scope-OrgID`).
-- [ ] **R29** — unbounded response decoding and subprocess output capture.
-- [ ] **R30** — the MCP transport and tool arguments need size and range limits.
+- [x] **R29** — unbounded response decoding and subprocess output capture. Done in #111: backend and model responses are read through `internal/bounded` (an error past the limit, never a cut prefix); subprocess output is captured in capped buffers; a tool answer over 256 KiB is cut before the model sees it and logged as `cut`. Still open: redacting query text in bench reports.
+- [x] **R30** — the MCP transport and tool arguments need size and range limits. Done in #111: line framing capped at 1 MiB; a bad line costs one message; `jsonrpc` must be "2.0"; cancellation interrupts a blocked read; no trailing data in arguments; ranges, steps, points and limits checked before the backend. Request cancellation is documented as unsupported (requests are sequential).
 - [x] **R31** — an empty snapshot sends `services: null`, which crashes the
   plugin's Overview and Scores pages. Done in #108: the snapshot's `services` and the trend's `lines` encode as `[]`.
 - [ ] **R32** — the service graph measures its width before it has mounted.

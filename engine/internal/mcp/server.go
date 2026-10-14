@@ -116,6 +116,9 @@ func promTool(m MetricsBackend, catalog bool) Tool {
 				if err != nil {
 					return nil, fmt.Errorf("step: %w", err)
 				}
+				if err := checkRange(start, end, step); err != nil {
+					return nil, err
+				}
 				return m.QueryRange(ctx, a.Query, start, end, step)
 			}
 			at := time.Now()
@@ -175,9 +178,12 @@ func lokiTool(l LogsBackend, catalog bool) Tool {
 				}
 				start = t
 			}
-			limit := a.Limit
-			if limit <= 0 {
-				limit = 100
+			if !end.After(start) {
+				return nil, fmt.Errorf("mcp: %s: end must be after start", ToolQueryLoki)
+			}
+			limit, err := checkLimit(a.Limit, 100, maxLogLines)
+			if err != nil {
+				return nil, err
 			}
 			return l.QueryRange(ctx, a.Query, start, end, limit)
 		},
@@ -209,9 +215,9 @@ func tracesTool(tb TracesBackend, catalog bool) Tool {
 			if a.Query == "" {
 				return nil, fmt.Errorf("mcp: %s: query is required", ToolSearchTraces)
 			}
-			limit := a.Limit
-			if limit <= 0 {
-				limit = 20
+			limit, err := checkLimit(a.Limit, 20, maxTraces)
+			if err != nil {
+				return nil, err
 			}
 			return tb.Search(ctx, a.Query, limit)
 		},
@@ -264,6 +270,44 @@ func alertsTool(ab AlertsBackend) Tool {
 
 // parseTime accepts RFC3339; an empty string is an error (callers decide
 // defaults before calling).
+// Argument bounds, checked before a backend is called. They are the
+// backends' own defaults: a larger request would be refused there anyway,
+// with a less useful message.
+const (
+	maxRangePoints = 11000 // Prometheus and Mimir refuse more points per series
+	maxLogLines    = 5000  // Loki's default max_entries_limit_per_query
+	maxTraces      = 1000
+)
+
+// checkRange validates a range query's start, end and step.
+func checkRange(start, end time.Time, step time.Duration) error {
+	if !end.After(start) {
+		return fmt.Errorf("mcp: %s: end must be after start", ToolQueryPrometheus)
+	}
+	if step <= 0 {
+		return fmt.Errorf("mcp: %s: step must be positive, got %s", ToolQueryPrometheus, step)
+	}
+	if points := end.Sub(start) / step; points > maxRangePoints {
+		return fmt.Errorf("mcp: %s: %s at a %s step is %d points, more than %d: use a larger step or a shorter range",
+			ToolQueryPrometheus, end.Sub(start), step, points, maxRangePoints)
+	}
+	return nil
+}
+
+// checkLimit returns the limit to use: def when none was given, and an error
+// for a negative one or one above ceiling.
+func checkLimit(limit, def, ceiling int) (int, error) {
+	switch {
+	case limit == 0:
+		return def, nil
+	case limit < 0:
+		return 0, fmt.Errorf("mcp: limit must be positive, got %d", limit)
+	case limit > ceiling:
+		return 0, fmt.Errorf("mcp: limit %d is above the maximum of %d", limit, ceiling)
+	}
+	return limit, nil
+}
+
 func parseTime(s string) (time.Time, error) {
 	if s == "" {
 		return time.Time{}, fmt.Errorf("empty timestamp")

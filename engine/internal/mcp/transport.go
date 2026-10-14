@@ -1,9 +1,12 @@
 package mcp
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -19,37 +22,54 @@ type ServerInfo struct {
 
 // JSON-RPC 2.0 error codes used here.
 const (
-	codeParseError    = -32700
-	codeInvalidParams = -32602
-	codeMethodNotFnd  = -32601
+	codeParseError     = -32700
+	codeInvalidRequest = -32600
+	codeInvalidParams  = -32602
+	codeMethodNotFnd   = -32601
 )
 
-// Serve runs the MCP server over a JSON-RPC 2.0 stream (newline-delimited JSON
-// on stdio). It reads requests from in, dispatches them against reg, and writes
-// responses to out. Notifications (no id) get no response. It returns when in
-// reaches EOF or ctx is cancelled.
+// maxFrame caps one message. A request is a method, a query and a few
+// arguments; a megabyte is far beyond any real one, and the cap keeps a
+// client from growing the server's memory with one endless line.
+const maxFrame = 1 << 20
+
+// Serve runs the MCP server over a JSON-RPC 2.0 stream: one JSON message per
+// line, on stdio. It reads requests from in, dispatches them against reg, and
+// writes responses to out. Notifications (no id) get no response. It returns
+// when in reaches EOF, when a line is longer than maxFrame, or when ctx is
+// cancelled, even while waiting for the next line.
+//
+// Requests are handled one at a time, so notifications/cancelled has nothing
+// to cancel by the time it is read; it is accepted and ignored. A tool call
+// is bounded by its backend client's timeout instead.
 //
 // Only read-only tools are exposed (reg is built from query-only ports), so
 // nothing an agent can send over this transport mutates user infrastructure.
 func Serve(ctx context.Context, in io.Reader, out io.Writer, reg *Registry, info ServerInfo) error {
-	dec := json.NewDecoder(in)
+	frames, readErr := readFrames(ctx, in)
 	enc := json.NewEncoder(out)
 	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		var req rpcRequest
-		if err := dec.Decode(&req); err != nil {
+		var line []byte
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-readErr:
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
-			// A malformed message desyncs the stream; report and stop.
-			_ = enc.Encode(rpcResponse{
-				JSONRPC: "2.0",
-				ID:      json.RawMessage("null"),
-				Error:   &rpcError{Code: codeParseError, Message: "parse error: " + err.Error()},
-			})
+			_ = enc.Encode(errorResponse(json.RawMessage("null"), codeParseError, "unreadable message: "+err.Error()))
 			return err
+		case line = <-frames:
+		}
+
+		req, rerr := parseRequest(line)
+		if rerr != nil {
+			// The line is lost, but the next one starts clean: with one
+			// message per line, a bad message cannot desynchronize the stream.
+			if err := enc.Encode(errorResponse(req.ID, rerr.Code, rerr.Message)); err != nil {
+				return err
+			}
+			continue
 		}
 
 		result, rerr := dispatch(ctx, reg, info, req.Method, req.Params)
@@ -68,6 +88,61 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, reg *Registry, info
 			return err
 		}
 	}
+}
+
+// readFrames reads in line by line on its own goroutine, so Serve can stop
+// on ctx while a read is blocked. Blank lines are skipped. The goroutine ends
+// at EOF, at a read error (sent on the error channel), or when ctx is done;
+// one blocked in a read of stdin ends with the process.
+func readFrames(ctx context.Context, in io.Reader) (<-chan []byte, <-chan error) {
+	frames := make(chan []byte)
+	readErr := make(chan error, 1)
+	go func() {
+		sc := bufio.NewScanner(in)
+		sc.Buffer(make([]byte, 0, 64<<10), maxFrame)
+		for sc.Scan() {
+			line := bytes.TrimSpace(sc.Bytes())
+			if len(line) == 0 {
+				continue
+			}
+			select {
+			case frames <- bytes.Clone(line): // the scanner reuses its buffer
+			case <-ctx.Done():
+				return
+			}
+		}
+		if err := sc.Err(); err != nil {
+			readErr <- err // bufio.ErrTooLong past maxFrame
+			return
+		}
+		readErr <- io.EOF
+	}()
+	return frames, readErr
+}
+
+// parseRequest decodes one line as a JSON-RPC 2.0 request: a single JSON
+// object, nothing after it, with "jsonrpc": "2.0". The returned request
+// carries the id when it could be read, so the error can be answered.
+func parseRequest(line []byte) (rpcRequest, *rpcError) {
+	var req rpcRequest
+	dec := json.NewDecoder(bytes.NewReader(line))
+	if err := dec.Decode(&req); err != nil {
+		return rpcRequest{ID: json.RawMessage("null")}, &rpcError{Code: codeParseError, Message: "parse error: " + err.Error()}
+	}
+	if dec.More() {
+		return req, &rpcError{Code: codeParseError, Message: "parse error: more than one JSON value on the line"}
+	}
+	if req.JSONRPC != "2.0" {
+		return req, &rpcError{Code: codeInvalidRequest, Message: fmt.Sprintf(`invalid request: jsonrpc is %q, want "2.0"`, req.JSONRPC)}
+	}
+	return req, nil
+}
+
+func errorResponse(id json.RawMessage, code int, msg string) rpcResponse {
+	if len(id) == 0 {
+		id = json.RawMessage("null")
+	}
+	return rpcResponse{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: msg}}
 }
 
 func isNotification(id json.RawMessage) bool {

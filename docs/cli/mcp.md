@@ -13,6 +13,21 @@ argus mcp --mimir-url http://mimir-gateway.lgtm.svc \
           --tenant    anonymous
 ```
 
+## Limits
+
+The server checks every request before calling a backend:
+
+- One JSON-RPC message per line, at most 1 MiB, with `"jsonrpc": "2.0"`. A
+  malformed line is answered with an error and the next line is served; a
+  longer one ends the session.
+- `query_prometheus` ranges need `end` after `start`, a positive `step`, and
+  at most 11,000 points (the limit Prometheus and Mimir apply themselves).
+- `query_loki` takes at most 5,000 lines, `search_traces` at most 1,000 traces.
+- A backend answer over 8 MiB is an error asking for a narrower query, not a
+  document cut short.
+- Requests are served one at a time, so `notifications/cancelled` is accepted
+  and ignored; each backend call has its client's timeout.
+
 ## Tools
 
 | Tool | Backend | Enabled by |

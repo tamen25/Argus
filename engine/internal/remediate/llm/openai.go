@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/tamen25/Argus/engine/internal/bounded"
 )
 
 // OpenAIConfig configures the OpenAI-compatible chat-completions client. Any
@@ -91,7 +93,7 @@ func (c *OpenAIClient) Explain(ctx context.Context, in ExplainInput) (string, er
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := bounded.DecodeJSON(resp.Body, bounded.ModelResponse, &out); err != nil {
 		return "", err
 	}
 	if len(out.Choices) == 0 {
