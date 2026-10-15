@@ -60,7 +60,14 @@ func NewApp(_ context.Context, as backend.AppInstanceSettings) (instancemgmt.Ins
 	app := &App{
 		engineURL: engineURL,
 		apiToken:  as.DecryptedSecureJSONData[apiTokenKey],
-		client:    &http.Client{Timeout: 10 * time.Second, CheckRedirect: refuseRedirect},
+		// The instance owns its transport, so Dispose can close the
+		// connections it pooled. Closing http.DefaultTransport's instead would
+		// cut every other plugin client in this process.
+		client: &http.Client{
+			Transport:     http.DefaultTransport.(*http.Transport).Clone(),
+			Timeout:       10 * time.Second,
+			CheckRedirect: refuseRedirect,
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -69,8 +76,9 @@ func NewApp(_ context.Context, as backend.AppInstanceSettings) (instancemgmt.Ins
 	return app, nil
 }
 
-// Dispose tells the SDK the instance can be dropped on settings change.
-func (a *App) Dispose() {}
+// Dispose runs when the SDK drops this instance, after a settings change: it
+// closes the idle connections to the engine URL the old settings named.
+func (a *App) Dispose() { a.client.CloseIdleConnections() }
 
 // CheckHealth reports whether the engine answers, and whether it accepts the
 // configured API token: a reachable engine that rejects every API call would
@@ -114,11 +122,6 @@ func (a *App) get(ctx context.Context, pathAndQuery string) (*http.Response, err
 	return a.client.Do(req)
 }
 
-// normalizeEngineURL checks the configured engine URL and returns it without a
-// trailing slash, so engineURL+"/api/..." is always one path. Empty means the
-// in-cluster default. Anything that is not an http(s) URL with a host is an
-// error, shown on the app's configuration page, rather than a proxy that fails
-// on every request.
 // refuseRedirect stops the client following a redirect: the engine API never
 // answers with one, and following it would send the bearer token to the URL
 // it names (on the same host, possibly over plain HTTP).
@@ -126,6 +129,11 @@ func refuseRedirect(req *http.Request, _ []*http.Request) error {
 	return fmt.Errorf("the engine redirected to %s: refusing to follow it; set that URL instead", req.URL.Redacted())
 }
 
+// normalizeEngineURL checks the configured engine URL and returns it without a
+// trailing slash, so engineURL+"/api/..." is always one path. Empty means the
+// in-cluster default. Anything that is not an http(s) URL with a host is an
+// error, shown on the app's configuration page, rather than a proxy that fails
+// on every request.
 func normalizeEngineURL(raw string) (string, error) {
 	if strings.TrimSpace(raw) == "" {
 		return defaultEngineURL, nil

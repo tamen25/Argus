@@ -3,10 +3,12 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
@@ -207,6 +209,39 @@ func TestCheckHealth(t *testing.T) {
 	r, err = dead.CheckHealth(context.Background(), nil)
 	if err != nil || r.Status != backend.HealthStatusError {
 		t.Errorf("dead-engine health = %+v err=%v", r, err)
+	}
+}
+
+// Dispose closes the connections the instance kept open to the engine. The
+// SDK disposes an instance when the settings change, and without this the
+// old engine URL keeps an idle connection until the transport times it out.
+func TestDisposeClosesEngineConnections(t *testing.T) {
+	closed := make(chan struct{}, 1)
+	srv := httptest.NewUnstartedServer(fakeEngine(t).Config.Handler)
+	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateClosed {
+			closed <- struct{}{}
+		}
+	}
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	app := testApp(t, srv.URL)
+	// A proxied call reads the whole answer, so its connection stays open
+	// for reuse (CheckHealth's unread bodies close theirs at once).
+	if res := callResource(t, app, "/scores"); res.Status != http.StatusOK {
+		t.Fatalf("status = %d", res.Status)
+	}
+	select {
+	case <-closed:
+		t.Fatal("the connection closed before Dispose; the test proves nothing")
+	case <-time.After(100 * time.Millisecond):
+	}
+	app.Dispose()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the engine connection is still open after Dispose")
 	}
 }
 
