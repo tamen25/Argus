@@ -124,7 +124,7 @@ jobs:
       - name: Start Grafana with the plugin
         run: |
           docker compose up -d --build
-          for i in $(seq 60); do
+          for _ in $(seq 60); do
             curl -sf -o /dev/null http://localhost:3000/api/health && exit 0
             sleep 3
           done
