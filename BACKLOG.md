@@ -69,8 +69,15 @@ fixed; a finding that does not hold is marked so here, with the reason.
 
 **P1** — before relying on scores, costs, security or bench results:
 
-- [ ] **R01** — npm advisories: triage the audit, update what is compatible, add
-  an audit step to CI. Overlaps B-21.
+- [x] **R01** — npm advisories: triage the audit, update what is compatible, add
+  an audit step to CI. Overlaps B-21. Done: the compatible fixes are applied
+  (`@grafana/scenes` 8.21, `@grafana/sign-plugin` 3.3.3, two build tools), and
+  CI fails on any critical advisory. Of the rest, the 11 in runtime
+  dependencies are B-21 (none is in `dist/`: its source maps hold only scenes,
+  i18n and uuid); the others are dev tooling — jest's tree (tests only), and
+  `@grafana/sign-plugin`'s proxy-agent chain, reached only through a PAC or FTP
+  proxy, which the release job does not configure. Clearing those needs jest
+  30 and sign-plugin 2.x, both breaking.
 - [x] **R02** — `rules.Collector` keeps per-service state for every service
   name ever seen: no admission limit, no expiry. Done in #108: at most 2000 services (`CollectorOptions.MaxServices`); past it, observations are dropped and counted (`rejected_observations`, a report note); a service with no outcome left is dropped.
 - [x] **R03** — a CEL evaluation error on an item rule leaves the rule passing:
@@ -148,10 +155,10 @@ fixed; a finding that does not hold is marked so here, with the reason.
   integration tests, or a formatter check. Partly done in #115: CI runs the plugin backend's Go tests (with -race), the typecheck, a Prettier check, and the Postgres integration tests (testcontainers); `test:ci` no longer passes with no tests; `make test` runs the plugin backend's tests. The Playwright job is added in #122: Grafana with the built plugin (frontend and backend), every page tested against a mocked engine.
 
 **Cleanups** (C01–C16, the table in the review): Prettier on six plugin files (done, #115),
-comment trimming, stale phase claims (C04, done),
+comment trimming (C02, C03, done), stale phase claims (C04, done),
 `errors.Is(err, io.EOF)` in the rules loader (done, #108), template parsing once (done, #110), the
-numeric helper in remediate (done, #110), deterministic float sums (C08, done: the trend sort in #108, the totals here), typed API responses (C10, done), the settings form's save state (C11, done, #115),
-pinned release tools (C13, done), narrower gosec exclusions (C14, done), the Playwright config's scaffold comments (C12, done, #122), `stats.Max` in one scan (C15, done, #117), and client ownership (C16, done).
+numeric helper in remediate (done, #110), one shared clip helper for shortened messages (C09, done), deterministic float sums (C08, done: the trend sort in #108, the totals in #124), typed API responses (C10, done, #124), the settings form's save state (C11, done, #115),
+pinned release tools (C13, done), narrower gosec exclusions (C14, done), the Playwright config's scaffold comments (C12, done, #122), `stats.Max` in one scan (C15, done, #117), and client ownership (C16, done, #124).
 
 ---
 
