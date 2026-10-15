@@ -97,7 +97,7 @@ function Bench({ data }: { data: BenchResponse }) {
     comparison && comparison.baseline === baseline && comparison.treatment === treatment && baseline !== treatment
       ? comparison
       : null;
-  const caveats = (shown?.caveats ?? data.leaderboard.caveats) || [];
+  const caveats = shown?.caveats ?? data.leaderboard.caveats;
 
   return (
     <div data-testid={testIds.bench.container}>
@@ -214,7 +214,7 @@ function ComparisonView({ c }: { c: BenchComparison }) {
                   </td>
                   <td className={s.num}>{cellText(sc.baseline)}</td>
                   <td className={s.num}>{cellText(sc.treatment)}</td>
-                  <td className={s.num}>{sc.delta === undefined || sc.delta === null ? '—' : signed(sc.delta)}</td>
+                  <td className={s.num}>{sc.delta === undefined ? '—' : signed(sc.delta)}</td>
                 </tr>
               ))}
             </tbody>
