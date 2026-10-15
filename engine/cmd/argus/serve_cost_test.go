@@ -105,7 +105,7 @@ func TestRegisterCostEndpointConfigured(t *testing.T) {
 		pricingPath:      writePricing(t),
 		window:           time.Hour,
 		cacheTTL:         time.Minute,
-		costSourceConfig: costSourceConfig{mimirURL: "http://127.0.0.1:1", serviceLabel: "service_name"},
+		costSourceConfig: costSourceConfig{mimirURL: "http://127.0.0.1:1", mimirServiceLabel: "job"},
 	})
 	if err != nil {
 		t.Fatalf("registration failed: %v", err)

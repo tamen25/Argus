@@ -63,7 +63,7 @@ trends. Costs are modeled from your rates, not billed.`,
 	f.StringVar(&opts.mimirTenant, "mimir-tenant", "", "Mimir X-Scope-OrgID")
 	f.StringVar(&opts.lokiURL, "loki-url", "", "Loki base URL for log-bytes attribution")
 	f.StringVar(&opts.lokiTenant, "loki-tenant", "", "Loki X-Scope-OrgID")
-	f.StringVar(&opts.serviceLabel, "service-label", "service_name", "label/stream selector used to attribute by service")
+	addServiceLabelFlags(f, "", &opts.costSourceConfig)
 	f.StringVar(&opts.s3Bucket, "s3-bucket", "", "object-storage bucket to inventory")
 	f.StringVar(&opts.s3Prefix, "s3-prefix", "", "key prefix to scope the inventory")
 	f.StringVar(&opts.s3Region, "s3-region", "", "AWS region (empty uses the default chain)")
