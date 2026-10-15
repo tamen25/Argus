@@ -7,8 +7,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -134,15 +136,22 @@ func writeRotationVerdict(b *strings.Builder, s []soak.Sample) {
 	fmt.Fprintf(b, "- evictions (last): %.0f\n", s[len(s)-1].Evictions)
 }
 
+// writeErrorVerdict counts the lines of engine-errors.log. A missing log means
+// none were recorded; one that cannot be read is said to be, not counted as
+// clean.
 func writeErrorVerdict(b *strings.Builder, dir string) {
 	data, err := os.ReadFile(filepath.Join(dir, "engine-errors.log"))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		fmt.Fprintf(b, "- receiver errors: UNKNOWN — engine-errors.log could not be read: %v\n", err)
+		return
+	}
 	lines := 0
-	for _, l := range strings.Split(string(data), "\n") {
+	for l := range strings.Lines(string(data)) {
 		if strings.TrimSpace(l) != "" {
 			lines++
 		}
 	}
-	if err != nil || lines == 0 {
+	if lines == 0 {
 		fmt.Fprintf(b, "- receiver errors: none recorded\n")
 	} else {
 		fmt.Fprintf(b, "- receiver errors: %d log lines — see engine-errors.log\n", lines)
@@ -274,13 +283,16 @@ func writeReportStats(b *strings.Builder, dir string) {
 
 	ratios := map[string][]float64{}
 	var lastRep report.Report
+	var skipped []string
 	for _, m := range matches {
 		data, err := os.ReadFile(m)
 		if err != nil {
+			skipped = append(skipped, filepath.Base(m))
 			continue
 		}
 		var rep report.Report
 		if err := json.Unmarshal(data, &rep); err != nil || rep.Snapshot == nil {
+			skipped = append(skipped, filepath.Base(m))
 			continue
 		}
 		lastRep = rep
@@ -295,6 +307,12 @@ func writeReportStats(b *strings.Builder, dir string) {
 	}
 
 	fmt.Fprintf(b, "\n## Rule ratios across reports (failing services only)\n\n")
+	if len(skipped) > 0 {
+		// A report cut off by a restart mid-write is the usual cause; the
+		// ratios then cover fewer hours than the run did.
+		fmt.Fprintf(b, "> %d of %d reports could not be read and are left out: %s\n\n",
+			len(skipped), len(matches), strings.Join(skipped, ", "))
+	}
 	lastCounts := map[string]int{}
 	for _, s := range lastRep.Snapshot.Services {
 		for _, f := range s.Findings {
