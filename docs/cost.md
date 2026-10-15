@@ -56,8 +56,8 @@ report as complete.
 
 | Source | Backend | Query | Feeds |
 |---|---|---|---|
-| `SeriesSource` | Mimir | cardinality API (`count_method=active`), series per `--service-label` value | active-series cost (metrics) |
-| `LogBytesSource` | Loki | `sum by (service_name) (bytes_over_time(…[window]))` | log ingest cost |
+| `SeriesSource` | Mimir | cardinality API (`count_method=active`), series per `--mimir-service-label` value (`job` by default) | active-series cost (metrics) |
+| `LogBytesSource` | Loki | `sum by (<label>) (bytes_over_time(…[window]))`, `<label>` being `--loki-service-label` (`service_name` by default) | log ingest cost |
 | `StorageSource` | S3 / MinIO | object inventory by storage class | storage cost |
 
 Metric **ingest-byte** attribution is deliberately not inferred from the

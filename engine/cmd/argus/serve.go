@@ -77,7 +77,7 @@ func newServeCmd() *cobra.Command {
 	f.StringVar(&cost.mimirTenant, "cost-mimir-tenant", "", "Mimir X-Scope-OrgID")
 	f.StringVar(&cost.lokiURL, "cost-loki-url", "", "Loki base URL for log-bytes attribution")
 	f.StringVar(&cost.lokiTenant, "cost-loki-tenant", "", "Loki X-Scope-OrgID")
-	f.StringVar(&cost.serviceLabel, "cost-service-label", "service_name", "label used to attribute cost by service")
+	addServiceLabelFlags(f, "cost-", &cost.costSourceConfig)
 	f.StringVar(&cost.s3Bucket, "cost-s3-bucket", "", "object-storage bucket to inventory")
 	f.StringVar(&cost.s3Prefix, "cost-s3-prefix", "", "key prefix to scope the inventory")
 	f.StringVar(&cost.s3Region, "cost-s3-region", "", "AWS region (empty uses the default chain)")

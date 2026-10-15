@@ -88,7 +88,7 @@ fixed; a finding that does not hold is marked so here, with the reason.
 - [x] **R05** — the Mimir cardinality client reads a field the API does not
   return (`distinct_label_values_count`); its test fixture invents it. Done in #109: `label_values_count`, with fixtures from the documented response; a listed label without its count is an error, not 0.
 - [x] **R06** — cost attribution uses Mimir's default top-20 label values and
-  in-memory counting, so larger fleets lose services silently. Done in #109: `count_method=active`, `limit=500`, and the remainder past the list and series without the label attributed to named lines, so the total is complete. Still open: one `--service-label` serves both Mimir (`job`) and Loki (`service_name`).
+  in-memory counting, so larger fleets lose services silently. Done in #109: `count_method=active`, `limit=500`, and the remainder past the list and series without the label attributed to named lines, so the total is complete. The service label is now set per backend: `--mimir-service-label` (default `job`) and `--loki-service-label` (default `service_name`); `--service-label` still sets both, deprecated.
 - [x] **R07** — LLM redaction strips evidence values but sends the service name
   and the rendered patch, both telemetry-derived. Done in #110: redaction replaces the service name, and sends a patch rendered without telemetry values (`RedactedPatch`); a test checks the whole outbound request.
 - [x] **R08** — remediation templates interpolate raw metric and attribute

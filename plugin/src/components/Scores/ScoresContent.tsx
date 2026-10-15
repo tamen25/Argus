@@ -47,10 +47,13 @@ function Scores({ report }: { report: Report }) {
     <div data-testid={testIds.scores.container}>
       <div className={s.picker}>
         <Combobox
-          options={withFindings.map((svc) => ({
-            label: `${svc.service} — ${svc.spec_score.toFixed(1)} (${svc.findings?.length} findings)`,
-            value: svc.service,
-          }))}
+          options={withFindings.map((svc) => {
+            const n = svc.findings?.length ?? 0;
+            return {
+              label: `${svc.service} — ${svc.spec_score.toFixed(1)} (${n} finding${n === 1 ? '' : 's'})`,
+              value: svc.service,
+            };
+          })}
           value={current.service}
           onChange={(v) => setSelected(v?.value ?? null)}
           width={60}

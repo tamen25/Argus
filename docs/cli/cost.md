@@ -29,7 +29,9 @@ that would misleadingly read as `$0`.
 | `--loki-url` / `--loki-tenant` | | log-bytes attribution |
 | `--s3-bucket` / `--s3-prefix` | | object-storage inventory |
 | `--s3-endpoint` / `--s3-region` / `--s3-path-style` | | MinIO / non-AWS endpoints |
-| `--service-label` | `service_name` | label used to attribute by service |
+| `--mimir-service-label` | `job` | Mimir label that names the service: metrics sent over OTLP carry `service.name` as `job` |
+| `--loki-service-label` | `service_name` | Loki stream label that names the service |
+| `--service-label` | | deprecated: sets both labels to one value |
 | `--store-dsn` | | persist this snapshot, and trend against the latest one at least a week old |
 | `--output` | `md` | `md` or `json` |
 | `--out` | *(stdout)* | write to a file instead |
