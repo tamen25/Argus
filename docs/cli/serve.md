@@ -35,6 +35,21 @@ Every endpoint is a `GET`; anything else is answered `405`.
 An endpoint whose feature is not configured answers `404`, and the plugin
 shows "not configured" rather than an empty page.
 
+## Score gauges
+
+With ingest, `/metrics` reports the latest snapshot, refreshed every
+`--score-interval` (30s by default):
+
+| Metric | Labels | Value |
+|---|---|---|
+| `argus_instrumentation_score` | `service` | the service's spec score, 0–100 |
+| `argus_instrumentation_score_fleet` | | the mean over the services |
+| `argus_findings` | `service`, `impact` | open findings |
+
+A scrape always reports one whole snapshot. Until a service has been
+observed there are no score series at all: an empty fleet's score would be a
+vacuous 100.
+
 ## Authentication
 
 When `ARGUS_API_TOKEN` is set, every `/api/` request needs
