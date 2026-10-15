@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/tamen25/Argus/engine/internal/clip"
 )
 
 // reply is one model turn, in a form both API adapters translate to.
@@ -96,7 +98,7 @@ func runTurns(ctx context.Context, name string, task Task, conv conversation, ou
 				continue
 			}
 			return s.result(nil), fmt.Errorf("agent %s: finished without calling %s (last reply: %q)",
-				name, submitToolName, truncateMiddle(r.text, maxLoggedReply))
+				name, submitToolName, clip.Middle(r.text, maxLoggedReply))
 		}
 
 		rejected := map[string]string{}

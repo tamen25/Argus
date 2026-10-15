@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/tamen25/Argus/engine/internal/bench"
+	"github.com/tamen25/Argus/engine/internal/clip"
 )
 
 // recording returns canned responses like scripted, and keeps every request
@@ -207,7 +208,7 @@ func TestOpenAI_ToolLogRecordsQueriesAndErrors(t *testing.T) {
 func TestToolLogKeepsTheReasonOfALongError(t *testing.T) {
 	long := "backend http://mimir/api/v1/query?query=" + strings.Repeat("x", 4*maxLoggedError) +
 		": HTTP 400: parse error: unexpected end of input"
-	got := truncateMiddle(long, maxLoggedError)
+	got := clip.Middle(long, maxLoggedError)
 	if !strings.HasSuffix(got, "unexpected end of input") {
 		t.Errorf("truncated error lost its reason: %q", got)
 	}
@@ -217,7 +218,7 @@ func TestToolLogKeepsTheReasonOfALongError(t *testing.T) {
 	if len(got) > maxLoggedError+len("…") {
 		t.Errorf("truncated error is %d bytes, want about %d", len(got), maxLoggedError)
 	}
-	if short := "bad_data"; truncateMiddle(short, maxLoggedError) != short {
+	if short := "bad_data"; clip.Middle(short, maxLoggedError) != short {
 		t.Error("a short error must be kept whole")
 	}
 }

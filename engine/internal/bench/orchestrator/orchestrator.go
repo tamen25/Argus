@@ -24,6 +24,7 @@ import (
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bench/agent"
 	"github.com/tamen25/Argus/engine/internal/bench/scoring"
+	"github.com/tamen25/Argus/engine/internal/clip"
 )
 
 // Injector applies and removes a scenario's faults in the target environment.
@@ -405,7 +406,7 @@ func (h harness) diagnose(ctx context.Context, rec *RunRecord) {
 		// The submission is kept (truncated) so a rejected answer can be told
 		// apart from an absent one: the first gpt-oss runs submitted arguments
 		// with a field the schema does not have.
-		rec.Error = fmt.Sprintf("normalize: %v (submitted: %s)", err, truncateSubmission(res.Raw))
+		rec.Error = fmt.Sprintf("normalize: %v (submitted: %s)", err, clip.Head(string(res.Raw), maxKeptSubmission))
 		return
 	}
 
@@ -700,10 +701,3 @@ func stddev(xs []float64, m float64) float64 {
 
 // maxKeptSubmission bounds the raw submission kept in a failed run's error.
 const maxKeptSubmission = 600
-
-func truncateSubmission(raw json.RawMessage) string {
-	if len(raw) <= maxKeptSubmission {
-		return string(raw)
-	}
-	return string(raw[:maxKeptSubmission]) + "…"
-}

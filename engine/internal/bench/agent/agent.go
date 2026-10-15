@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bench"
+	"github.com/tamen25/Argus/engine/internal/clip"
 	"github.com/tamen25/Argus/engine/internal/mcp"
 )
 
@@ -293,18 +294,6 @@ const (
 	maxLoggedReply = 400
 )
 
-// truncateMiddle shortens s to about n bytes by cutting out its middle. A
-// backend error starts with the request URL, which repeats the query, and ends
-// with the reason; cutting the tail would keep the part already recorded and
-// drop the part that explains the failure.
-func truncateMiddle(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	head := n / 3
-	return s[:head] + "…" + s[len(s)-(n-head):]
-}
-
 // session tracks what one diagnosis run has consumed and enforces the
 // tool-call cap. Both API adapters drive it, so the budget means the same thing
 // whichever model is on the other end.
@@ -470,12 +459,12 @@ func (s *session) result(raw json.RawMessage) Result {
 // adapt, rather than aborting the run.
 func (s *session) call(ctx context.Context, tools Tools, name string, args json.RawMessage) string {
 	s.usage.ToolCalls++
-	rec := ToolCall{Tool: name, Arguments: truncateStr(string(args), maxLoggedArguments)}
+	rec := ToolCall{Tool: name, Arguments: clip.Head(string(args), maxLoggedArguments)}
 	out, err := tools.Call(ctx, name, args)
 	var content string
 	if err != nil {
 		s.usage.ToolErrors++
-		rec.Error = truncateMiddle(err.Error(), maxLoggedError)
+		rec.Error = clip.Middle(err.Error(), maxLoggedError)
 		content = `{"error":` + strconv.Quote(err.Error()) + `}`
 	} else {
 		content = string(out)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/clip"
 )
 
 // ShellConfig configures a shell-wrapped agent: an existing open-source agent
@@ -92,7 +93,7 @@ func (s *ShellAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 	usage := Usage{Steps: 1}
 	if err := cmd.Run(); err != nil {
 		return Result{Usage: usage}, fmt.Errorf("shell agent %s: %w (stderr: %s)",
-			s.cfg.Name, err, truncateStr(stderr.String(), 512))
+			s.cfg.Name, err, clip.Head(stderr.String(), 512))
 	}
 	if stdout.Overflowed() {
 		return Result{Usage: usage}, fmt.Errorf("shell agent %s: output %w of %d bytes", s.cfg.Name, bounded.ErrTooLarge, bounded.ProcessOutput)
@@ -102,13 +103,6 @@ func (s *ShellAgent) Diagnose(ctx context.Context, task Task) (Result, error) {
 		return Result{Usage: usage}, fmt.Errorf("shell agent %s: produced no output", s.cfg.Name)
 	}
 	return Result{Raw: json.RawMessage(out), Usage: usage}, nil
-}
-
-func truncateStr(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }
 
 var _ Agent = (*ShellAgent)(nil)

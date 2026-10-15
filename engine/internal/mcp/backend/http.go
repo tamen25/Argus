@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/clip"
 	"github.com/tamen25/Argus/engine/internal/httpclient"
 )
 
@@ -46,7 +47,7 @@ func getRaw(ctx context.Context, hc *http.Client, u, tenant string) (json.RawMes
 		return nil, fmt.Errorf("backend %s: %w; narrow the query (a shorter range, a larger step, or a more selective matcher)", u, err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("backend %s: HTTP %d: %s", u, resp.StatusCode, truncate(body, 512))
+		return nil, fmt.Errorf("backend %s: HTTP %d: %s", u, resp.StatusCode, clip.Head(string(body), 512))
 	}
 	return json.RawMessage(body), nil
 }
@@ -61,13 +62,6 @@ func pathSegment(name string) (string, error) {
 		return "", fmt.Errorf("invalid label or tag name %q", name)
 	}
 	return url.PathEscape(name), nil
-}
-
-func truncate(b []byte, n int) string {
-	if len(b) <= n {
-		return string(b)
-	}
-	return string(b[:n]) + "…"
 }
 
 // Mimir is the MetricsBackend/AlertsBackend adapter (Prometheus-compatible API).
