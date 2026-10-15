@@ -51,7 +51,7 @@ describe('BacktestContent', () => {
     expect(screen.getByText(/verdicts apply to the covered segments only/i)).toBeInTheDocument();
   });
 
-  it('renders even when slices are null (defensive — engine emits [] but be safe)', async () => {
+  it('says so when no rule was replayed', async () => {
     mockGet.mockResolvedValue({
       generated_at: '2026-07-18T09:00:00Z',
       from: '2026-07-18T05:10:00Z',
@@ -60,9 +60,9 @@ describe('BacktestContent', () => {
       coverage_seconds: 0,
       window_seconds: 2100,
       segments: 0,
-      rules: null,
-      caveats: null,
-    } as unknown as BacktestReport);
+      rules: [],
+      caveats: [],
+    } satisfies BacktestReport);
     render(<BacktestContent />);
     expect(await screen.findByText(/No alerting rules were replayed/i)).toBeInTheDocument();
   });

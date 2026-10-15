@@ -409,6 +409,27 @@ type graphEdge struct {
 	Traces int64  `json:"traces"`
 }
 
+// serviceGraph is the /api/servicegraph answer (plugin/src/api/types.ts
+// ServiceGraph).
+type serviceGraph struct {
+	GeneratedAt time.Time   `json:"generated_at"`
+	Window      string      `json:"window"`
+	Nodes       []graphNode `json:"nodes"`
+	Edges       []graphEdge `json:"edges"`
+	// EdgesOmitted counts edges left out past the graph's cap; the busiest
+	// are kept.
+	EdgesOmitted int `json:"edges_omitted"`
+}
+
+// remediationResponse is the /api/remediation answer (types.ts Remediation):
+// the rendered patch, one entry per file format.
+type remediationResponse struct {
+	RuleID   string            `json:"rule_id"`
+	Service  string            `json:"service"`
+	Template string            `json:"template"`
+	Formats  map[string]string `json:"formats"`
+}
+
 // serviceGraphHandler serves /api/servicegraph, the plugin's service graph:
 // caller→callee edges (cross-service parent references resolved in the last
 // completed trace generation) joined with each service's latest score.
@@ -442,13 +463,12 @@ func serviceGraphHandler(col *rules.Collector, pipe *ingest.Pipeline, window tim
 			nodeList = append(nodeList, *n)
 		}
 		sort.Slice(nodeList, func(i, j int) bool { return nodeList[i].Service < nodeList[j].Service })
-		writeJSON(w, map[string]any{
-			"generated_at": time.Now().UTC(),
-			"window":       window.String(),
-			"nodes":        nodeList,
-			"edges":        edges,
-			// Edges left out past the graph's cap (the busiest are kept).
-			"edges_omitted": pipe.EdgesOmitted(),
+		writeJSON(w, serviceGraph{
+			GeneratedAt:  time.Now().UTC(),
+			Window:       window.String(),
+			Nodes:        nodeList,
+			Edges:        edges,
+			EdgesOmitted: pipe.EdgesOmitted(),
 		})
 	}
 }
@@ -483,9 +503,7 @@ func remediationHandler(col *rules.Collector, rs []*rules.Rule) http.HandlerFunc
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			writeJSON(w, map[string]any{
-				"rule_id": ruleID, "service": service, "template": tmpl, "formats": outs,
-			})
+			writeJSON(w, remediationResponse{RuleID: ruleID, Service: service, Template: tmpl, Formats: outs})
 			return
 		}
 		http.Error(w, "no such finding in the current snapshot", http.StatusNotFound)

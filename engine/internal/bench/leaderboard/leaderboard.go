@@ -143,7 +143,8 @@ func Build(reports []orchestrator.Report) (Leaderboard, error) {
 	}
 	sort.Strings(conditions)
 
-	lb := Leaderboard{}
+	// Lists start empty, not nil, so the JSON has [] for the plugin to map.
+	lb := Leaderboard{Boards: make([]Board, 0, len(conditions))}
 	for _, c := range conditions {
 		lb.Boards = append(lb.Boards, board(c, byCondition[c]))
 	}
@@ -192,7 +193,7 @@ func Compare(reports []orchestrator.Report, baseline, treatment string) (Compari
 		agents[a] = true
 	}
 
-	cmp := Comparison{Baseline: baseline, Treatment: treatment}
+	cmp := Comparison{Baseline: baseline, Treatment: treatment, Agents: make([]AgentComparison, 0, len(agents))}
 	for _, a := range sortedKeys(agents) {
 		cmp.Agents = append(cmp.Agents, compareAgent(a, base[a], treat[a], baseline, treatment))
 	}
@@ -219,7 +220,7 @@ func Compare(reports []orchestrator.Report, baseline, treatment string) (Compari
 }
 
 func compareAgent(name string, base, treat map[string]Cell, baseline, treatment string) AgentComparison {
-	ac := AgentComparison{Agent: name}
+	ac := AgentComparison{Agent: name, Scenarios: []ScenarioComparison{}}
 	scenarios := map[string]bool{}
 	for s := range base {
 		scenarios[s] = true
@@ -280,10 +281,10 @@ func board(condition string, reports []orchestrator.Report) Board {
 			scenarioSet[s] = true
 		}
 	}
-	b := Board{Condition: condition, Scenarios: sortedKeys(scenarioSet)}
+	b := Board{Condition: condition, Scenarios: sortedKeys(scenarioSet), Rows: make([]Row, 0, len(byAgent))}
 
 	for agentName, m := range byAgent {
-		row := Row{Agent: agentName}
+		row := Row{Agent: agentName, Cells: make([]Cell, 0, len(b.Scenarios))}
 		var means []float64
 		for _, s := range b.Scenarios {
 			c, ok := m[s]

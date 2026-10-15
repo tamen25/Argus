@@ -56,8 +56,9 @@ describe('SpendContent', () => {
     expect(screen.getByText(/modeled from your pricing/i)).toBeInTheDocument();
   });
 
-  it('renders when the engine sends null slices (empty Go slices → JSON null)', async () => {
-    // the real /api/cost shape with no S3 configured: storage is null, not []
+  it('renders without storage, lifecycle or trend', async () => {
+    // the /api/cost shape with no S3 configured and no earlier snapshot:
+    // storage is [], lifecycle and trend are left out
     mockGet.mockResolvedValue({
       generated_at: '2026-07-16T12:00:00Z',
       window: '1h0m0s',
@@ -66,18 +67,18 @@ describe('SpendContent', () => {
         lines: [
           { service: 'kafka', signal: 'logs', ingest_monthly: 0.53, active_series_monthly: 0, total_monthly: 0.53 },
         ],
-        storage: null,
+        storage: [],
         total_monthly: 0.53,
       },
-      lifecycle: null,
-      trend: null,
       notes: ['Costs are modeled from your pricing.yaml, not billed.'],
-    } as unknown as Showback);
+    } satisfies Showback);
     render(<SpendContent />);
-    // must not crash on storage.length of null — the total and the line render
+    // the total and the line render, and no empty section does
     // (0.53 appears as the total and in the table, so findAll)
     expect((await screen.findAllByText(/0\.53/)).length).toBeGreaterThan(0);
     expect(screen.getByText('kafka')).toBeInTheDocument();
+    expect(screen.queryByText('Storage by class')).not.toBeInTheDocument();
+    expect(screen.queryByText('Lifecycle savings')).not.toBeInTheDocument();
   });
 
   it('explains graciously when cost is not configured', async () => {

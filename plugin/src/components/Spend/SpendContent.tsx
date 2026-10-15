@@ -33,10 +33,9 @@ function Spend({ data }: { data: Showback }) {
   const s = useStyles2(getStyles);
 
   const cur = data.report.currency;
-  // The engine marshals empty Go slices as JSON null (e.g. storage with no S3
-  // configured), so every list is coerced to an array before use.
-  const lines = data.report.lines ?? [];
-  const storage = data.report.storage ?? [];
+  const { lines, storage } = data.report;
+  // Omitted by the engine when there is nothing to recommend.
+  const lifecycle = data.lifecycle ?? [];
   return (
     <div data-testid={testIds.spend.container}>
       <div className={s.total}>
@@ -99,7 +98,7 @@ function Spend({ data }: { data: Showback }) {
         </>
       )}
 
-      {(data.lifecycle?.length ?? 0) > 0 && (
+      {lifecycle.length > 0 && (
         <>
           <h3 className={s.h}>Lifecycle savings</h3>
           <table className={s.table}>
@@ -113,7 +112,7 @@ function Spend({ data }: { data: Showback }) {
               </tr>
             </thead>
             <tbody>
-              {data.lifecycle!.map((r, i) => (
+              {lifecycle.map((r, i) => (
                 <tr key={i}>
                   <td>
                     {r.from_class} → {r.to_class}
