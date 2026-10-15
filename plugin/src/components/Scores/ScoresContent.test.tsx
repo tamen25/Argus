@@ -70,7 +70,7 @@ describe('ScoresContent', () => {
 
   it('shows the estimated cost of a priced finding', async () => {
     const priced: Report = JSON.parse(JSON.stringify(report)); // jsdom has no structuredClone
-    Object.assign(priced.snapshot.services[0].findings![0], { estimated_monthly_cost: 4, cost_currency: 'USD' });
+    Object.assign(priced.snapshot.services![0].findings![0], { estimated_monthly_cost: 4, cost_currency: 'USD' });
     mockGet.mockImplementation((url: string) =>
       url.endsWith('/scores') ? Promise.resolve(priced) : Promise.resolve(remediation)
     );

@@ -2,6 +2,7 @@ package cost_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -110,6 +111,35 @@ func TestPriceAggregatesAndSorts(t *testing.T) {
 	// b/logs summed: 2 GB × 0.40 = 0.80
 	if !approx(r.Lines[1].IngestMonthly, 0.80) {
 		t.Errorf("b/logs = %v, want 0.80 (summed)", r.Lines[1].IngestMonthly)
+	}
+}
+
+// The total is the same to the last bit on every run. Float addition is not
+// associative (0.1+0.2+0.3 != 0.3+0.2+0.1), so a total summed in map order
+// changed between runs; it is summed over the sorted lines instead.
+func TestPriceTotalIsBitStable(t *testing.T) {
+	p := testPricing()
+	p.ActiveSeries.PerMillion = 1
+	var streams []cost.Stream
+	for i, series := range []int64{1e5, 2e5, 3e5, 7e5, 11e5, 13e5, 17e5, 19e5} {
+		streams = append(streams, cost.Stream{Service: fmt.Sprintf("svc-%d", i), Signal: "metrics", ActiveSeries: series})
+	}
+	u := cost.Usage{Window: 730 * time.Hour, Streams: streams, Storage: []cost.StorageObject{
+		{Class: "STANDARD", Bytes: 1e8}, {Class: "GLACIER", Bytes: 3e8}, {Class: "STANDARD_IA", Bytes: 7e8},
+	}}
+
+	first := cost.Price(p, u)
+	want := 0.0
+	for _, l := range first.Lines {
+		want += l.TotalMonthly
+	}
+	for _, s := range first.Storage {
+		want += s.Monthly
+	}
+	for range 200 {
+		if got := cost.Price(p, u).TotalMonthly; got != want {
+			t.Fatalf("total = %v, want %v (summed over the sorted lines)", got, want)
+		}
 	}
 }
 

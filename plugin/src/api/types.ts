@@ -37,8 +37,9 @@ export interface ServiceReport {
 
 export interface Snapshot {
   fleet_score: number;
-  services: ServiceReport[];
-  rules_evaluated: string[];
+  // null only from an engine before v1.1, for an empty fleet.
+  services: ServiceReport[] | null;
+  rules_evaluated: string[] | null;
 }
 
 export interface Report {

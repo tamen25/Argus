@@ -50,7 +50,7 @@ function defaultPair(conditions: string[]): [string | null, string | null] {
 
 function Bench({ data }: { data: BenchResponse }) {
   const s = useStyles2(getStyles);
-  const conditions = data.conditions ?? [];
+  const { conditions } = data;
   const [baseline, setBaseline] = useState<string | null>(() => defaultPair(conditions)[0]);
   const [treatment, setTreatment] = useState<string | null>(() => defaultPair(conditions)[1]);
   const [comparison, setComparison] = useState<BenchComparison | null>(null);
@@ -138,7 +138,7 @@ function Bench({ data }: { data: BenchResponse }) {
 
       {shown && <ComparisonView c={shown} />}
 
-      {(data.leaderboard.boards ?? []).map((b) => (
+      {data.leaderboard.boards.map((b) => (
         <BoardView key={b.condition} board={b} />
       ))}
 
@@ -174,13 +174,13 @@ function ComparisonView({ c }: { c: BenchComparison }) {
           </tr>
         </thead>
         <tbody>
-          {(c.agents ?? []).map((a) => (
+          {c.agents.map((a) => (
             <tr key={a.agent}>
               <td>
                 <code>{a.agent}</code>
               </td>
               <td className={s.num}>
-                {a.paired} of {(a.scenarios ?? []).length}
+                {a.paired} of {a.scenarios.length}
               </td>
               <td className={s.num}>{a.paired > 0 ? a.baseline_mean.toFixed(2) : '—'}</td>
               <td className={s.num}>{a.paired > 0 ? a.treatment_mean.toFixed(2) : '—'}</td>
@@ -192,7 +192,7 @@ function ComparisonView({ c }: { c: BenchComparison }) {
         </tbody>
       </table>
 
-      {(c.agents ?? []).map((a) => (
+      {c.agents.map((a) => (
         <div key={a.agent} className={s.agent}>
           <h4 className={s.h}>
             <code>{a.agent}</code>
@@ -207,7 +207,7 @@ function ComparisonView({ c }: { c: BenchComparison }) {
               </tr>
             </thead>
             <tbody>
-              {(a.scenarios ?? []).map((sc) => (
+              {a.scenarios.map((sc) => (
                 <tr key={sc.scenario}>
                   <td>
                     <code>{sc.scenario}</code>
@@ -243,7 +243,7 @@ function BoardView({ board }: { board: BenchBoard }) {
             <th className={s.num}>Mean score</th>
             <th className={s.num}>Scenarios answered</th>
             <th className={s.num}>Runs answered</th>
-            {(board.scenarios ?? []).map((sc) => (
+            {board.scenarios.map((sc) => (
               <th key={sc} className={s.num}>
                 <code>{sc}</code>
               </th>
@@ -251,7 +251,7 @@ function BoardView({ board }: { board: BenchBoard }) {
           </tr>
         </thead>
         <tbody>
-          {(board.rows ?? []).map((r, i) => (
+          {board.rows.map((r, i) => (
             <tr key={r.agent}>
               <td className={s.num}>{i + 1}</td>
               <td>
@@ -264,7 +264,7 @@ function BoardView({ board }: { board: BenchBoard }) {
                 {r.scenarios_answered}/{r.scenarios_run}
               </td>
               <td className={s.num}>{answered(r.diagnoses, r.attempts)}</td>
-              {(r.cells ?? []).map((cell) => (
+              {r.cells.map((cell) => (
                 <td key={cell.scenario} className={s.num}>
                   {cellText(cell)}
                 </td>

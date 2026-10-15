@@ -8,8 +8,7 @@ import { ServiceGraph } from '../../api/types';
 // already sorted nodes and edges.
 export function buildGraphFrames(graph: ServiceGraph): { nodes: DataFrame; edges: DataFrame } {
   const meta = { preferredVisualisationType: 'nodeGraph' as const };
-  const nodes = graph.nodes ?? [];
-  const edges = graph.edges ?? [];
+  const { nodes, edges } = graph;
 
   const nodesFrame: DataFrame = {
     name: 'nodes',

@@ -26,7 +26,7 @@ function Graph({ graph }: { graph: ServiceGraph }) {
   const s = useStyles2(getStyles);
   const [wrapRef, width] = useContainerWidth();
 
-  if ((graph.edges ?? []).length === 0 && (graph.nodes ?? []).length === 0) {
+  if (graph.edges.length === 0 && graph.nodes.length === 0) {
     return (
       <Alert title="No cross-service traces observed" severity="info">
         Edges appear once a completed window contains traces whose parent spans resolve across services. If the fleet is

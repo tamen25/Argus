@@ -1,6 +1,7 @@
 package leaderboard
 
 import (
+	"encoding/json"
 	"flag"
 	"math"
 	"os"
@@ -420,5 +421,32 @@ func TestBuildFlagsDifferentHarnesses(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(lb.Caveats, "\n"), "Agent `agent-x` ran under 2 different harnesses") {
 		t.Errorf("caveats = %q, want the harness difference flagged", lb.Caveats)
+	}
+}
+
+// The plugin maps every list in /api/bench without a null check, so the JSON
+// has [] or leaves a field out, never null: here with an agent that never
+// answered and a scenario only one side ran.
+func TestJSONHasNoNullLists(t *testing.T) {
+	reports := []orchestrator.Report{
+		report("a", "s1", "degraded", 0, noAnswer),
+		report("a", "s2", "remediated", 10, 0.5),
+	}
+	lb, err := Build(reports)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmp, err := Compare(reports, "degraded", "remediated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, v := range map[string]any{"leaderboard": lb, "comparison": cmp} {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), ":null") {
+			t.Errorf("%s JSON has a null: %s", name, b)
+		}
 	}
 }

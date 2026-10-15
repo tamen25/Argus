@@ -150,8 +150,8 @@ fixed; a finding that does not hold is marked so here, with the reason.
 **Cleanups** (C01–C16, the table in the review): Prettier on six plugin files (done, #115),
 comment trimming, stale phase claims (C04, done),
 `errors.Is(err, io.EOF)` in the rules loader (done, #108), template parsing once (done, #110), the
-numeric helper in remediate (done, #110), deterministic float sums (the trend sort, done in #108), typed API responses, the settings form's save state (C11, done, #115),
-pinned release tools (C13, done), narrower gosec exclusions (C14, done), the Playwright config's scaffold comments (C12, done, #122), `stats.Max` in one scan (C15, done, #117), and client ownership.
+numeric helper in remediate (done, #110), deterministic float sums (C08, done: the trend sort in #108, the totals here), typed API responses (C10, done), the settings form's save state (C11, done, #115),
+pinned release tools (C13, done), narrower gosec exclusions (C14, done), the Playwright config's scaffold comments (C12, done, #122), `stats.Max` in one scan (C15, done, #117), and client ownership (C16, done).
 
 ---
 

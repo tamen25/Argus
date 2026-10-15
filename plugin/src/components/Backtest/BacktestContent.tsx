@@ -34,8 +34,7 @@ export function BacktestContent() {
 function Backtest({ data }: { data: BacktestReport }) {
   const s = useStyles2(getStyles);
 
-  const rules = data.rules ?? [];
-  const caveats = data.caveats ?? [];
+  const { rules, caveats } = data;
   const coveragePct = data.window_seconds > 0 ? Math.round((data.coverage_seconds / data.window_seconds) * 100) : 0;
 
   return (

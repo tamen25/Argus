@@ -1,6 +1,8 @@
 package cost
 
 import (
+	"maps"
+	"slices"
 	"sort"
 	"time"
 )
@@ -90,35 +92,47 @@ func Price(p *Pricing, u Usage) Report {
 
 	// Non-nil slices so the JSON encodes [] not null — a nil slice as null
 	// crashes strict consumers that call .length on the array (the plugin).
-	r := Report{Currency: p.Currency, Lines: []Line{}, Storage: []StorageLine{}}
+	r := Report{Currency: p.Currency, Lines: make([]Line, 0, len(agg)), Storage: []StorageLine{}}
 	for _, l := range agg {
 		l.TotalMonthly = l.IngestMonthly + l.ActiveSeriesMonthly
-		r.TotalMonthly += l.TotalMonthly
 		r.Lines = append(r.Lines, *l)
 	}
 	sort.Slice(r.Lines, func(i, j int) bool { return lineLess(r.Lines[i], r.Lines[j]) })
 
-	storAgg := map[string]float64{}
+	// Bytes are summed as integers (exact), and classes priced in name order.
+	storBytes := map[string]int64{}
 	for _, o := range u.Storage {
-		storAgg[o.Class] += float64(o.Bytes)
+		storBytes[o.Class] += o.Bytes
 	}
-	for class, bytes := range storAgg {
-		gb := bytes / bytesPerGB
-		monthly := gb * p.Storage.RateFor(class)
-		r.Storage = append(r.Storage, StorageLine{Class: class, GB: gb, Monthly: monthly})
-		r.TotalMonthly += monthly
+	for _, class := range slices.Sorted(maps.Keys(storBytes)) {
+		gb := float64(storBytes[class]) / bytesPerGB
+		r.Storage = append(r.Storage, StorageLine{Class: class, GB: gb, Monthly: gb * p.Storage.RateFor(class)})
 	}
-	sort.Slice(r.Storage, func(i, j int) bool { return r.Storage[i].Class < r.Storage[j].Class })
 
+	// The total is summed only now, over the sorted lines: float addition is
+	// not associative, so summing in map order could change the last digits
+	// from one run to the next.
+	for _, l := range r.Lines {
+		r.TotalMonthly += l.TotalMonthly
+	}
+	for _, s := range r.Storage {
+		r.TotalMonthly += s.Monthly
+	}
 	return r
 }
 
 func lineLess(a, b Line) bool {
-	if a.Service != b.Service {
-		return a.Service < b.Service
+	return lineKey{a.Service, a.Team, a.Signal}.less(lineKey{b.Service, b.Team, b.Signal})
+}
+
+// less orders lines by service, then signal, then team: the order reports
+// list them in.
+func (k lineKey) less(o lineKey) bool {
+	if k.service != o.service {
+		return k.service < o.service
 	}
-	if a.Signal != b.Signal {
-		return a.Signal < b.Signal
+	if k.signal != o.signal {
+		return k.signal < o.signal
 	}
-	return a.Team < b.Team
+	return k.team < o.team
 }
