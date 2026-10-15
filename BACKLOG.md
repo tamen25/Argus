@@ -143,15 +143,21 @@ fixed; a finding that does not hold is marked so here, with the reason.
 - [x] **R36** — bench provenance does not hash referenced scripts or manifests,
   the tool surface, or the judge config. Done in #121: the scenario hash covers referenced manifests and scripts; reports record the harness (build, injector, tools, normalizers, judge, shell command) and the leaderboard flags differing harnesses; the matrix env digest is the cluster context and version, not a date; the seed is documented as a label.
 - [x] **R37** — reports are written in place (a partial file looks complete),
+<<<<<<< Updated upstream
   and `fileSafe` maps `a/b` and `a_b` to the same patch file. Done in #110: artifacts are written atomically (`internal/atomicfile`), and `fileSafe` adds a hash when it changes a name. The matrix half is done in #121: a cell counts as done only if its report matches the cell's condition, repeats and budget.
 - [ ] **R38** — CI never runs the plugin's Go tests, Playwright, the Postgres
   integration tests, or a formatter check. Partly done in #115: CI runs the plugin backend's Go tests (with -race), the typecheck, a Prettier check, and the Postgres integration tests (testcontainers); `test:ci` no longer passes with no tests; `make test` runs the plugin backend's tests. Still open: a Playwright job against a running Grafana.
+=======
+  and `fileSafe` maps `a/b` and `a_b` to the same patch file. Done in #110: artifacts are written atomically (`internal/atomicfile`), and `fileSafe` adds a hash when it changes a name. Still open: `bench-matrix.sh` validating a report before treating a cell as done (with R35/R36).
+- [x] **R38** — CI never runs the plugin's Go tests, Playwright, the Postgres
+  integration tests, or a formatter check. Partly done in #115: CI runs the plugin backend's Go tests (with -race), the typecheck, a Prettier check, and the Postgres integration tests (testcontainers); `test:ci` no longer passes with no tests; `make test` runs the plugin backend's tests. The Playwright job is added in #122: Grafana with the built plugin (frontend and backend), every page tested against a mocked engine.
+>>>>>>> Stashed changes
 
 **Cleanups** (C01–C16, the table in the review): Prettier on six plugin files (done, #115),
 comment trimming, stale phase claims (the backtest one is done, #106),
 `errors.Is(err, io.EOF)` in the rules loader (done, #108), template parsing once (done, #110), the
 numeric helper in remediate (done, #110), deterministic float sums (the trend sort, done in #108), typed API responses, the settings form's save state (C11, done, #115),
-pinned release tools, narrower gosec exclusions, `stats.Max` in one scan (C15, done, #117), and client ownership.
+pinned release tools, narrower gosec exclusions, the Playwright config's scaffold comments (C12, done, #122), `stats.Max` in one scan (C15, done, #117), and client ownership.
 
 ---
 

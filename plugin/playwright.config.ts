@@ -4,43 +4,28 @@ import { dirname } from 'node:path';
 
 const pluginE2eAuth = `${dirname(require.resolve('@grafana/plugin-e2e'))}/auth`;
 
-/**
- * Read environment variables from file.
- * https://github.com/motdotla/dotenv
- */
-// require('dotenv').config();
-
-/**
- * See https://playwright.dev/docs/test-configuration.
- */
+// End-to-end tests run against a real Grafana with the plugin installed
+// (`npm run server`, or the CI job), with the engine's API mocked per test.
+// GRAFANA_URL points them at another Grafana, e.g. on a port other than 3000.
 export default defineConfig<PluginOptions>({
   testDir: './tests',
-  /* Run tests in files in parallel */
   fullyParallel: true,
-  /* Fail the build on CI if you accidentally left test.only in the source code. */
+  // A stray test.only must not shrink the CI run to one test.
   forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
+  // CI retries twice, keeping a trace of the first retry for a flaky failure.
   retries: process.env.CI ? 2 : 0,
-  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
-  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
+  reporter: process.env.CI ? 'line' : 'html',
   use: {
-    /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: process.env.GRAFANA_URL || 'http://localhost:3000',
-
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
   },
-
-  /* Configure projects for major browsers */
   projects: [
-    // 1. Login to Grafana and store the cookie on disk for use in other tests.
+    // Log in once and keep the session for the tests.
     {
       name: 'auth',
       testDir: pluginE2eAuth,
       testMatch: [/.*\.js/],
     },
-    // 2. Run tests in Google Chrome. Every test will start authenticated as admin user.
     {
       name: 'chromium',
       use: {

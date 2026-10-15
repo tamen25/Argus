@@ -91,6 +91,45 @@ jobs:
       - name: govulncheck (backend runs inside Grafana)
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./pkg/...
 
+  e2e:
+    name: Plugin end-to-end (Playwright against Grafana)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugin
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plugin/package-lock.json
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: plugin/go.mod
+          cache-dependency-path: plugin/go.sum
+      - name: Install dependencies
+        run: npm ci
+      # Grafana loads the plugin only with its backend, named
+      # gpx_<executable>_<os>_<arch>.
+      - name: Build the plugin
+        run: |
+          npm run build
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o dist/gpx_argus_linux_amd64 ./pkg
+      - name: Start Grafana with the plugin
+        run: |
+          docker compose up -d --build
+          for i in $(seq 60); do
+            curl -sf -o /dev/null http://localhost:3000/api/health && exit 0
+            sleep 3
+          done
+          docker compose logs
+          exit 1
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: npx playwright test
+
   integration:
     name: Engine integration (Postgres via testcontainers)
     runs-on: ubuntu-latest
