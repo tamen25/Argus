@@ -63,7 +63,8 @@ report as complete.
 Metric **ingest-byte** attribution is deliberately not inferred from the
 sampled mirror; metrics cost is attributed through active series (Mimir's real
 driver), which the cardinality API reports exactly. Trace-byte attribution
-lands with the storage inventory.
+is not done: Argus has no per-service trace-byte source, so traces are
+priced only through their storage.
 
 The cardinality API lists at most 500 values of the label. The series of any
 values past that are reported as one `(other: N more values)` line, and series

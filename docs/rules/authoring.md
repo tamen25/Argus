@@ -25,7 +25,7 @@ params: {}                    # values exposed to CEL as params.<key>
 confidence:                   # optional backend verification
   poller: mimir_service_presence   # or mimir_label_cardinality
 remediation:
-  template: missing-service-name   # patch template name (informative in Phase 1)
+  template: missing-service-name   # the patch `argus remediate` renders for a finding
 ```
 
 `criteria` evaluates to **true on success** (mirroring the spec's Criteria

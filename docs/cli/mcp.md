@@ -109,6 +109,6 @@ Most clients launch an MCP server as a subprocess. Example client config:
 }
 ```
 
-`get_k8s_topology` is part of the designed surface but ships with the bench
-Kubernetes adapter in a later Phase 4 slice; until then it is simply absent from
-the advertised tools.
+`get_k8s_topology` is offered only with `--kube-topology` (and `--kube-context`
+to pick a context). It lists workload identities with read-only `kubectl get`,
+plus the service graph when `--mimir-url` is set.

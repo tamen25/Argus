@@ -66,7 +66,7 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().IntVar(&maxPairs, "max-tracked-pairs", ingest.DefaultMaxTrackedPairs, "cardinality sketch pair cap per window generation (LRU eviction beyond)")
 	cmd.Flags().DurationVar(&window, "cardinality-window", ingest.DefaultWindow, "tumbling window for cardinality aggregates")
 
-	// Cost showback endpoint (Phase 2): serves /api/cost when --cost-pricing is
+	// Cost showback endpoint: serves /api/cost when --cost-pricing is
 	// set; otherwise /api/cost 404s and the plugin shows "not configured".
 	f := cmd.Flags()
 	f.StringVar(&cost.pricingPath, "cost-pricing", "", "pricing.yaml enabling the /api/cost showback endpoint")
@@ -84,7 +84,7 @@ func newServeCmd() *cobra.Command {
 	f.StringVar(&cost.s3Endpoint, "cost-s3-endpoint", "", "custom S3 endpoint (e.g. MinIO)")
 	f.BoolVar(&cost.s3PathStyle, "cost-s3-path-style", false, "use path-style addressing (MinIO)")
 
-	// Backtest endpoint (Phase 3): serves /api/backtest when --backtest-rules
+	// Backtest endpoint: serves /api/backtest when --backtest-rules
 	// and --backtest-mimir-url are set; otherwise /api/backtest 404s and the
 	// plugin shows "not configured". Replays a rolling window against history.
 	f.StringSliceVar(&bt.rulePaths, "backtest-rules", nil, "alert rule file(s) enabling the /api/backtest endpoint (repeatable)")
@@ -99,7 +99,7 @@ func newServeCmd() *cobra.Command {
 	f.BoolVar(&bt.synthesize, "backtest-synthesize", false, "inline defined recording rules during replay")
 	f.DurationVar(&bt.cacheTTL, "backtest-cache-ttl", 15*time.Minute, "how long /api/backtest caches a report before recomputing")
 
-	// Bench endpoint (Phase 4): serves /api/bench — the leaderboard, and the
+	// Bench endpoint: serves /api/bench — the leaderboard, and the
 	// condition comparison — from a directory of `bench run --format json`
 	// reports. Unconfigured, /api/bench 404s and the plugin says so.
 	f.StringVar(&bn.reportsDir, "bench-reports", "", "directory of bench run reports (JSON) enabling the /api/bench endpoint")

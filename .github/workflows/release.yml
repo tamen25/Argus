@@ -49,7 +49,8 @@ jobs:
       - name: Plugin backend (all platforms)
         uses: magefile/mage-action@v4
         with:
-          version: latest
+          # Pinned: a release must not change because mage did.
+          version: v1.15.0
           args: -v
           workdir: plugin
       - name: Sign plugin (only when a Grafana access policy token is configured)
@@ -58,7 +59,9 @@ jobs:
           GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
         run: |
           if [ -n "$GRAFANA_ACCESS_POLICY_TOKEN" ]; then
-            npx --yes @grafana/sign-plugin@latest
+            # The signer is a locked dev dependency: the release signs with
+            # the version the lockfile names, not whatever is newest today.
+            npm run sign
           else
             echo "::warning::GRAFANA_ACCESS_POLICY_TOKEN not set; the plugin zip is unsigned"
           fi

@@ -31,7 +31,7 @@ func main() {
 		if err := os.RemoveAll(dst); err != nil {
 			fatal(err)
 		}
-		if err := os.MkdirAll(dst, 0o755); err != nil {
+		if err := os.MkdirAll(dst, 0o750); err != nil {
 			fatal(err)
 		}
 		entries, err := os.ReadDir(src)

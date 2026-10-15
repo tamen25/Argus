@@ -180,7 +180,7 @@ func soakContinuity(soakDir string) []string {
 // writeOverrides writes one override YAML file per proposal, named after the
 // rule ID.
 func writeOverrides(outDir string, rs []*rules.Rule, props []calibrate.Proposal) error {
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	if err := os.MkdirAll(outDir, 0o750); err != nil {
 		return err
 	}
 	byID := map[string]*rules.Rule{}

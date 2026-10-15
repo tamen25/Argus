@@ -94,7 +94,7 @@ func runRemediate(ctx context.Context, opts *remediateOptions) (string, error) {
 		return "", fmt.Errorf("no findings for %s%s in %s", opts.findingID, scope, opts.reportPath)
 	}
 
-	if err := os.MkdirAll(opts.outDir, 0o755); err != nil {
+	if err := os.MkdirAll(opts.outDir, 0o750); err != nil {
 		return "", err
 	}
 	written, explained := 0, 0

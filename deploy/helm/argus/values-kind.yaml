@@ -1,4 +1,5 @@
-# Overlay for the kind dev cluster (make dev-up installs argus here in Phase 1+).
+# Overlay for installing the chart on the kind dev cluster. make dev-up does
+# not use it: it applies deploy/kind/argus-engine.yaml.
 image:
   repository: argus-engine
   tag: dev
