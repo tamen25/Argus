@@ -1,8 +1,8 @@
 # Default values for the argus chart.
 
-# No engine image is published yet (BACKLOG B-61). Build engine/Dockerfile,
-# push it to a registry your cluster can pull from, and set repository and
-# tag to it.
+# Every release after v1.0.0 publishes this image for amd64 and arm64, tagged
+# with the chart's appVersion. v1.0.0 has none: for it, build engine/Dockerfile,
+# push it to a registry your cluster can pull from, and set repository and tag.
 image:
   repository: ghcr.io/tamen25/argus
   tag: "" # defaults to .Chart.AppVersion

@@ -63,6 +63,21 @@ everything it receives back to the engine, so it scores itself from the start.
 Every port is bound to localhost, and the engine's API is served without a
 token: it is a local demo. `make demo-down` removes it, data included.
 
+## Install on your own cluster
+
+The Helm chart in `deploy/helm/argus` runs the engine, with Postgres, next to
+an existing LGTM stack:
+
+```bash
+helm install argus deploy/helm/argus -n argus --create-namespace
+```
+
+It pulls `ghcr.io/tamen25/argus` at the chart's `appVersion`. Releases after
+v1.0.0 publish that image (amd64 and arm64); v1.0.0 has none, so for it build
+`engine/Dockerfile` yourself and set `image.repository` and `image.tag`. The
+chart's `values.yaml` documents the API token, the OTLP receiver and the
+NetworkPolicies.
+
 ## Everything else
 
 ```bash

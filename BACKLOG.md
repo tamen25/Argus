@@ -168,10 +168,13 @@ Not defects. Tracked here so nothing is lost between sessions.
 
 - [ ] **B-32** — The LLM judge (the fallback normalizer for shell agents) needs a
   model other than the agent's; the guard refuses the same model id.
-- [ ] **B-61** — No engine image is published: releases ship the CLI and the
+- [x] **B-61** — No engine image is published: releases ship the CLI and the
   plugin, and the Helm chart points at `ghcr.io/tamen25/argus`, which does not
   exist. Add an image build to the release workflow (multi-arch, pushed to
-  GHCR), so `helm install` works without building one. Found with R12.
+  GHCR), so `helm install` works without building one. Found with R12. Done:
+  a release tag pushes `ghcr.io/tamen25/argus:X.Y.Z` for amd64 and arm64 (the
+  Dockerfile cross-compiles, so no step runs under emulation). The first image
+  comes with the next release; v1.0.0 has none.
 - [ ] **B-56** — A conclusive flagship. v1.0's agent scored at the floor under
   both conditions (`docs/bench/flagship-results.md`). Needs an agent that
   diagnoses some of these incidents, more passes (`--pass N`), and likely a
