@@ -11,7 +11,7 @@ import { testIds } from '../testIds';
 // Backtest answers: would these alert rules have fired on real history, how
 // fast, how noisily — scored against the incident registry. Replay is not
 // re-execution, so the fidelity caveats ride on every view and are never
-// hidden (architecture rule 7).
+// hidden.
 export function BacktestContent() {
   const state = useEngineData(fetchBacktest);
   return (

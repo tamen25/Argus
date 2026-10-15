@@ -31,8 +31,7 @@ type OpenAIConfig struct {
 	Timeout time.Duration
 	// MaxTurnTokens caps the output of a single turn (max_tokens). Zero sends no
 	// cap. The run's token budget is only checked between turns, so without it
-	// a model that loops in its reasoning holds one turn open until Timeout:
-	// the first flagship session lost 30 minutes to one such turn.
+	// a model that loops in its reasoning holds one turn open until Timeout.
 	MaxTurnTokens int
 }
 

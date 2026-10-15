@@ -249,25 +249,25 @@ func budgetBrief(b Budget) string {
 // used. The agent then gets exactly one more turn, in which only
 // submit_diagnosis is accepted.
 //
-// It names submit_diagnosis as the one tool still accepted. "No further tool
+// It names submit_diagnosis as the one tool still accepted: "no further tool
 // calls" alone reads as a ban on submit_diagnosis too, since it is a tool, and
-// the first gpt-oss runs answered that wording with a prose diagnosis.
+// models answer that with a diagnosis in prose, which does not count.
 const budgetSpentNotice = "The tool-call budget is now spent: no investigation tool will be executed. " +
 	"Call " + submitToolName + " now (it is still accepted) with the diagnosis your evidence best supports. " +
 	"Do not answer in prose: only a " + submitToolName + " call counts as a diagnosis."
 
 // tokenLowNotice is sent once, when the tokens left would not cover another
 // turn like the last one. Every turn re-sends the whole conversation, so the
-// count grows faster than an agent can track: the fourth real run was cut off at
-// 109404 of 100000 tokens with three tool calls to spare and no warning.
+// count grows faster than an agent can track, and without this a run is cut
+// off with tool calls to spare and no warning (docs/bench/first-real-run.md,
+// run 4).
 const tokenLowNotice = "The token budget is nearly spent (%d of %d used): another round of investigation " +
 	"would exceed it. Call " + submitToolName + " now with the diagnosis your evidence best supports; any other " +
 	"tool call now ends the run without an answer, and so does an answer in prose."
 
-// noToolNotice answers a turn that called no tool, once per run. The first
-// flagship pass lost 7 of 16 runs to models that wrote their diagnosis as prose
-// and stopped; one reminder of the protocol is the common practice, and the
-// run report counts it (Usage.Nudges).
+// noToolNotice answers a turn that called no tool, once per run. Models often
+// write their diagnosis as prose and stop; one reminder of the protocol is the
+// common practice, and the run report counts it (Usage.Nudges).
 const noToolNotice = "You replied without calling a tool. A diagnosis is accepted only through " +
 	submitToolName + ": call it now with the diagnosis your evidence best supports, or call a tool " +
 	"to keep investigating. Another reply without a tool call ends the run without an answer."
@@ -369,10 +369,10 @@ func (s *session) nudge() bool {
 	return true
 }
 
-// maxRetries bounds the 5xx retries in one run. The first gpt-oss runs lost
-// whole runs to one 500 each: the endpoint could not parse a tool call the
-// model wrote, and a model server that crashed on load answered 500 too. A new
-// sample usually succeeds; a server that is really down still fails the run.
+// maxRetries bounds the 5xx retries in one run. An endpoint answers 500 when
+// it cannot parse a tool call the model wrote, or when the model server
+// crashed loading the model; a new sample usually succeeds, and a server that
+// is really down still fails the run.
 const maxRetries = 2
 
 // retry reports whether a call the endpoint failed with err may be repeated:
@@ -393,12 +393,11 @@ const maxSubmitRejections = 2
 // reviewSubmission checks submit_diagnosis arguments the way a tool checks its
 // input, and returns the problem to answer the call with, or "" to accept it.
 //
-// The second flagship pass scored 0 on every answered run: neither model cited
-// evidence in the schema's shape (they wrote {"type":"alert","id":...}), and a
-// scenario requiring evidence scores an uncited diagnosis 0 whatever it says.
-// Runs that named the right workload and category scored the same 0 as wrong
-// ones, so the bench measured citation format, not diagnosis. A tool that
-// says what is wrong with its input is ordinary; the rubric is unchanged.
+// A scenario requiring evidence scores an uncited diagnosis 0 whatever it
+// says, so without this check a citation in the wrong shape scores a right
+// diagnosis the same as a wrong one, and the bench measures citation format
+// (docs/bench/flagship-results.md). A tool that says what is wrong with its
+// input is ordinary; the rubric is unchanged.
 //
 // Checked: the arguments parse, the required fields are present, the category
 // is one offered, and at least one citation is well-formed. Never checked:
