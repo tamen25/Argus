@@ -17,7 +17,7 @@ import { SpendContent } from '../Spend/SpendContent';
 import { BacktestContent } from '../Backtest/BacktestContent';
 import { BenchContent } from '../Bench/BenchContent';
 
-// Scenes app shell (master plan §8: Scenes for all data-bound pages);
+// Scenes app shell: Scenes handles routing and the page chrome, while the
 // page content stays plain @grafana/ui React rendered via SceneReactObject.
 function reactScene(component: React.ComponentType) {
   return () =>

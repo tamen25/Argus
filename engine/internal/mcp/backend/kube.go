@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/clip"
 )
 
 // workloadKinds are what a root cause is named as. Pods are left out: they
@@ -182,7 +183,7 @@ func (k *KubeTopology) kubectl(ctx context.Context, args ...string) ([]byte, err
 	stderr := &bounded.Buffer{Limit: bounded.ProcessErrors}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("kubectl %s: %w: %s", strings.Join(args, " "), err, truncate(stderr.Bytes(), 512))
+		return nil, fmt.Errorf("kubectl %s: %w: %s", strings.Join(args, " "), err, clip.Head(stderr.String(), 512))
 	}
 	if stdout.Overflowed() {
 		return nil, fmt.Errorf("kubectl %s: output %w of %d bytes", strings.Join(args, " "), bounded.ErrTooLarge, bounded.ProcessOutput)

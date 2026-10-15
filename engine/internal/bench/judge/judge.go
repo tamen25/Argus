@@ -24,6 +24,7 @@ import (
 
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/clip"
 	"github.com/tamen25/Argus/engine/internal/httpclient"
 )
 
@@ -102,7 +103,7 @@ func (j *LLMJudge) Normalize(ctx context.Context, raw []byte, scenario string) (
 	}
 	d, err := bench.ParseDiagnosis([]byte(extractJSON(content)))
 	if err != nil {
-		return bench.Diagnosis{}, fmt.Errorf("llm-judge: %w (reply: %s)", err, truncate(content, 256))
+		return bench.Diagnosis{}, fmt.Errorf("llm-judge: %w (reply: %s)", err, clip.Head(content, 256))
 	}
 	d.Scenario = scenario
 	if err := d.Validate(); err != nil {
@@ -132,13 +133,6 @@ func extractJSON(s string) string {
 		return s[start : end+1]
 	}
 	return s
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }
 
 func (j *LLMJudge) chat(ctx context.Context, prompt string) (string, error) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/clip"
 )
 
 // NoopInjector performs no injection. Use it to score an agent against an
@@ -107,7 +108,7 @@ func (s ScriptInjector) run(ctx context.Context, sc bench.Scenario, script strin
 	stderr := &bounded.Buffer{Limit: bounded.ProcessErrors}
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("script %s: %w (stderr: %s)", script, err, truncateStr(stderr.String(), 512))
+		return fmt.Errorf("script %s: %w (stderr: %s)", script, err, clip.Head(stderr.String(), 512))
 	}
 	return nil
 }
@@ -193,10 +194,3 @@ type AlwaysReadyProbe struct{}
 
 // Reached always returns true.
 func (AlwaysReadyProbe) Reached(context.Context, bench.Scenario) (bool, error) { return true, nil }
-
-func truncateStr(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}

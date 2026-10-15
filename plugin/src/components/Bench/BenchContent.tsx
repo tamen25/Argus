@@ -17,7 +17,7 @@ const DEFAULT_TREATMENT = 'remediated';
 // does fixing the telemetry change that? The leaderboard is agents ×
 // scenarios per telemetry condition; the comparison is the change between two
 // conditions. Every number comes from `argus bench run` reports by plain
-// arithmetic, and the caveats ride on every view (architecture rule 7).
+// arithmetic, and the caveats ride on every view.
 export function BenchContent() {
   const state = useEngineData(fetchLeaderboard);
   return (

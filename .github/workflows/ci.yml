@@ -72,6 +72,11 @@ jobs:
           cache-dependency-path: plugin/go.sum
       - name: Install dependencies
         run: npm ci
+      # Fails on a critical advisory anywhere in the tree. The high and
+      # moderate ones known today sit in packages Grafana supplies at runtime
+      # or in dev tooling; BACKLOG B-21 lists them and what clearing them needs.
+      - name: npm audit (fails on critical)
+        run: npm audit --audit-level=critical
       - name: Lint
         run: npm run lint
       - name: Typecheck

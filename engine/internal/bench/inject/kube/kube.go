@@ -19,6 +19,7 @@ import (
 
 	"github.com/tamen25/Argus/engine/internal/bench"
 	"github.com/tamen25/Argus/engine/internal/bounded"
+	"github.com/tamen25/Argus/engine/internal/clip"
 )
 
 // Injector applies and removes a scenario's manifest-based faults.
@@ -196,14 +197,7 @@ func (i *Injector) runIn(ctx context.Context, ns string, args ...string) error {
 	stderr := &bounded.Buffer{Limit: bounded.ProcessErrors}
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s %v: %w (stderr: %s)", bin, full, err, truncate(stderr.String(), 512))
+		return fmt.Errorf("%s %v: %w (stderr: %s)", bin, full, err, clip.Head(stderr.String(), 512))
 	}
 	return nil
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }

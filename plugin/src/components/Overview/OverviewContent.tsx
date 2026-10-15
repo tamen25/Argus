@@ -11,7 +11,7 @@ import { ROUTES } from '../../constants';
 import { testIds } from '../testIds';
 
 // Overview answers one question: how healthy is the fleet's
-// instrumentation right now? Numbers first, adjectives never (§8).
+// instrumentation right now? Numbers first, adjectives never.
 export function OverviewContent() {
   const state = useEngineData(fetchReport);
   return (
