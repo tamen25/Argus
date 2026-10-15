@@ -122,7 +122,7 @@ fixed; a finding that does not hold is marked so here, with the reason.
 - [x] **R20** — the week-over-week trend compares against the latest earlier
   snapshot, not one a week old. Done in #120: the trend compares against the latest snapshot at least a week old and records `baseline_at` (shown on the Spend page); no week-old or same-currency baseline gives no trend, with a note. The team tie-break was #108.
 - [x] **R21** — recording-rule synthesis at the root, and cycles. Done in #106
-  (B-60). Still open from R21: recording-rule output labels and `offset`/`@`.
+  (B-60). The rest is done: an inlined rule keeps its static labels (label_replace), and an `offset`/`@` on a reference moves into the definition's selectors; the cases where that would change the meaning are refused.
 - [x] **R22** — `backtest diff` compares total coverage only: different windows
   with the same covered duration are accepted, and zero coverage passes. Done in #119: `backtest diff` maps presence once and replays both sets over those segments; `DiffReports` refuses different windows, steps or segments, and zero coverage; each set's caveats are carried into the diff.
 - [x] **R23** — the presence probe (`target_info`) shows backend availability,

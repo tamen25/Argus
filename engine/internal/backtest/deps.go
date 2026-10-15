@@ -62,7 +62,7 @@ func Dependencies(rs RuleSet) map[string][]Dependency {
 
 // classify: defined in the loaded set beats the naming heuristic; a colon in
 // the name is the Prometheus recording-rule convention (level:metric:ops).
-func classify(name string, defined map[string]string) DepKind {
+func classify(name string, defined map[string]Rule) DepKind {
 	if _, ok := defined[name]; ok {
 		return DepDefinedRecording
 	}

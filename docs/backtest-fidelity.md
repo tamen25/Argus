@@ -40,6 +40,20 @@ ruler evaluated it on its own `interval` and *stored* the result — staleness,
 evaluation jitter, and subquery-vs-stored semantics can all diverge. Findings
 land here.
 
+What inlining keeps, and what it refuses:
+
+- **Labels.** The rule's static `labels:` are set on the inlined result with
+  `label_replace`, so an alert built on it carries them as the recorded series
+  did.
+- **`offset` and `@`.** On a reference they move to every selector and
+  subquery the definition reads (offsets add up), which is what evaluating the
+  definition at that time means. A subquery is shifted as a whole.
+- **Refused.** Label matchers on a reference (`rule{service="x"}`); a
+  reference inside a range selector (`rule[5m]`); `@` on a reference whose
+  definition already uses `@`; and `offset` or `@` on one whose definition
+  calls `time()`, which would report the evaluation time instead. Each
+  refusal names the rule; replay never guesses.
+
 ### (b) `for:` clauses and staleness under replay
 
 A `for: 5m` alert fires only after its condition held for 5 continuous

@@ -115,12 +115,12 @@ func fromRulefmt(r rulefmt.Rule) Rule {
 }
 
 // recordingRules maps each recording rule in the set to its expression.
-func (rs RuleSet) recordingRules() map[string]string {
-	defined := map[string]string{}
+func (rs RuleSet) recordingRules() map[string]Rule {
+	defined := map[string]Rule{}
 	for _, g := range rs.Groups {
 		for _, r := range g.Rules {
 			if !r.Alert {
-				defined[r.Name] = r.Expr
+				defined[r.Name] = r
 			}
 		}
 	}
