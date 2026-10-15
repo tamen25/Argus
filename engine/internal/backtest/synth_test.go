@@ -152,3 +152,65 @@ func TestSynthesizeRefusesRangeSelector(t *testing.T) {
 		t.Errorf("err = %v, want the range selector named", err)
 	}
 }
+
+// A recording rule's static labels are on the series it records, so an alert
+// built on it carries them. Inlined, the expression gets them back through
+// label_replace.
+func TestSynthesizeKeepsRecordingLabels(t *testing.T) {
+	rs := backtest.RuleSet{Groups: []backtest.Group{{Name: "g", Rules: []backtest.Rule{{
+		Name: "job:errors:rate5m", Expr: `sum by (job) (rate(errors_total[5m]))`,
+		Labels: map[string]string{"team": "payments", "tier": "1"},
+	}}}}}
+	got, _, err := backtest.Synthesize(rs, `job:errors:rate5m > 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"team", "payments", "", ""`, `"tier", "1", "", ""`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("synthesized = %s, want label_replace setting %s", got, want)
+		}
+	}
+}
+
+// An offset or @ on a reference means "the recorded value at that time": it
+// moves to every selector the definition reads, adding to an offset already
+// there. A subquery is shifted as a whole, not its inner selectors.
+func TestSynthesizeMovesOffsetAndAtIntoTheDefinition(t *testing.T) {
+	rs := recordingRules(
+		[2]string{"job:errors:rate5m", `sum by (job) (rate(errors_total[5m]))`},
+		[2]string{"job:late:rate5m", `rate(late_total[5m] offset 30m)`},
+		[2]string{"job:peak:max", `max_over_time(rate(req_total[1m])[10m:1m])`},
+	)
+	for _, tc := range []struct{ expr, want, notWant string }{
+		{`job:errors:rate5m offset 1h > 1`, `errors_total[5m] offset 1h`, ""},
+		{`job:late:rate5m offset 1h`, `late_total[5m] offset 1h30m`, ""},
+		{`job:errors:rate5m @ 1700000000`, `errors_total[5m] @ 1700000000.000`, ""},
+		{`job:peak:max offset 1h`, `[10m:1m] offset 1h`, `req_total[1m] offset`},
+	} {
+		got, _, err := backtest.Synthesize(rs, tc.expr)
+		if err != nil {
+			t.Errorf("%s: %v", tc.expr, err)
+			continue
+		}
+		if !strings.Contains(got, tc.want) || (tc.notWant != "" && strings.Contains(got, tc.notWant)) {
+			t.Errorf("%s synthesized to %s, want %q", tc.expr, got, tc.want)
+		}
+	}
+}
+
+// Where moving the time would change the meaning, synthesis refuses.
+func TestSynthesizeRefusesTimeItCannotMove(t *testing.T) {
+	rs := recordingRules(
+		[2]string{"job:pinned", `errors_total @ 1600000000`},
+		[2]string{"job:age", `time() - last_seen_seconds`},
+	)
+	for _, expr := range []string{`job:pinned @ 1700000000`, `job:age offset 1h`} {
+		if _, _, err := backtest.Synthesize(rs, expr); err == nil {
+			t.Errorf("%s: synthesized, want a refusal", expr)
+		}
+	}
+	// Without an offset or @, time() in a definition is fine.
+	if _, _, err := backtest.Synthesize(rs, `job:age > 300`); err != nil {
+		t.Errorf("job:age > 300: %v", err)
+	}
+}
