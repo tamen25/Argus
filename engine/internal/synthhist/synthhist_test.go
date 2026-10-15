@@ -132,3 +132,25 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		t.Errorf("a missing step: err %v, step %s; want the 30s default", err, spec.Step)
 	}
 }
+
+// Incidents that start together are listed by ID, so the registry is the same
+// file on every run whatever order the spec gives them in.
+func TestRegistryOrdersTiesByID(t *testing.T) {
+	spec := testSpec(t)
+	start := spec.From.Add(2 * time.Hour)
+	spec.Incidents = []synthhist.SynthIncident{
+		{ID: "synth-b", Service: "cart", Start: start, End: start.Add(10 * time.Minute), ErrorRatio: 0.2},
+		{ID: "synth-a", Service: "checkout", Start: start, End: start.Add(10 * time.Minute), ErrorRatio: 0.2},
+	}
+	dir := t.TempDir()
+	if err := synthhist.Generate(context.Background(), spec, dir); err != nil {
+		t.Fatal(err)
+	}
+	reg, err := backtest.LoadIncidents(filepath.Join(dir, "incidents.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reg.Incidents) != 2 || reg.Incidents[0].ID != "synth-a" || reg.Incidents[1].ID != "synth-b" {
+		t.Errorf("incidents = %+v, want synth-a then synth-b", reg.Incidents)
+	}
+}

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -114,5 +116,30 @@ func TestMemoryVerdictShortRunFallsBack(t *testing.T) {
 	writeMemoryVerdict(&b, s, 2*time.Hour)
 	if !strings.Contains(b.String(), "shorter than the warmup") {
 		t.Errorf("short-run fallback must be disclosed: %s", b.String())
+	}
+}
+
+// A report cut off mid-write is left out of the rule ratios, and the analysis
+// says so: the ratios then cover fewer hours than the run did.
+func TestAnalyzeDisclosesUnreadableReports(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"metrics.csv", "aggregates-002.json", "report-002.json"} {
+		data, err := os.ReadFile(filepath.Join("testdata/soakdir", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "report-003.json"), []byte(`{"snapshot":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := analyze(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "1 of 2 reports could not be read and are left out: report-003.json") {
+		t.Errorf("no disclosure of the unreadable report:\n%s", out)
 	}
 }

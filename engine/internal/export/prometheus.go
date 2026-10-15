@@ -4,36 +4,69 @@
 package export
 
 import (
+	"sync/atomic"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/tamen25/Argus/engine/internal/rules"
 )
 
-// Prometheus publishes snapshot-derived gauges.
+// Prometheus publishes the latest snapshot's scores as gauges. It is a
+// collector over one snapshot pointer: Update swaps the pointer, and a scrape
+// builds every series from the snapshot it loads. Resetting gauge vectors and
+// filling them again would let a scrape that lands in between see some
+// services or none, and an alert on an absent series would fire for nothing.
 type Prometheus struct {
-	score    *prometheus.GaugeVec
-	fleet    prometheus.Gauge
-	findings *prometheus.GaugeVec
+	snap     atomic.Pointer[rules.Snapshot]
+	score    *prometheus.Desc
+	fleet    *prometheus.Desc
+	findings *prometheus.Desc
 }
 
 // NewPrometheus registers the Argus gauges on reg.
 func NewPrometheus(reg prometheus.Registerer) *Prometheus {
 	e := &Prometheus{
-		score: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "argus_instrumentation_score",
-			Help: "Instrumentation Score (0-100) per service, spec rules only.",
-		}, []string{"service"}),
-		fleet: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "argus_instrumentation_score_fleet",
-			Help: "Mean Instrumentation Score across services.",
-		}),
-		findings: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "argus_findings",
-			Help: "Open findings per service and impact.",
-		}, []string{"service", "impact"}),
+		score: prometheus.NewDesc("argus_instrumentation_score",
+			"Instrumentation Score (0-100) per service, spec rules only.", []string{"service"}, nil),
+		fleet: prometheus.NewDesc("argus_instrumentation_score_fleet",
+			"Mean Instrumentation Score across services.", nil, nil),
+		findings: prometheus.NewDesc("argus_findings",
+			"Open findings per service and impact.", []string{"service", "impact"}, nil),
 	}
-	reg.MustRegister(e.score, e.fleet, e.findings)
+	reg.MustRegister(e)
 	return e
+}
+
+// Update makes snap the state the next scrape reports. Services missing from
+// it drop out. The snapshot must not be changed afterwards.
+func (e *Prometheus) Update(snap *rules.Snapshot) { e.snap.Store(snap) }
+
+// Describe implements prometheus.Collector.
+func (e *Prometheus) Describe(ch chan<- *prometheus.Desc) {
+	ch <- e.score
+	ch <- e.fleet
+	ch <- e.findings
+}
+
+// Collect implements prometheus.Collector. Before the first Update, and for a
+// fleet with no services, there is no fleet series: an empty fleet's score is
+// a vacuous 100, which a dashboard would show as perfect instrumentation.
+func (e *Prometheus) Collect(ch chan<- prometheus.Metric) {
+	snap := e.snap.Load()
+	if snap == nil || len(snap.Services) == 0 {
+		return
+	}
+	ch <- prometheus.MustNewConstMetric(e.fleet, prometheus.GaugeValue, snap.FleetScore)
+	for _, s := range snap.Services {
+		ch <- prometheus.MustNewConstMetric(e.score, prometheus.GaugeValue, s.SpecScore, s.ServiceName)
+		byImpact := map[rules.Impact]int{}
+		for _, f := range s.Findings {
+			byImpact[f.Impact]++
+		}
+		for impact, n := range byImpact {
+			ch <- prometheus.MustNewConstMetric(e.findings, prometheus.GaugeValue, float64(n), s.ServiceName, string(impact))
+		}
+	}
 }
 
 // RegisterAggregateStats exposes the aggregate store's bounds as
@@ -75,17 +108,4 @@ func (c itemStatsCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(c.desc, prometheus.CounterValue, float64(tr), "traces")
 	ch <- prometheus.MustNewConstMetric(c.desc, prometheus.CounterValue, float64(me), "metrics")
 	ch <- prometheus.MustNewConstMetric(c.desc, prometheus.CounterValue, float64(lo), "logs")
-}
-
-// Update replaces all series with the snapshot's state (stale services drop).
-func (e *Prometheus) Update(snap *rules.Snapshot) {
-	e.score.Reset()
-	e.findings.Reset()
-	e.fleet.Set(snap.FleetScore)
-	for _, s := range snap.Services {
-		e.score.WithLabelValues(s.ServiceName).Set(s.SpecScore)
-		for _, f := range s.Findings {
-			e.findings.WithLabelValues(s.ServiceName, string(f.Impact)).Inc()
-		}
-	}
 }

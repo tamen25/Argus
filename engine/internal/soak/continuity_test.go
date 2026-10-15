@@ -80,3 +80,31 @@ func TestContinuityTooFewSamples(t *testing.T) {
 		t.Errorf("single sample must not be segmented: %+v", c)
 	}
 }
+
+// A blank counter is one the engine did not report that minute: 0. Anything
+// else that does not parse is an error naming the line, since reading it as 0
+// would invent an engine restart, and a bad time would invent a gap.
+func TestReadMetricsRejectsWhatItCannotRead(t *testing.T) {
+	blank := writeCSV(t, "2026-07-15T08:00:00Z,1,1,1,0,,,,1\n")
+	s, err := ReadMetrics(blank)
+	if err != nil || s[0].ItemsTotal != 0 {
+		t.Errorf("blank counters: %+v, %v; want 0 and no error", s, err)
+	}
+
+	for name, rows := range map[string]string{
+		"a value that is not a number": "2026-07-15T08:00:00Z,1,1,1,0,lots,0,0,1\n",
+		"a bad timestamp":              "15/07/2026 08:00,1,1,1,0,1,1,1,1\n",
+	} {
+		if _, err := ReadMetrics(writeCSV(t, rows)); err == nil || !strings.Contains(err.Error(), "line 2") {
+			t.Errorf("%s: err = %v, want an error naming line 2", name, err)
+		}
+	}
+
+	p := filepath.Join(t.TempDir(), "metrics.csv")
+	if err := os.WriteFile(p, []byte("ts,rss_bytes\n2026-07-15T08:00:00Z,1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadMetrics(p); err == nil || !strings.Contains(err.Error(), "pairs_tracked") {
+		t.Errorf("missing columns: err = %v, want one naming the column", err)
+	}
+}

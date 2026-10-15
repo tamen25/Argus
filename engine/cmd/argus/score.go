@@ -73,7 +73,7 @@ per-service Instrumentation Scores. Exit code 2 when --fail-below-score trips
 	f.StringVar(&opts.output, "output", "markdown", "report format: markdown|json")
 	f.StringVar(&opts.outPath, "out", "", "write report to file instead of stdout")
 	f.Float64Var(&opts.failBelow, "fail-below-score", 0, "exit non-zero when fleet score is below this value (CI gate)")
-	f.StringVar(&opts.storeDSN, "store-dsn", "", "Postgres DSN; when set, snapshot and findings are persisted")
+	f.StringVar(&opts.storeDSN, "store-dsn", "", "Postgres URL (postgres://...); when set, snapshot and findings are persisted")
 	f.StringVar(&opts.specVersionFile, "spec-version-file", ".instrumentation-score-version", "file holding the pinned spec version")
 	f.StringVar(&opts.pricingPath, "pricing", "", "pricing.yaml: price each finding whose rule declares a cost block (estimated_monthly_cost)")
 	return cmd

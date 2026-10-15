@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tamen25/Argus/engine/internal/markdown"
 	"github.com/tamen25/Argus/engine/internal/rules"
 )
 
@@ -51,8 +52,8 @@ func findingCounts(r *Report) map[string]int {
 	return counts
 }
 
-// Markdown renders the report for humans (and the showback-style artifacts
-// later phases build on).
+// Markdown renders the report for humans. Service names come from telemetry,
+// so the table escapes them (markdown.Cell).
 func Markdown(r *Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Argus Instrumentation Score Report\n\n")
@@ -75,7 +76,7 @@ func Markdown(r *Report) string {
 		if s.ExtensionScore != nil {
 			ext = fmt.Sprintf("%.1f", *s.ExtensionScore)
 		}
-		fmt.Fprintf(&b, "| %s | %.1f | %s | %s | %d |\n", s.ServiceName, s.SpecScore, s.Category, ext, len(s.Findings))
+		fmt.Fprintf(&b, "| %s | %.1f | %s | %s | %d |\n", markdown.Cell(s.ServiceName), s.SpecScore, s.Category, ext, len(s.Findings))
 	}
 
 	// Findings grouped by rule: one noisy rule reads as one section with a

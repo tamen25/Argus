@@ -1,6 +1,7 @@
 package export
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -59,8 +60,63 @@ argus_aggregate_pairs_tracked 7
 	e.Update(&rules.Snapshot{FleetScore: 100, Services: []rules.ServiceReport{
 		{ServiceName: "checkout", SpecScore: 100, Category: "Excellent"},
 	}})
-	if n := testutil.CollectAndCount(e.score); n != 1 {
+	if n := testutil.CollectAndCount(e, "argus_instrumentation_score"); n != 1 {
 		t.Errorf("score series = %d, want 1 after stale reset", n)
+	}
+}
+
+// An empty fleet scores a vacuous 100. Exported, a dashboard would show it as
+// perfect instrumentation, so no score series is reported, as before the
+// first snapshot.
+func TestEmptyFleetExportsNoScore(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	e := NewPrometheus(reg)
+	if n := testutil.CollectAndCount(e); n != 0 {
+		t.Errorf("%d series before the first snapshot, want 0", n)
+	}
+	e.Update(&rules.Snapshot{FleetScore: 100, Services: []rules.ServiceReport{}})
+	if n := testutil.CollectAndCount(e); n != 0 {
+		t.Errorf("%d series for an empty fleet, want 0", n)
+	}
+}
+
+// Updates and scrapes run concurrently without a data race (CI runs this with
+// -race), and each scrape reports the services of one snapshot. That holds by
+// construction, since a scrape loads the snapshot pointer once; a reset and
+// refill, as before, left a window this test can hit only by chance.
+func TestScrapeSeesAWholeSnapshot(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	e := NewPrometheus(reg)
+	fleet := func(n int) *rules.Snapshot {
+		s := &rules.Snapshot{FleetScore: 50}
+		for i := range n {
+			s.Services = append(s.Services, rules.ServiceReport{ServiceName: fmt.Sprintf("svc-%d", i), SpecScore: 50})
+		}
+		return s
+	}
+	small, large := fleet(3), fleet(40)
+	e.Update(small)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range 500 {
+			if i%2 == 0 {
+				e.Update(large)
+			} else {
+				e.Update(small)
+			}
+		}
+	}()
+	for {
+		select {
+		case <-done:
+			return
+		default:
+		}
+		if n := testutil.CollectAndCount(e, "argus_instrumentation_score"); n != 3 && n != 40 {
+			t.Fatalf("a scrape saw %d services; a whole snapshot has 3 or 40", n)
+		}
 	}
 }
 

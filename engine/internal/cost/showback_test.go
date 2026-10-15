@@ -79,3 +79,15 @@ func TestShowbackJSON(t *testing.T) {
 		t.Errorf("round-trip = %+v", back)
 	}
 }
+
+// Service and team come from telemetry labels; in a table each stays inside
+// its own cell.
+func TestShowbackMarkdownEscapesCells(t *testing.T) {
+	s := sampleShowback()
+	s.Report.Lines[0].Service = "a|b"
+	s.Report.Lines[0].Team = "x\ny"
+	md := cost.RenderMarkdown(s)
+	if !strings.Contains(md, `| a\|b |`) || !strings.Contains(md, "| x y |") {
+		t.Errorf("service or team not escaped:\n%s", md)
+	}
+}

@@ -151,3 +151,28 @@ func TestMarkdownGolden(t *testing.T) {
 		t.Errorf("markdown drifted from golden\n--- got ---\n%s", md)
 	}
 }
+
+// A service name comes from telemetry and can hold any text. In the services
+// table it stays inside its cell: a "|" or a line break would shift every
+// later column.
+func TestMarkdownServiceNameStaysInItsCell(t *testing.T) {
+	r := sampleReport()
+	r.Snapshot.Services[0].ServiceName = "evil|name\nnext"
+	md := Markdown(r)
+	row := ""
+	for line := range strings.Lines(md) {
+		if strings.HasPrefix(line, "| evil") {
+			row = line
+		}
+	}
+	if row == "" {
+		t.Fatalf("no row for the service:\n%s", md)
+	}
+	if !strings.HasPrefix(row, `| evil\|name next |`) {
+		t.Errorf("row = %q, want the name escaped in one cell", row)
+	}
+	// Six unescaped pipes: five columns.
+	if n := strings.Count(row, "|") - strings.Count(row, `\|`); n != 6 {
+		t.Errorf("row has %d cell separators, want 6: %q", n, row)
+	}
+}

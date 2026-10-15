@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/tamen25/Argus/engine/internal/markdown"
 )
 
 // Showback is the full cost report: attribution, storage, lifecycle savings,
@@ -43,14 +45,15 @@ func RenderMarkdown(s Showback) string {
 	fmt.Fprintf(&b, "| Service | Signal | Team | Ingest | Active series | Total /mo |\n|---|---|---|---:|---:|---:|\n")
 	for _, l := range s.Report.Lines {
 		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n",
-			l.Service, l.Signal, dash(l.Team), money(l.IngestMonthly), money(l.ActiveSeriesMonthly), money(l.TotalMonthly))
+			markdown.Cell(l.Service), l.Signal, markdown.Cell(dash(l.Team)),
+			money(l.IngestMonthly), money(l.ActiveSeriesMonthly), money(l.TotalMonthly))
 	}
 
 	if len(s.Report.Storage) > 0 {
 		fmt.Fprintf(&b, "\n## Storage by class\n\n")
 		fmt.Fprintf(&b, "| Class | GB | /mo |\n|---|---:|---:|\n")
 		for _, st := range s.Report.Storage {
-			fmt.Fprintf(&b, "| %s | %.1f | %s |\n", st.Class, st.GB, money(st.Monthly))
+			fmt.Fprintf(&b, "| %s | %.1f | %s |\n", markdown.Cell(st.Class), st.GB, money(st.Monthly))
 		}
 	}
 
@@ -73,7 +76,7 @@ func RenderMarkdown(s Showback) string {
 				pct = fmt.Sprintf("%+.0f%%", l.PercentDelta)
 			}
 			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n",
-				l.Service, l.Signal, money(l.Previous), money(l.Current), signedMoney(l.Delta), pct)
+				markdown.Cell(l.Service), l.Signal, money(l.Previous), money(l.Current), signedMoney(l.Delta), pct)
 		}
 	}
 

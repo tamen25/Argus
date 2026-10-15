@@ -6,6 +6,7 @@ package soak
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,7 +22,16 @@ type Sample struct {
 	RSS, Pairs, Evictions, ItemsTotal float64
 }
 
+// metricsColumns are the metrics.csv columns ReadMetrics needs. soak.sh
+// writes more; the rest are ignored.
+var metricsColumns = []string{"ts", "rss_bytes", "pairs_tracked", "evictions_total",
+	"items_traces", "items_metrics", "items_logs"}
+
 // ReadMetrics parses a soak metrics.csv by header name (column order free).
+// An empty field is 0: soak.sh leaves a counter blank when the engine did not
+// report it that minute. A missing column, a value that is not a number, or a
+// bad timestamp is an error, since reading it as 0 would invent a restart or
+// a gap.
 func ReadMetrics(path string) ([]Sample, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -31,33 +41,54 @@ func ReadMetrics(path string) ([]Sample, error) {
 	r := csv.NewReader(f)
 	header, err := r.Read()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	col := map[string]int{}
 	for i, h := range header {
 		col[h] = i
 	}
+	for _, name := range metricsColumns {
+		if _, ok := col[name]; !ok {
+			return nil, fmt.Errorf("%s: no %q column", path, name)
+		}
+	}
+
 	var out []Sample
-	for {
+	for line := 2; ; line++ {
 		rec, err := r.Read()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", path, err)
 		}
+		var bad error
 		num := func(name string) float64 {
-			v, _ := strconv.ParseFloat(rec[col[name]], 64)
+			field := rec[col[name]]
+			if field == "" {
+				return 0
+			}
+			v, err := strconv.ParseFloat(field, 64)
+			if err != nil && bad == nil {
+				bad = fmt.Errorf("%s line %d: %s %q is not a number", path, line, name, field)
+			}
 			return v
 		}
-		ts, _ := time.Parse(time.RFC3339, rec[col["ts"]])
-		out = append(out, Sample{
+		ts, err := time.Parse(time.RFC3339, rec[col["ts"]])
+		if err != nil {
+			return nil, fmt.Errorf("%s line %d: ts %q is not an RFC 3339 time", path, line, rec[col["ts"]])
+		}
+		sample := Sample{
 			TS:         ts,
 			RSS:        num("rss_bytes"),
 			Pairs:      num("pairs_tracked"),
 			Evictions:  num("evictions_total"),
 			ItemsTotal: num("items_traces") + num("items_metrics") + num("items_logs"),
-		})
+		}
+		if bad != nil {
+			return nil, bad
+		}
+		out = append(out, sample)
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("%s: no samples", path)
