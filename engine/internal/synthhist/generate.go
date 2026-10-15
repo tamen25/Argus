@@ -76,7 +76,8 @@ func Generate(ctx context.Context, spec Spec, dir string) error {
 			}
 			samples += 2
 		}
-		// flush per day of samples to bound memory
+		// Commit and cut blocks every 500k samples, so the writer's in-memory
+		// head stays bounded however long the history is.
 		if samples > 500_000 {
 			if err := app.Commit(); err != nil {
 				return err
@@ -115,12 +116,19 @@ func writeRegistry(spec Spec, path string) error {
 		Incidents []inc `yaml:"incidents"`
 	}{Version: 1}
 
+	// By start, then ID: two incidents starting together are listed in the
+	// same order on every run.
 	sorted := append([]SynthIncident(nil), spec.Incidents...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Start.Before(sorted[j].Start) })
+	sort.Slice(sorted, func(i, j int) bool {
+		if !sorted[i].Start.Equal(sorted[j].Start) {
+			return sorted[i].Start.Before(sorted[j].Start)
+		}
+		return sorted[i].ID < sorted[j].ID
+	})
 	for _, i := range sorted {
 		reg.Incidents = append(reg.Incidents, inc{
 			ID:       i.ID,
-			Title:    fmt.Sprintf("synthetic: %s error ratio %.0f%% on %s", i.Service, i.ErrorRatio*100, i.Service),
+			Title:    fmt.Sprintf("synthetic: %s error ratio %.0f%%", i.Service, i.ErrorRatio*100),
 			Start:    i.Start.UTC().Format(time.RFC3339),
 			End:      i.End.UTC().Format(time.RFC3339),
 			Services: []string{i.Service},
