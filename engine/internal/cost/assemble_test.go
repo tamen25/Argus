@@ -111,3 +111,75 @@ func TestAssembleWithoutStore(t *testing.T) {
 		t.Errorf("total = %v, want 8.00", sb.Report.TotalMonthly)
 	}
 }
+
+// timedStore holds snapshots with their times and answers LastCostSnapshot
+// the way the Postgres store does: the latest one strictly before the time.
+type timedStore struct {
+	snaps []timedSnap
+}
+
+type timedSnap struct {
+	rep cost.Report
+	at  time.Time
+}
+
+func (s *timedStore) SaveCostSnapshot(_ context.Context, r cost.Report, at time.Time) (int64, error) {
+	s.snaps = append(s.snaps, timedSnap{r, at})
+	return int64(len(s.snaps)), nil
+}
+
+func (s *timedStore) LastCostSnapshot(_ context.Context, before time.Time) (*cost.Report, time.Time, error) {
+	var best *timedSnap
+	for i := range s.snaps {
+		if sn := &s.snaps[i]; sn.at.Before(before) && (best == nil || sn.at.After(best.at)) {
+			best = sn
+		}
+	}
+	if best == nil {
+		return nil, time.Time{}, nil
+	}
+	return &best.rep, best.at, nil
+}
+
+// R20: the trend compares against the latest snapshot at least a week old,
+// not the latest of any age, and says which.
+func TestAssembleTrendsAgainstAWeekOldSnapshot(t *testing.T) {
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	p := &cost.Pricing{Schema: cost.PricingSchema, Currency: "USD", ActiveSeries: cost.ActiveSeries{PerMillion: 8}}
+	store := &timedStore{snaps: []timedSnap{
+		{cost.Report{Currency: "USD", TotalMonthly: 100}, now.Add(-8 * 24 * time.Hour)},
+		{cost.Report{Currency: "USD", TotalMonthly: 999}, now.Add(-time.Minute)}, // too recent to be the baseline
+	}}
+	sb, err := cost.Assemble(context.Background(), p, cost.Sources{}, time.Hour, store, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.Trend == nil || !sb.Trend.BaselineAt.Equal(now.Add(-8*24*time.Hour)) {
+		t.Fatalf("trend = %+v, want the 8-day-old baseline", sb.Trend)
+	}
+	if sb.Trend.TotalDelta != sb.Report.TotalMonthly-100 {
+		t.Errorf("delta = %v, want against the week-old total of 100", sb.Trend.TotalDelta)
+	}
+}
+
+// With no snapshot a week old, or one in another currency, there is no
+// trend, and a note says why.
+func TestAssembleNoTrendWithoutAComparableBaseline(t *testing.T) {
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	p := &cost.Pricing{Schema: cost.PricingSchema, Currency: "USD", ActiveSeries: cost.ActiveSeries{PerMillion: 8}}
+	for name, snaps := range map[string][]timedSnap{
+		"only recent snapshots": {{cost.Report{Currency: "USD"}, now.Add(-time.Hour)}},
+		"another currency":      {{cost.Report{Currency: "EUR"}, now.Add(-10 * 24 * time.Hour)}},
+	} {
+		sb, err := cost.Assemble(context.Background(), p, cost.Sources{}, time.Hour, &timedStore{snaps: snaps}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sb.Trend != nil {
+			t.Errorf("%s: trend = %+v, want none", name, sb.Trend)
+		}
+		if len(sb.Notes) < 3 {
+			t.Errorf("%s: notes = %q, want one saying why there is no trend", name, sb.Notes)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package cost
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -25,10 +26,17 @@ const (
 	calibrationNote = "Shipped pricing templates are illustrative: S3 storage classes use AWS list prices, but ingest and active-series rates are estimates — edit pricing.yaml to match your environment."
 )
 
+// trendBaselineAge is how old the snapshot a trend compares against must be.
+const trendBaselineAge = 7 * 24 * time.Hour
+
 // Assemble runs the showback pipeline end to end: gather usage from the wired
-// sources, price it, model lifecycle savings, and — when a store is provided —
-// compute the week-over-week trend against the last snapshot and persist this
-// one. This is what `argus cost` runs; injecting Sources and SnapshotStore
+// sources, price it, model lifecycle savings, and, when a store is provided,
+// compute the week-over-week trend and persist this snapshot.
+//
+// The trend compares against the latest snapshot at least a week old, and
+// says when that was. It used to take the latest snapshot of any age, which,
+// with the endpoint caching for a minute, made "week-over-week" a
+// minute-over-minute delta. This is what `argus cost` runs; injecting Sources and SnapshotStore
 // keeps it unit-testable without live backends.
 func Assemble(ctx context.Context, p *Pricing, srcs Sources, window time.Duration, store SnapshotStore, now time.Time) (Showback, error) {
 	usage, err := Gather(ctx, srcs, window)
@@ -46,12 +54,21 @@ func Assemble(ctx context.Context, p *Pricing, srcs Sources, window time.Duratio
 	}
 
 	if store != nil {
-		prev, _, err := store.LastCostSnapshot(ctx, now)
+		prev, prevAt, err := store.LastCostSnapshot(ctx, now.Add(-trendBaselineAge+time.Nanosecond))
 		if err != nil {
 			return Showback{}, err
 		}
-		if prev != nil {
+		switch {
+		case prev == nil:
+			sb.Notes = append(sb.Notes, "No cost snapshot from a week or more ago yet, so there is no week-over-week trend.")
+		case prev.Currency != report.Currency:
+			// Amounts in two currencies cannot be subtracted.
+			sb.Notes = append(sb.Notes, fmt.Sprintf(
+				"No trend: the snapshot from %s is in %s, this report in %s.",
+				prevAt.UTC().Format(time.RFC3339), prev.Currency, report.Currency))
+		default:
 			tr := Trend(report, *prev)
+			tr.BaselineAt = prevAt.UTC()
 			sb.Trend = &tr
 		}
 		if _, err := store.SaveCostSnapshot(ctx, report, now); err != nil {

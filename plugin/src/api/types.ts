@@ -125,6 +125,8 @@ export interface TrendLine {
 
 export interface CostTrend {
   currency: string;
+  // When the report compared against was taken: the latest at least a week old.
+  baseline_at?: string;
   lines: TrendLine[];
   total_delta: number;
 }
