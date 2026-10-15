@@ -132,7 +132,7 @@ at once. The tables and their rules are the same as
 ```bash
 cd plugin
 npm run test:ci   # jest (components mock the backend)
-npm run e2e       # playwright smoke: Overview + Scores + Service graph against mocked resources
+npm run e2e       # Playwright against a running Grafana (npm run server): every page, engine mocked; CI runs it too
 npm run build
 ```
 
