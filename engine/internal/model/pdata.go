@@ -115,9 +115,9 @@ func FromLogs(ld plog.Logs) []Item {
 	return items
 }
 
-// convertResource extracts the service name and converts remaining resource
-// attributes. The returned map reflects exactly what was observed — including
-// service.name when present.
+// convertResource converts every resource attribute, service.name included,
+// and returns the service identity alongside: ServiceName of a non-empty
+// string service.name, else UnknownService.
 func convertResource(attrs pcommon.Map) (map[string]any, string) {
 	res := convertAttrs(attrs)
 	svc := UnknownService
@@ -154,6 +154,7 @@ func convertValue(v pcommon.Value) any {
 	}
 }
 
+// pointInfo is what an Item keeps of one data point, whatever the metric type.
 type pointInfo struct {
 	attrs         pcommon.Map
 	exemplarCount int
@@ -161,6 +162,9 @@ type pointInfo struct {
 	counts        []uint64
 }
 
+// metricPoints returns the metric's type name and its data points. Only
+// classic histograms carry bucket bounds and counts; summaries have no
+// exemplars.
 func metricPoints(m pmetric.Metric) (string, []pointInfo) {
 	switch m.Type() {
 	case pmetric.MetricTypeGauge:

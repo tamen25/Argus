@@ -83,9 +83,8 @@ func (k Kind) String() string {
 type Item struct {
 	Kind    Kind
 	Service string // resource service.name, or UnknownService
-	// Resource attributes minus service.name-derived Service duplication is
-	// intentional NOT applied: the full attribute set (as observed, values
-	// truncated) is kept so resource-target rules see exactly what was sent.
+	// Resource holds every resource attribute as sent, service.name
+	// included, so resource rules see exactly what the SDK reported.
 	Resource map[string]any
 	Scope    Scope
 
@@ -115,11 +114,11 @@ type MetricPoint struct {
 	Type         string // gauge|sum|histogram|exponential_histogram|summary
 	Unit         string
 	HasExemplars bool
-	// ExemplarCount is the number of exemplars on this data point (rule 8
-	// needs the count, not just presence).
+	// ExemplarCount is the number of exemplars on this data point, offered to
+	// rules as exemplar_count (ARG-MET-001 reads only has_exemplars).
 	ExemplarCount int
-	// BucketBounds/BucketCounts are populated for classic histograms only
-	// (rule 12: bucket misconfiguration). len(counts) == len(bounds)+1.
+	// BucketBounds and BucketCounts are set for classic histograms only
+	// (ARG-MET-002 checks the bounds). len(counts) == len(bounds)+1.
 	BucketBounds []float64
 	BucketCounts []uint64
 	Attrs        map[string]any
