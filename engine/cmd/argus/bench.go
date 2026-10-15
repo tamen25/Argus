@@ -164,7 +164,9 @@ func runBenchScenario(cmd *cobra.Command, f benchFlags) error {
 		Model:         modelInfo(f),
 		AgentTimeout:  f.agentTimeout,
 		MaxTurnTokens: turnCap(f),
+		ScenarioDir:   filepath.Dir(f.scenario),
 	}
+	opts.Harness = harnessInfo(f, tools, opts.Normalizers)
 
 	// An interrupt (Ctrl-C, or a matrix being stopped) cancels the run, and the
 	// orchestrator still cleans up the fault it injected. Without this the
@@ -454,6 +456,26 @@ func buildInjector(f benchFlags, sc bench.Scenario) (orchestrator.Injector, erro
 	default:
 		return nil, fmt.Errorf("unknown --inject %q (want auto, script, kubectl or none)", f.inject)
 	}
+}
+
+// harnessInfo records what ran the agent besides its model, for the report.
+func harnessInfo(f benchFlags, tools agent.Tools, normalizers []bench.Normalizer) *orchestrator.HarnessInfo {
+	h := &orchestrator.HarnessInfo{ArgusVersion: version, Injector: f.inject}
+	if tools != nil {
+		for _, t := range tools.List() {
+			h.Tools = append(h.Tools, t.Name)
+		}
+	}
+	for _, n := range normalizers {
+		h.Normalizers = append(h.Normalizers, n.Method())
+	}
+	if f.judgeModel != "" {
+		h.Judge = &orchestrator.ModelInfo{Model: f.judgeModel, Endpoint: f.judgeEndpoint}
+	}
+	if f.agentKind == "shell" {
+		h.ShellCommand = append([]string{f.shellCommand}, f.shellArgs...)
+	}
+	return h
 }
 
 // buildNormalizers always puts the deterministic normalizer first; the LLM

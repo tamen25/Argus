@@ -16,6 +16,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/tamen25/Argus/engine/internal/bench"
@@ -87,7 +90,9 @@ type Options struct {
 	// Prometheus's default 5m lookback, during which a series that has stopped
 	// receiving samples is still counted.
 	BaselineTimeout time.Duration
-	// Seed is recorded for reproducibility (architecture rule 6).
+	// Seed is recorded for reproducibility (architecture rule 6). It is a
+	// label only: no adapter passes it to a model, so it does not make a
+	// model's answers repeatable.
 	Seed int64
 	// EnvDigest identifies the environment under test, recorded in the report.
 	EnvDigest string
@@ -114,8 +119,33 @@ type Options struct {
 	// CleanupTimeout caps a repeat's cleanup, which runs even after the run was
 	// interrupted.
 	CleanupTimeout time.Duration
+	// ScenarioDir is the directory the scenario's manifest and script paths
+	// are relative to. The scenario hash covers those files' contents, so a
+	// changed fault script changes the hash even when the YAML did not.
+	ScenarioDir string
+	// Harness records what ran the agent besides the model; see HarnessInfo.
+	Harness *HarnessInfo
 	// Now is injectable for tests.
 	Now func() time.Time
+}
+
+// HarnessInfo is what a run report records about the harness: the inputs,
+// besides the agent's model and the scenario, that change what a run
+// measures. Two reports that differ here are not like-for-like, whatever
+// their agent name and scenario hash.
+type HarnessInfo struct {
+	// ArgusVersion is the build that ran the bench.
+	ArgusVersion string `json:"argus_version"`
+	// Injector is the --inject mode: auto, kubectl, script or none.
+	Injector string `json:"injector"`
+	// Tools are the tools the agent was offered, by name.
+	Tools []string `json:"tools,omitempty"`
+	// Normalizers are the normalization methods configured, in order.
+	Normalizers []string `json:"normalizers,omitempty"`
+	// Judge is the model a shell agent's prose is normalized with, if any.
+	Judge *ModelInfo `json:"judge,omitempty"`
+	// ShellCommand is a shell agent's command and arguments.
+	ShellCommand []string `json:"shell_command,omitempty"`
 }
 
 // RunRecord is one attempt: what was consumed, how it was normalized, and how
@@ -179,6 +209,8 @@ type Report struct {
 	Seed              int64        `json:"seed"`
 	Budget            agent.Budget `json:"budget"`
 	Model             *ModelInfo   `json:"model,omitempty"`
+	// Harness is Options.Harness; absent in reports from before v1.1.
+	Harness *HarnessInfo `json:"harness,omitempty"`
 	// AgentTimeout is Options.AgentTimeout as a Go duration ("30m0s"); empty
 	// when the adapter's default was not recorded.
 	AgentTimeout string `json:"agent_timeout,omitempty"`
@@ -215,7 +247,7 @@ func Run(
 	opts Options,
 ) (Report, error) {
 	opts = withDefaults(opts)
-	hash, err := HashScenario(sc)
+	hash, err := HashScenario(sc, opts.ScenarioDir)
 	if err != nil {
 		return Report{}, err
 	}
@@ -230,6 +262,7 @@ func Run(
 		Seed:              opts.Seed,
 		Budget:            opts.Budget,
 		Model:             opts.Model,
+		Harness:           opts.Harness,
 	}
 	if opts.AgentTimeout > 0 {
 		rep.AgentTimeout = opts.AgentTimeout.String()
@@ -500,15 +533,50 @@ func scenarioDuration(sc bench.Scenario) time.Duration {
 	return total
 }
 
-// HashScenario returns a stable digest of the scenario, recorded in every report
-// so a result can be tied to the exact scenario definition that produced it.
-func HashScenario(sc bench.Scenario) (string, error) {
+// HashScenario returns a stable digest of the scenario, recorded in every
+// report so a result can be tied to the exact scenario that produced it. It
+// covers the scenario's definition and, when dir is set, the contents of the
+// files it references (manifests, scripts and hooks, relative to dir): the
+// fault lives in those files, and a changed script with an unchanged YAML is
+// a different scenario. A referenced file that cannot be read is hashed as
+// missing, so the digest still says the scenario changed.
+func HashScenario(sc bench.Scenario, dir string) (string, error) {
 	b, err := json.Marshal(sc)
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:]), nil
+	h := sha256.New()
+	h.Write(b)
+	if dir != "" {
+		for _, ref := range referencedFiles(sc) {
+			content, err := os.ReadFile(filepath.Join(dir, ref))
+			if err != nil {
+				content = []byte("<missing>")
+			}
+			sum := sha256.Sum256(content)
+			_, _ = fmt.Fprintf(h, "\n%s %x", ref, sum) // writing to a hash never fails
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// referencedFiles lists the files a scenario names, sorted, without repeats.
+func referencedFiles(sc bench.Scenario) []string {
+	seen := map[string]bool{}
+	for _, step := range sc.Spec.Inject {
+		seen[step.Manifest] = true
+		seen[step.Script] = true
+	}
+	for _, h := range append(append([]bench.Hook{}, sc.Spec.Reset...), sc.Spec.Cleanup...) {
+		seen[h.Script] = true
+	}
+	delete(seen, "")
+	refs := make([]string, 0, len(seen))
+	for r := range seen {
+		refs = append(refs, r)
+	}
+	sort.Strings(refs)
+	return refs
 }
 
 // DefaultBrief is the incident brief handed to an agent when none is supplied.

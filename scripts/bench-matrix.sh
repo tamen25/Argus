@@ -9,8 +9,10 @@
 # agents.txt has one agent per line, "label | argus bench run flags":
 #   claude-sonnet | --agent anthropic --model claude-sonnet-5-5 --api-key-env ANTHROPIC_API_KEY
 #   gpt-budget    | --agent openai --endpoint https://api.example/v1/chat/completions --model m --api-key-env OPENAI_API_KEY
-#   holmesgpt     | --agent shell --shell-command holmes --shell-arg ask
-# Blank lines and lines starting with # are ignored.
+#   holmesgpt     | --agent shell --shell-command holmes --shell-arg ask --shell-arg "what broke?"
+# Flags are split the way a shell splits words, quotes included, but nothing
+# is expanded or run. Labels must be unique. Blank lines and lines starting
+# with # are ignored.
 #
 # Without --yes it only prints the plan and the projected cost: master plan
 # §12.4 requires the projection to be confirmed before a full run, and a run
@@ -30,6 +32,10 @@
 #
 # Layout of --out:
 #   reports/pass-<N>/<condition>__<agent>__<scenario>.json   one run report per cell
+# A cell counts as done only if its report is valid JSON for the same
+# condition, repeats and budget. A report made with other settings stops the
+# run (delete it, or match the flags); one that is not valid JSON is set aside
+# as <name>.json.invalid and the cell runs again.
 #   logs/pass-<N>/<condition>__<agent>__<scenario>.log       that invocation's stderr
 #   comparison.md, comparison.json                           over every pass so far
 #
@@ -69,9 +75,10 @@ if [ -z "$agents_file" ] || [ -z "$out" ]; then
   exit 2
 fi
 [ -f "$agents_file" ] || { echo "agents file $agents_file not found" >&2; exit 2; }
-for n in "$repeats" "$pass" "$stop_after"; do
-  [[ "$n" =~ ^[0-9]+$ ]] || { echo "--repeats, --pass and --stop-after take whole numbers" >&2; exit 2; }
+for n in "$repeats" "$pass" "$stop_after" "$max_calls" "$max_tokens"; do
+  [[ "$n" =~ ^[0-9]+$ ]] || { echo "--repeats, --pass, --stop-after, --max-tool-calls and --max-tokens take whole numbers" >&2; exit 2; }
 done
+[ "$repeats" -gt 0 ] || { echo "--repeats must be at least 1" >&2; exit 2; }
 [[ "$compare" =~ ^[a-z0-9-]+,[a-z0-9-]+$ ]] || { echo "--compare takes two conditions, a,b" >&2; exit 2; }
 
 if [ -z "$scenarios" ]; then
@@ -81,13 +88,22 @@ if [ -z "$scenarios" ]; then
   done
 fi
 
+# split_flags prints one agent's flags NUL-separated, split the way a shell
+# splits words (quotes respected) with nothing expanded or executed: xargs
+# does the quote parsing, printf only prints.
+split_flags() { printf '%s' "$1" | xargs printf '%s\0'; }
+
 labels=() flags=()
 while IFS= read -r line || [ -n "$line" ]; do
   line="${line%%#*}"
   [ -n "${line// /}" ] || continue
   label="$(printf '%s' "${line%%|*}" | xargs)"
-  flag="$(printf '%s' "${line#*|}" | xargs)"
+  flag="${line#*|}"
   [[ "$label" =~ ^[a-z0-9][a-z0-9.-]*$ ]] || { echo "agent label '$label': use lowercase letters, digits, dots and dashes" >&2; exit 2; }
+  for seen in "${labels[@]}"; do
+    [ "$seen" != "$label" ] || { echo "agent label '$label' is used twice: their reports would overwrite each other" >&2; exit 2; }
+  done
+  split_flags "$flag" >/dev/null 2>&1 || { echo "agent '$label': its flags have an unbalanced quote" >&2; exit 2; }
   labels+=("$label")
   flags+=("$flag")
 done < "$agents_file"
@@ -130,11 +146,20 @@ fi
 
 command -v argus >/dev/null || { echo "argus not on PATH (go build -o ~/go/bin/argus ./engine/cmd/argus)" >&2; exit 1; }
 mkdir -p "$reports" "$logs"
-ctx=()
-[ -n "${ARGUS_KUBE_CONTEXT:-}" ] && ctx=(--kube-context "$ARGUS_KUBE_CONTEXT")
+ctx=() kctx=()
+if [ -n "${ARGUS_KUBE_CONTEXT:-}" ]; then
+  ctx=(--kube-context "$ARGUS_KUBE_CONTEXT")
+  kctx=(--context "$ARGUS_KUBE_CONTEXT")
+fi
+# The environment a report claims: the cluster's context and Kubernetes
+# version, not just the day it ran.
+env_context="${ARGUS_KUBE_CONTEXT:-$(kubectl config current-context 2>/dev/null || echo unknown-context)}"
+env_version="$(kubectl "${kctx[@]}" version -o json 2>/dev/null |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["serverVersion"]["gitVersion"])' 2>/dev/null || echo unknown-version)"
+env_digest="$env_context/$env_version"
 
 # Backends for the agents' tools, through port-forwards that live as long as
-# the matrix does.
+# the matrix does, on the same cluster the faults are injected into.
 pf_pids=()
 cleanup() {
   for p in "${pf_pids[@]}"; do kill "$p" 2>/dev/null || true; done
@@ -142,13 +167,37 @@ cleanup() {
   bash "$root/scenarios/conditions/apply.sh" baseline || echo "WARNING: baseline not restored; run scenarios/conditions/apply.sh baseline" >&2
 }
 trap cleanup EXIT
-kubectl port-forward -n lgtm svc/mimir-gateway 18080:80 >/dev/null 2>&1 & pf_pids+=($!)
-kubectl port-forward -n lgtm svc/loki-gateway 13100:80 >/dev/null 2>&1 & pf_pids+=($!)
-kubectl port-forward -n lgtm svc/tempo 13200:3200 >/dev/null 2>&1 & pf_pids+=($!)
-for _ in $(seq 1 30); do
-  curl -sf -o /dev/null "http://127.0.0.1:18080/prometheus/api/v1/query?query=up" && break
-  sleep 2
+kubectl "${kctx[@]}" port-forward -n lgtm svc/mimir-gateway 18080:80 >/dev/null 2>&1 & pf_pids+=($!)
+kubectl "${kctx[@]}" port-forward -n lgtm svc/loki-gateway 13100:80 >/dev/null 2>&1 & pf_pids+=($!)
+kubectl "${kctx[@]}" port-forward -n lgtm svc/tempo 13200:3200 >/dev/null 2>&1 & pf_pids+=($!)
+# Every backend must answer before a cell starts: an agent whose log or trace
+# tool is dead would be scored as if it had chosen not to look.
+for probe in 18080/prometheus/api/v1/query?query=up 13100/loki/api/v1/labels 13200/api/echo; do
+  for try in $(seq 1 30); do
+    curl -sf -o /dev/null "http://127.0.0.1:$probe" && break
+    [ "$try" -lt 30 ] || { echo "the port-forward behind http://127.0.0.1:$probe never answered" >&2; exit 1; }
+    sleep 2
+  done
 done
+
+# cell_done says whether a cell already has its report. A report made with
+# other settings is an error: it is not this cell, and keeping it would pool
+# unlike runs. One that is not valid JSON is set aside, and the cell re-runs.
+cell_done() { # <report> <condition>
+  [ -s "$1" ] || return 1
+  local verdict
+  verdict="$(python3 "$root/scripts/report-matches.py" "$1" "$2" "$repeats" "$max_calls" "$max_tokens")"
+  case "$verdict" in
+    done) return 0 ;;
+    invalid)
+      echo "    $1 is not valid JSON: set aside as $1.invalid, running the cell again" >&2
+      mv "$1" "$1.invalid"
+      return 1 ;;
+    *)
+      echo "$1 was made with other settings (condition, repeats or budget): delete it, or run with the flags it was made with" >&2
+      exit 1 ;;
+  esac
+}
 
 started=$SECONDS
 failed=0 ran=0 left=0
@@ -159,7 +208,7 @@ for cond in "${condition_list[@]}"; do
   todo=0
   for label in "${labels[@]}"; do
     for sc in "${scenario_list[@]}"; do
-      [ -s "$reports/${cond}__${label}__${sc}.json" ] || todo=$((todo + 1))
+      cell_done "$reports/${cond}__${label}__${sc}.json" "$cond" || todo=$((todo + 1))
     done
   done
   if [ "$todo" = 0 ]; then
@@ -176,7 +225,7 @@ for cond in "${condition_list[@]}"; do
     for sc in "${scenario_list[@]}"; do
       name="${cond}__${labels[$i]}__${sc}"
       report="$reports/$name.json"
-      if [ -s "$report" ]; then
+      if cell_done "$report" "$cond"; then
         echo "    skip  ${labels[$i]} × $sc (report exists)"
         continue
       fi
@@ -186,14 +235,13 @@ for cond in "${condition_list[@]}"; do
       fi
       echo "    run   ${labels[$i]} × $sc ($(date +%H:%M))"
       ran=$((ran + 1))
-      # Word splitting of the agent's flags is intended: they are one line of
-      # options from the agents file.
-      # shellcheck disable=SC2086
-      if ! argus bench run --scenario "$root/scenarios/$sc.yaml" ${flags[$i]} \
+      agent_flags=()
+      mapfile -d '' -t agent_flags < <(split_flags "${flags[$i]}")
+      if ! argus bench run --scenario "$root/scenarios/$sc.yaml" "${agent_flags[@]}" \
         --mimir-url http://127.0.0.1:18080 --loki-url http://127.0.0.1:13100 --tempo-url http://127.0.0.1:13200 \
         --inject-namespace otel-demo "${ctx[@]}" \
         --repeats "$repeats" --max-tool-calls "$max_calls" --max-tokens "$max_tokens" \
-        --condition "$cond" --env-digest "kind-$(date +%F)" \
+        --condition "$cond" --env-digest "$env_digest" \
         --format json --out "$report" 2>"$logs/$name.log"; then
         failed=$((failed + 1))
         echo "    FAILED (see $logs/$name.log)" >&2

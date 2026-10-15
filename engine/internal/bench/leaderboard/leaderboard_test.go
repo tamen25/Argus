@@ -406,3 +406,19 @@ func TestVariantsCaveats(t *testing.T) {
 		t.Errorf("caveats = %q, want %q", got, want)
 	}
 }
+
+// R36: one agent's reports from different harnesses (another build, another
+// injector) are flagged as not like-for-like.
+func TestBuildFlagsDifferentHarnesses(t *testing.T) {
+	a := report("agent-x", "s1", "degraded", 0, 1)
+	b := report("agent-x", "s2", "degraded", 10, 1)
+	a.Harness = &orchestrator.HarnessInfo{ArgusVersion: "1.0.0", Injector: "auto", Tools: []string{"query_prometheus"}}
+	b.Harness = &orchestrator.HarnessInfo{ArgusVersion: "1.1.0", Injector: "auto", Tools: []string{"query_prometheus"}}
+	lb, err := Build([]orchestrator.Report{a, b})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(lb.Caveats, "\n"), "Agent `agent-x` ran under 2 different harnesses") {
+		t.Errorf("caveats = %q, want the harness difference flagged", lb.Caveats)
+	}
+}

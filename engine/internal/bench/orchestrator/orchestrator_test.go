@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -415,17 +417,17 @@ func TestRun_NormalizerFallbackRecordsMethod(t *testing.T) {
 }
 
 func TestHashScenario_StableAndSensitive(t *testing.T) {
-	a, err := HashScenario(testScenario())
+	a, err := HashScenario(testScenario(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := HashScenario(testScenario())
+	b, _ := HashScenario(testScenario(), "")
 	if a != b {
 		t.Error("hash not stable across identical scenarios")
 	}
 	changed := testScenario()
 	changed.Spec.GroundTruth.Category = "something-else"
-	c, _ := HashScenario(changed)
+	c, _ := HashScenario(changed, "")
 	if a == c {
 		t.Error("hash did not change when the scenario changed")
 	}
@@ -434,3 +436,38 @@ func TestHashScenario_StableAndSensitive(t *testing.T) {
 // Tools is satisfied by *mcp.Registry — compile-time proof the orchestrator
 // hands agents the same read-only surface the MCP server exposes.
 var _ agent.Tools = (*mcp.Registry)(nil)
+
+// R36: the hash covers the files a scenario references. The fault is in the
+// manifest or script, so changing it with the YAML untouched must change the
+// hash; so must the file going missing.
+func TestHashScenarioCoversReferencedFiles(t *testing.T) {
+	dir := t.TempDir()
+	sc := testScenario()
+	path := filepath.Join(dir, sc.Spec.Inject[0].Script) // the fault script
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(body string) {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	write("kind: NetworkChaos\nlatency: 100ms\n")
+	first, _ := HashScenario(sc, dir)
+	again, _ := HashScenario(sc, dir)
+	write("kind: NetworkChaos\nlatency: 900ms\n")
+	edited, _ := HashScenario(sc, dir)
+	_ = os.Remove(path)
+	missing, _ := HashScenario(sc, dir)
+
+	if first != again {
+		t.Error("the hash is not stable")
+	}
+	if edited == first {
+		t.Error("editing the fault script did not change the hash")
+	}
+	if missing == first || missing == edited {
+		t.Error("a missing script hashed like a present one")
+	}
+}
