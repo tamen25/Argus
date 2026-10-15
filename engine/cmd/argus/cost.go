@@ -57,7 +57,7 @@ trends. Costs are modeled from your rates, not billed.`,
 	f.DurationVar(&opts.window, "window", time.Hour, "measurement window for ingest-rate extrapolation")
 	f.StringVar(&opts.output, "output", "md", "output format: md | json")
 	f.StringVar(&opts.outPath, "out", "", "write the report to this file instead of stdout")
-	f.StringVar(&opts.storeDSN, "store-dsn", "", "Postgres DSN: persist this snapshot and trend against the last one")
+	f.StringVar(&opts.storeDSN, "store-dsn", "", "Postgres URL (postgres://...): persist this snapshot and trend against the last one")
 	f.Float64Var(&opts.failOver, "fail-over-monthly", 0, "exit non-zero when total monthly cost exceeds this (CI budget gate)")
 	f.StringVar(&opts.mimirURL, "mimir-url", "", "Mimir base URL for active-series attribution")
 	f.StringVar(&opts.mimirTenant, "mimir-tenant", "", "Mimir X-Scope-OrgID")

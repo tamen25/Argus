@@ -54,7 +54,7 @@ func newCalibrateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.soakDir, "soak-dir", "", "soak output directory (scripts/soak.sh) with aggregates-*.json / report-*.json")
 	cmd.Flags().StringVar(&opts.rulesDir, "rules", "", "extra rule YAML dir overriding/extending built-ins")
 	cmd.Flags().StringVar(&opts.outDir, "out", "calibrated-rules", "directory for proposed override YAML files")
-	cmd.Flags().StringVar(&opts.storeDSN, "store-dsn", "", "Postgres DSN: include persisted finding ratios in the evidence")
+	cmd.Flags().StringVar(&opts.storeDSN, "store-dsn", "", "Postgres URL (postgres://...): include persisted finding ratios in the evidence")
 	_ = cmd.MarkFlagRequired("soak-dir")
 	return cmd
 }

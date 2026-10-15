@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -33,11 +34,11 @@ func Open(ctx context.Context, dsn string) (*Postgres, error) {
 	}
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("connecting: %w", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		return nil, err
+		return nil, fmt.Errorf("connecting: %w", err)
 	}
 	return &Postgres{pool: pool}, nil
 }
@@ -48,7 +49,11 @@ func Migrate(dsn string) error {
 	if err != nil {
 		return err
 	}
-	m, err := migrate.NewWithSourceInstance("iofs", src, "pgx5://"+trimScheme(dsn))
+	url, err := migrateURL(dsn)
+	if err != nil {
+		return err
+	}
+	m, err := migrate.NewWithSourceInstance("iofs", src, url)
 	if err != nil {
 		return err
 	}
@@ -59,15 +64,17 @@ func Migrate(dsn string) error {
 	return nil
 }
 
-// trimScheme strips a postgres:// or postgresql:// prefix so the migrate
-// pgx5 scheme can be applied.
-func trimScheme(dsn string) string {
-	for _, p := range []string{"postgres://", "postgresql://"} {
-		if len(dsn) > len(p) && dsn[:len(p)] == p {
-			return dsn[len(p):]
+// migrateURL turns a postgres:// or postgresql:// DSN into the pgx5:// URL
+// the migrate driver is registered under. pgx also accepts the key=value form
+// ("host=db user=argus"), but migrate does not, so that form is refused here
+// with a message rather than failing inside the driver.
+func migrateURL(dsn string) (string, error) {
+	for _, scheme := range []string{"postgres://", "postgresql://"} {
+		if rest, ok := strings.CutPrefix(dsn, scheme); ok {
+			return "pgx5://" + rest, nil
 		}
 	}
-	return dsn
+	return "", errors.New("the store DSN must be a URL (postgres://user:password@host:5432/db): migrations do not accept the key=value form")
 }
 
 // SaveSnapshot writes the snapshot and its findings in one transaction.
@@ -117,8 +124,9 @@ func (p *Postgres) SaveSnapshot(ctx context.Context, snap *rules.Snapshot, meta 
 	return id, nil
 }
 
-// SaveCostSnapshot persists a priced cost report (Phase 2 showback history).
-// The full report is stored as JSONB; total and currency stay queryable.
+// SaveCostSnapshot persists a priced cost report, the history week-over-week
+// trends compare against. The full report is stored as JSONB; total and
+// currency stay queryable.
 func (p *Postgres) SaveCostSnapshot(ctx context.Context, report cost.Report, takenAt time.Time) (int64, error) {
 	payload, err := json.Marshal(report)
 	if err != nil {

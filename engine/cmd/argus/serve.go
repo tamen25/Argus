@@ -72,7 +72,7 @@ func newServeCmd() *cobra.Command {
 	f.StringVar(&cost.pricingPath, "cost-pricing", "", "pricing.yaml enabling the /api/cost showback endpoint")
 	f.DurationVar(&cost.window, "cost-window", time.Hour, "measurement window for cost ingest-rate extrapolation")
 	f.DurationVar(&cost.cacheTTL, "cost-cache-ttl", time.Minute, "how long /api/cost caches a showback before recomputing")
-	f.StringVar(&cost.storeDSN, "cost-store-dsn", "", "Postgres DSN: persist cost snapshots and trend week-over-week")
+	f.StringVar(&cost.storeDSN, "cost-store-dsn", "", "Postgres URL (postgres://...): persist cost snapshots and trend week-over-week")
 	f.StringVar(&cost.mimirURL, "cost-mimir-url", "", "Mimir base URL for active-series attribution")
 	f.StringVar(&cost.mimirTenant, "cost-mimir-tenant", "", "Mimir X-Scope-OrgID")
 	f.StringVar(&cost.lokiURL, "cost-loki-url", "", "Loki base URL for log-bytes attribution")
