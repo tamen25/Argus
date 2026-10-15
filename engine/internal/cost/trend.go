@@ -79,13 +79,7 @@ func Trend(cur, prev Report) TrendReport {
 	// every run.
 	sort.Slice(tr.Lines, func(i, j int) bool {
 		a, b := tr.Lines[i], tr.Lines[j]
-		if a.Service != b.Service {
-			return a.Service < b.Service
-		}
-		if a.Signal != b.Signal {
-			return a.Signal < b.Signal
-		}
-		return a.Team < b.Team
+		return lineKey{a.Service, a.Team, a.Signal}.less(lineKey{b.Service, b.Team, b.Signal})
 	})
 	return tr
 }
