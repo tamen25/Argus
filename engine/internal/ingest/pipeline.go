@@ -80,7 +80,7 @@ func NewPipeline(col *rules.Collector, opts TrackerOpts) *Pipeline {
 	return &Pipeline{
 		col:        col,
 		exemplars:  newGenerations[string, *exemplarCounts](o.MaxPairs, o.Window, o.Now),
-		card:       NewSketchTracker("metric_attribute_cardinality", []string{"metric", "attribute"}, o.MaxPairs, o.Window, o.Now),
+		card:       NewSketchTracker("metric_attribute_cardinality", cardinalityDims, o.MaxPairs, o.Window, o.Now),
 		spanNames:  NewSketchTracker("span_name_cardinality", []string{"attribute"}, o.MaxPairs, o.Window, o.Now),
 		bucketSigs: NewSketchTracker("histogram_bucket_signatures", []string{"metric"}, o.MaxPairs, o.Window, o.Now),
 		resAttrs:   NewSketchTracker("resource_attr_cardinality", []string{"attribute"}, o.MaxPairs, o.Window, o.Now),
@@ -106,7 +106,7 @@ func (p *Pipeline) ConsumeMetrics(md pmetric.Metrics) {
 		p.metricItems.Add(1)
 		p.col.ObserveItem(it)
 		for k, v := range it.Metric.Attrs {
-			p.card.Observe(it.Service, []string{it.Metric.Name, k}, stringify(v))
+			p.card.Observe(it.Service, []string{it.Metric.Name, k, it.Metric.Unit, it.Metric.Type}, stringify(v))
 		}
 		if it.Metric.Type == "histogram" {
 			p.bucketSigs.Observe(it.Service, []string{it.Metric.Name}, bucketSignature(it.Metric.BucketBounds))

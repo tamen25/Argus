@@ -20,11 +20,12 @@ type MimirAPI interface {
 	LabelCardinality(ctx context.Context, selector, label string) (int64, error)
 }
 
-// serviceSelector selects one metric's series for one service. Mimir carries
-// the service in job, as "<namespace>/<service>" or "<service>" (see
+// serviceSelector selects one metric's series for one service. The metric is
+// matched under its Prometheus names (promNameRegexp). Mimir carries the
+// service in job, as "<namespace>/<service>" or "<service>" (see
 // verifyServicePresence), so the match allows either.
-func serviceSelector(metric, service string) string {
-	return fmt.Sprintf(`{__name__=%q, job=~%q}`, metric, "(.+/)?"+regexp.QuoteMeta(service))
+func serviceSelector(m metricAttribute, service string) string {
+	return fmt.Sprintf(`{__name__=~%q, job=~%q}`, promNameRegexp(m.metric, m.unit, m.typ), "(.+/)?"+regexp.QuoteMeta(service))
 }
 
 // Poller runs backend verification for rules that declare a
@@ -101,8 +102,8 @@ func (p *Poller) verifyServicePresence(ctx context.Context, col *rules.Collector
 // any pair Mimir measured is over the limit. Recording a result per pair
 // instead let the last pair checked overwrite the others, so a passing pair
 // could hide a failing one. A pair Mimir has no series for (a metric only on
-// the sampled stream, or named differently in Mimir) is not measured, and a
-// service with no measured pair keeps its sampled result.
+// the sampled stream, or translated in a way promNameRegexp does not know) is
+// not measured, and a service with no measured pair keeps its sampled result.
 func (p *Poller) verifyCardinality(ctx context.Context, col *rules.Collector, r *rules.Rule, services []string) error {
 	limit := int64(10000)
 	if v, ok := rules.AsFloat(r.Params["max_cardinality"]); ok {
@@ -114,7 +115,7 @@ func (p *Poller) verifyCardinality(ctx context.Context, col *rules.Collector, r 
 	for _, svc := range services {
 		passed, measured := true, []map[string]any{}
 		for _, pair := range flagged[svc] {
-			n, err := p.api.LabelCardinality(ctx, serviceSelector(pair.metric, svc), pair.attribute)
+			n, err := p.api.LabelCardinality(ctx, serviceSelector(pair, svc), promLabelName(pair.attribute))
 			if err != nil {
 				if firstErr == nil {
 					firstErr = err
@@ -138,8 +139,9 @@ func (p *Poller) verifyCardinality(ctx context.Context, col *rules.Collector, r 
 	return firstErr
 }
 
-// metricAttribute is one (metric, attribute) pair a cardinality finding named.
-type metricAttribute struct{ metric, attribute string }
+// metricAttribute is one (metric, attribute) pair a cardinality finding named,
+// in OTLP terms, with the metric's unit and type for the name translation.
+type metricAttribute struct{ metric, attribute, unit, typ string }
 
 // flaggedPairs lists, per service, the distinct (metric, attribute) pairs
 // that rule ruleID's findings name as evidence, in evidence order.
@@ -158,7 +160,11 @@ func flaggedPairs(snap *rules.Snapshot, ruleID string, services []string) map[st
 			for _, ev := range f.Evidence {
 				metric, _ := ev.Attrs["metric"].(string)
 				attr, _ := ev.Attrs["attribute"].(string)
-				pair := metricAttribute{metric, attr}
+				// Rows from before unit and type were recorded have neither;
+				// they are then matched by the plain name only.
+				unit, _ := ev.Attrs["unit"].(string)
+				typ, _ := ev.Attrs["type"].(string)
+				pair := metricAttribute{metric, attr, unit, typ}
 				if metric != "" && attr != "" && !seen[pair] {
 					seen[pair] = true
 					out[svc] = append(out[svc], pair)

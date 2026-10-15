@@ -116,7 +116,7 @@ fixed; a finding that does not hold is marked so here, with the reason.
 - [x] **R17** — trace cap overflow can give a zero denominator (an infinite
   ratio JSON cannot encode) and a random set of graph edges. Done in #118: services past the per-trace cap record no parent references, a service with no counted trace gets no ratio, and past the edge cap the busiest edges are kept deterministically, with the count left out in `edges_omitted`.
 - [x] **R18** — cardinality verification keeps one outcome per service and rule,
-  so a passing pair can overwrite a failing one; queries are not service-scoped. Done in #109: distinct pairs, queries scoped to the service's `job`, one combined result per service. Still open: OTLP metric and attribute names are not translated to Mimir's (unit suffixes, dots).
+  so a passing pair can overwrite a failing one; queries are not service-scoped. Done in #109: distinct pairs, queries scoped to the service's `job`, one combined result per service. OTLP names are translated to Mimir's: the cardinality rows record unit and type, and the poller matches the metric with or without the unit and type suffixes, and the attribute as a label name.
 - [x] **R19** — `PriceFindings` is not called on the score or serve paths, and
   reads verified quantities from the wrong key. Done in #109: `argus score --pricing` and `serve --cost-pricing` price findings; the pricer reads `details.poller.pairs`; the Scores page shows the amount and currency.
 - [x] **R20** — the week-over-week trend compares against the latest earlier

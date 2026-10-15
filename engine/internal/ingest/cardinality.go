@@ -68,8 +68,13 @@ func NewCardinalityTracker(maxPairs int) *CardinalityTracker {
 
 // NewCardinalityTrackerWithClock injects window length and clock (tests).
 func NewCardinalityTrackerWithClock(maxPairs int, window time.Duration, now func() time.Time) *CardinalityTracker {
-	return NewSketchTracker("metric_attribute_cardinality", []string{"metric", "attribute"}, maxPairs, window, now)
+	return NewSketchTracker("metric_attribute_cardinality", cardinalityDims, maxPairs, window, now)
 }
+
+// cardinalityDims are the fields of a metric_attribute_cardinality row besides
+// the estimate. Unit and type never vary for one metric, so they add no pairs;
+// the poller needs them to find the metric's series under its Prometheus name.
+var cardinalityDims = []string{"metric", "attribute", "unit", "type"}
 
 // Observe records one value occurrence for (service, dims...).
 func (t *SketchTracker) Observe(service string, dims []string, value string) {
