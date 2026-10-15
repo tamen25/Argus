@@ -4,8 +4,8 @@ description: >-
   Argus engine — CI for reliability: scores your telemetry, prices it, backtests
   your alerts, and benchmarks whether an AI agent can diagnose incidents from it.
 type: application
-version: 0.1.0
-appVersion: "1.0.0"
+version: 0.2.0
+appVersion: "2.0.0"
 home: https://github.com/tamen25/Argus
 sources:
   - https://github.com/tamen25/Argus
