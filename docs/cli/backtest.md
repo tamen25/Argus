@@ -1,9 +1,8 @@
 # argus backtest
 
-> **Fidelity-spike harness.** `backtest replay` exists to run the Phase 3
-> spike's experiments (see [Backtest fidelity](../backtest-fidelity.md)); the
-> full engine — incident registry scoring, TTD, pages/week, `backtest diff` —
-> lands across Phase 3. Interfaces may still change.
+`backtest replay` is the low-level tool the fidelity spike used (see
+[Backtest fidelity](../backtest-fidelity.md)); `backtest run` scores rules
+against the incident registry, and `backtest diff` is the CI gate.
 
 ## `argus backtest replay`
 

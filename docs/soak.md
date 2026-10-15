@@ -71,5 +71,5 @@ Caveat the analyzer states itself: report-derived ratios cover **failing
 services only** — passing services carry no stats in reports. The
 aggregate-derived distributions cover every tracked service.
 
-Feed the output dir to calibration once it exists (Phase 1):
+Feed the output dir to calibration:
 `argus rules calibrate --soak-dir soak-output/<ts>`.

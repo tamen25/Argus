@@ -26,7 +26,7 @@ type backtestReplayOptions struct {
 func newBacktestCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "backtest",
-		Short: "Replay alert rules against historical Mimir data (Phase 3)",
+		Short: "Replay alert rules against historical Mimir data",
 	}
 	cmd.AddCommand(newBacktestReplayCmd(), newBacktestRunCmd(), newBacktestDiffCmd())
 	return cmd

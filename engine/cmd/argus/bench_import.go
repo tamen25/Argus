@@ -61,7 +61,7 @@ func runImportITBench(cmd *cobra.Command, in, out string, skipInvalid bool) erro
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(out, 0o755); err != nil {
+	if err := os.MkdirAll(out, 0o750); err != nil {
 		return err
 	}
 

@@ -22,10 +22,7 @@ linters:
       # codebase. Anything else gosec reports must be fixed, or justified with
       # a //nolint:gosec comment at the line.
       excludes:
-        - G301 # output directories are 0755: reports and generated configs are for people to read
         - G304 # reading a file the user named on the command line is what a CLI does
-        - G306 # output files are 0644 for the same reason; Argus never writes secrets to disk
-        - G404 # math/rand only seeds deterministic synthetic history (synthhist), never anything secret
     depguard:
       rules:
         deterministic-core:
@@ -46,6 +43,10 @@ linters:
       # Tests build URLs, files and fixtures from variables by design.
       - path: _test\.go
         linters: [gosec, noctx]
+      # math/rand seeds deterministic synthetic history: nothing there is
+      # secret, and it must be reproducible from the spec's seed.
+      - path: internal/synthhist/
+        text: G404
 
 formatters:
   enable:

@@ -535,7 +535,9 @@ func writeBenchReport(cmd *cobra.Command, f benchFlags, rep orchestrator.Report)
 	}
 
 	if f.out != "" {
-		if err := atomicfile.Write(f.out, payload, 0o644); err != nil {
+		// Owner-only: a run report's tool log quotes the agent's queries and
+		// the errors its tools returned.
+		if err := atomicfile.Write(f.out, payload, 0o600); err != nil {
 			return err
 		}
 		_, err := fmt.Fprintf(cmd.OutOrStdout(), "bench report written: %s\n", f.out)

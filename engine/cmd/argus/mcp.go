@@ -24,9 +24,8 @@ func newMCPCmd() *cobra.Command {
 		Long: `Runs an MCP server on stdin/stdout exposing read-only tools over your LGTM
 stack: query_prometheus, query_loki, search_traces and list_alerts, the discovery
 tools list_metrics, list_metric_labels, list_log_labels and list_trace_tags, and
-(with --kube-topology) get_k8s_topology. This is
-the same tool surface the bench harness gives every agent, so a benchmark
-compares agents rather than tool access.
+(with --kube-topology) get_k8s_topology. This is the same tool surface the bench
+harness gives every agent, so a benchmark compares agents rather than tool access.
 
 Only tools whose backend URL is provided are exposed — an MCP client sees a
 smaller, honest surface rather than tools that fail at call time. Every call is

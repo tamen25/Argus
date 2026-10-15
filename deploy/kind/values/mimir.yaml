@@ -66,7 +66,7 @@ query_frontend:
   replicas: 1
 
 # Object storage for blocks: in-cluster MinIO (also exercises the S3 code path
-# the A2 cost engine will use in Phase 2). Data lives on the argus-history
+# the cost engine's storage inventory uses). Data lives on the argus-history
 # static PVC (hostPath -> WSL filesystem) so blocks survive cluster recreation.
 minio:
   enabled: true

@@ -31,7 +31,7 @@ const (
 // given spec (seeded RNG) so tests and demos are reproducible.
 func Generate(ctx context.Context, spec Spec, dir string) error {
 	blocksDir := filepath.Join(dir, "blocks")
-	if err := os.MkdirAll(blocksDir, 0o755); err != nil {
+	if err := os.MkdirAll(blocksDir, 0o750); err != nil {
 		return err
 	}
 
