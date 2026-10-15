@@ -103,6 +103,10 @@ func TestCardinalityTrackerEstimates(t *testing.T) {
 	for _, r := range rows {
 		if r.Service == "ad" && r.Fields["metric"] == "requests_total" && r.Fields["attribute"] == "user_id" {
 			got = r.Fields["cardinality"].(int64)
+			// The poller needs these to find the metric under its Mimir name.
+			if r.Fields["unit"] != "1" || r.Fields["type"] != "sum" {
+				t.Errorf("row unit %v, type %v; want 1, sum", r.Fields["unit"], r.Fields["type"])
+			}
 		}
 	}
 	if got < 0 {

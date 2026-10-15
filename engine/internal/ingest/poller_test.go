@@ -4,14 +4,18 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/tamen25/Argus/engine/internal/rules"
 )
 
 type fakeMimir struct {
-	jobs        []string
-	cardinality map[string]int64 // "service|metric|label" -> distinct values
+	jobs []string
+	// cardinality holds the distinct values of a label on one stored series
+	// name, keyed "job|series name|label", as Mimir stores them.
+	cardinality map[string]int64
 	err         error
 	calls       int
 }
@@ -20,9 +24,11 @@ func (f *fakeMimir) LabelValues(_ context.Context, label string) ([]string, erro
 	return f.jobs, f.err
 }
 
-// selectorParts reads back what serviceSelector built.
-var selectorParts = regexp.MustCompile(`^\{__name__="([^"]+)", job=~"\(\.\+/\)\?([^"]+)"\}$`)
+// selectorParts reads back what serviceSelector built: two quoted regexps.
+var selectorParts = regexp.MustCompile(`^\{__name__=~("(?:[^"\\]|\\.)*"), job=~("(?:[^"\\]|\\.)*")\}$`)
 
+// LabelCardinality answers like Mimir: the selector's regexps are matched,
+// anchored, against the stored series, and the largest count is returned.
 func (f *fakeMimir) LabelCardinality(_ context.Context, selector, label string) (int64, error) {
 	f.calls++
 	if f.err != nil {
@@ -32,7 +38,23 @@ func (f *fakeMimir) LabelCardinality(_ context.Context, selector, label string) 
 	if m == nil {
 		return 0, fmt.Errorf("selector %s is not scoped to a service", selector)
 	}
-	return f.cardinality[m[2]+"|"+m[1]+"|"+label], nil
+	name, job := anchored(m[1]), anchored(m[2])
+	var n int64
+	for key, v := range f.cardinality {
+		parts := strings.SplitN(key, "|", 3)
+		if job.MatchString(parts[0]) && name.MatchString(parts[1]) && parts[2] == label {
+			n = max(n, v)
+		}
+	}
+	return n, nil
+}
+
+func anchored(quoted string) *regexp.Regexp {
+	re, err := strconv.Unquote(quoted)
+	if err != nil {
+		panic(err)
+	}
+	return regexp.MustCompile("^(?:" + re + ")$")
 }
 
 const met001 = `
@@ -215,5 +237,30 @@ func TestPollerScopesToServiceAndDedupes(t *testing.T) {
 	}
 	if f := snap.Service("cart").Findings; len(f) != 0 {
 		t.Errorf("cart findings = %+v, want none: its own series are well under the limit", f)
+	}
+}
+
+// A finding names the metric and attribute as the SDK sent them. Mimir stores
+// them translated: dots become underscores, and the pipeline here adds the
+// unit and the histogram suffixes. The poller queries under those names, so
+// the check measures the series instead of finding none and leaving the
+// finding unverified.
+func TestPollerQueriesMimirNames(t *testing.T) {
+	rs, _ := rules.LoadBytes([]byte(met001))
+	eng, _ := rules.NewEngine(rs)
+	col := rules.NewCollector(eng, rules.CollectorOptions{})
+	col.ObserveAggregates([]rules.AggregateRow{{Service: "ad", Aggregate: "metric_attribute_cardinality",
+		Fields: map[string]any{"metric": "http.server.duration", "attribute": "url.full",
+			"unit": "ms", "type": "histogram", "cardinality": int64(20000)}}})
+
+	mimir := &fakeMimir{cardinality: map[string]int64{
+		"otel-demo/ad|http_server_duration_milliseconds_bucket|url_full": 55000,
+	}}
+	if err := NewPoller(mimir, eng).Run(context.Background(), col, []string{"ad"}); err != nil {
+		t.Fatal(err)
+	}
+	f := col.Snapshot().Service("ad").Findings[0]
+	if f.Confidence != rules.ConfidenceVerified {
+		t.Errorf("confidence = %s, want verified: the poller did not find the translated series", f.Confidence)
 	}
 }

@@ -58,7 +58,7 @@ Aggregate-mode rules evaluate named rows computed by the ingest layer:
 
 | Aggregate | Fields |
 |---|---|
-| `metric_attribute_cardinality` | `metric`, `attribute`, `cardinality` (HLL estimate) |
+| `metric_attribute_cardinality` | `metric`, `attribute`, `unit`, `type`, `cardinality` (HLL estimate) |
 
 New aggregate *types* require Go; new thresholds/criteria over existing
 aggregates do not.
