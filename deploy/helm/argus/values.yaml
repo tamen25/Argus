@@ -48,14 +48,3 @@ resources:
     memory: 128Mi
   limits:
     memory: 512Mi
-
-postgresql:
-  enabled: true
-  auth:
-    database: argus
-    username: argus
-    # Dev default; override with existingSecret in real deployments.
-    password: argus-dev
-  primary:
-    persistence:
-      size: 5Gi

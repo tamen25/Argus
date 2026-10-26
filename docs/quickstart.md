@@ -65,8 +65,10 @@ token: it is a local demo. `make demo-down` removes it, data included.
 
 ## Install on your own cluster
 
-The Helm chart in `deploy/helm/argus` runs the engine, with Postgres, next to
-an existing LGTM stack:
+The Helm chart in `deploy/helm/argus` runs the engine (`argus serve`) next to
+an existing LGTM stack. The engine keeps its state in memory and needs no
+database; the CLI commands that persist history (`argus score`, `cost` and
+`rules calibrate` with `--store-dsn`) take a Postgres you run yourself:
 
 ```bash
 helm install argus deploy/helm/argus -n argus --create-namespace

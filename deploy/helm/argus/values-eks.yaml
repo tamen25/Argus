@@ -10,10 +10,5 @@ resources:
   limits:
     memory: 2Gi
 
-postgresql:
-  primary:
-    persistence:
-      size: 20Gi
-
 networkPolicy:
   enabled: true
