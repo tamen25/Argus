@@ -17,7 +17,7 @@
 # Without --yes it only prints the plan and the projected cost: master plan
 # §12.4 requires the projection to be confirmed before a full run, and a run
 # can be a paid API call. Options:
-#   --scenarios "a b c"   scenario names (default: every scenario in scenarios/)
+#   --scenarios "a b c"   scenario names (default: every otel-demo scenario in scenarios/)
 #   --conditions "x y"    telemetry conditions to run (default: "degraded remediated")
 #   --compare a,b         the comparison to write (default: degraded,remediated)
 #   --repeats N           repeats per scenario (default 3)
@@ -81,9 +81,13 @@ done
 [ "$repeats" -gt 0 ] || { echo "--repeats must be at least 1" >&2; exit 2; }
 [[ "$compare" =~ ^[a-z0-9-]+,[a-z0-9-]+$ ]] || { echo "--compare takes two conditions, a,b" >&2; exit 2; }
 
+# The default is every otel-demo scenario: this matrix runs on the kind
+# cluster (otel-demo namespace, Alloy conditions). The cloudops-mesh
+# scenarios target CloudOps and run with their own flags (scenarios/README.md).
 if [ -z "$scenarios" ]; then
   for f in "$root"/scenarios/*.yaml; do
     [ "$(basename "$f")" = categories.yaml ] && continue
+    grep -Eq '^[[:space:]]+app:[[:space:]]+otel-demo[[:space:]]*$' "$f" || continue
     scenarios="$scenarios $(basename "$f" .yaml)"
   done
 fi

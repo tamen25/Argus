@@ -1,0 +1,61 @@
+# Bench scenario on the CloudOps mesh (environment cloudops-mesh; run with
+# --inject-namespace cloudops, see README "CloudOps mesh"). Fault: pricing's
+# replies to the gateway are delayed by 3s.
+#
+# Every order still succeeds, slowly. pricing's own server spans stay fast:
+# the delay is on the wire, so pricing looks healthy from the inside, and the
+# gateway, whose latency is what climbs, looks like the slow service. The
+# evidence is in the gateway's client spans: the time is spent waiting on
+# pricing, the first hop, before inventory, fraud or payment are called.
+#
+# Paired with cloudops-network-partition-inventory: the same gateway, a slow
+# hop that answers versus a healthy hop that cannot be reached.
+#
+# UNVALIDATED: written from CloudOps's code, not measured on a live cluster.
+# The gate assumes the gateway's http_server_request_duration_seconds histogram
+# (seconds, stable HTTP semconv) reaches Mimir through the collector.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: cloudops-latency-pricing
+  description: >-
+    pricing's replies to the gateway are delayed by 3 seconds. Orders still
+    succeed, but every one waits on pricing first, and the gateway's latency
+    climbs while pricing's own spans stay fast.
+spec:
+  environment:
+    app: cloudops-mesh
+  inject:
+    - type: script
+      script: faults/cloudops-load.sh
+      duration: 10m
+    - type: chaosmesh
+      manifest: faults/cloudops-latency-pricing.yaml
+      duration: 10m
+  # Latency, not errors: 3s stays under the gateway's 5s per-hop timeout, so
+  # nothing fails. The histogram is in seconds; baseline p95 is milliseconds.
+  # NaN (no requests in the window) is "unknown", never the fault.
+  steadyState:
+    query: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{job="api-gateway"}[2m])))
+    min: 2
+    settle: 30s
+  reset:
+    - script: faults/restore-all-mutations.sh
+    - script: faults/cloudops-load-stop.sh
+  cleanup:
+    - script: faults/restore-all-mutations.sh
+    - script: faults/cloudops-load-stop.sh
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: cloudops, name: pricing}
+    category: dependency-latency
+    # The gateway is where the latency is measured; inventory is the next hop,
+    # whose calls start late in every trace.
+    decoys:
+      - {kind: Deployment, namespace: cloudops, name: api-gateway}
+      - {kind: Deployment, namespace: cloudops, name: inventory}
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
+    categoryWeight: 0.5
+    requireEvidence: true

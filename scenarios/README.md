@@ -43,7 +43,58 @@ The last three mutate an existing workload through `faults/lib/env-fault.sh` and
 reset and clean up with `faults/restore-all-mutations.sh`, which repairs every
 recorded mutation in the namespace (see the authoring guide, rule 6).
 
+## CloudOps mesh
+
+Four scenarios target [CloudOps](https://github.com/tamen25/CloudOps)'s
+polyglot mesh rather than the otel-demo: the same machinery against a system
+the bench has not seen, with different languages, a sequential call chain
+(gateway → pricing → inventory → fraud → payment → ledger) and statuses that
+point away from the cause.
+
+| Scenario | Fault | Ground truth | Category | Gate |
+|---|---|---|---|---|
+| `cloudops-deploy-regression-ledger` | ledger rolled out with a rotated internal HMAC key | `ledger` | `deploy-regression` | gateway 402 rate |
+| `cloudops-missing-service-name-payment` | payment redeployed with an empty `OTEL_SERVICE_NAME` | `payment` | `missing-service-name` | `unknown_service` series |
+| `cloudops-latency-pricing` | 3s delay on pricing's replies to the gateway | `pricing` | `dependency-latency` | gateway p95 latency |
+| `cloudops-network-partition-inventory` | gateway and inventory cut off from each other | `inventory` | `network-partition` | gateway 504 rate |
+
+The symptoms mislead the way the otel-demo ones do: a ledger fault surfaces
+as `402 payment_failed` from the gateway, naming payment; the latency
+scenario's delay is on the wire, so pricing's own spans stay fast; the
+partition leaves inventory healthy and pricing the last service seen
+answering. The latency and partition scenarios are a pair: a slow hop that
+answers, against a healthy hop nothing reaches.
+
+Each starts its own load (`faults/cloudops-load.sh`: a Job cloned from
+CloudOps's `loadgen-trickle` CronJob, placing orders at 5 rps), because
+CloudOps's trickle runs one minute in five and a `[2m]` gate over it would
+flicker. Cleanup stops it; reset's sweep removes a leftover one.
+
+**Not validated.** They were written from CloudOps's code and OTel wiring,
+not measured on a live cluster (authoring guide rules 2 and 3): the gates
+assume the gateway's Node SDK exports `http_server_request_duration_seconds`
+(stable HTTP semantic conventions) through CloudOps's collector to Mimir.
+BACKLOG B-62 tracks the stub lifecycle run that validates them.
+
+They need a CloudOps cluster with the mesh, loadgen (with its trickle
+CronJob), Chaos Mesh, and observability with Mimir, and `jq` where the bench
+runs. They are not in `scripts/bench-matrix.sh`'s default list (it runs the
+otel-demo ones on kind); run them one at a time:
+
+```bash
+kubectl -n mimir port-forward svc/mimir-gateway 18080:80 &
+kubectl -n loki  port-forward svc/loki-gateway  13100:80 &
+kubectl -n tempo port-forward svc/tempo         13200:3100 &
+argus bench run --scenario scenarios/cloudops-latency-pricing.yaml \
+  --agent stub --stub-profile cited --stub-obvious pricing --stub-category dependency-latency \
+  --mimir-url http://127.0.0.1:18080 --loki-url http://127.0.0.1:13100 --tempo-url http://127.0.0.1:13200 \
+  --inject-namespace cloudops --kube-context <the CloudOps cluster's context>
+```
+
 ## Validation
+
+The eight otel-demo scenarios were validated as below; the CloudOps ones
+are not yet (see above).
 
 The first five were run through the full lifecycle on the kind cluster (2026-09-30):
 reset, verified-clean baseline, inject, steady state, answer, cleanup — each

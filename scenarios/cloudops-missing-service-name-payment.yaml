@@ -1,0 +1,57 @@
+# Bench scenario on the CloudOps mesh (environment cloudops-mesh; run with
+# --inject-namespace cloudops, see README "CloudOps mesh"). Fault: payment is
+# redeployed with an empty OTEL_SERVICE_NAME.
+#
+# Nothing errors. Orders complete; payment's telemetry still arrives, but
+# under unknown_service:<process>, so payment seems to stop reporting while an
+# unnamed service appears between the gateway and ledger. An agent looking
+# for a failure finds none; the evidence is traffic that is still there under
+# another name.
+#
+# UNVALIDATED: written from CloudOps's code, not measured on a live cluster.
+# The gate assumes the collector's remote write emits target_info with the
+# service name as job, as it does for the otel-demo version of this scenario.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: cloudops-missing-service-name-payment
+  description: >-
+    payment is redeployed with an empty OTEL_SERVICE_NAME. Orders still
+    complete, but payment's telemetry now arrives as unknown_service and
+    payment appears to stop reporting.
+spec:
+  environment:
+    app: cloudops-mesh
+  inject:
+    - type: script
+      script: faults/cloudops-load.sh
+      duration: 10m
+    - type: script
+      script: faults/cloudops-missing-service-name-payment.sh
+      duration: 10m
+  # No CloudOps service is unnamed in the baseline: each sets
+  # OTEL_SERVICE_NAME, and inventory names itself in code.
+  steadyState:
+    query: count(count_over_time(target_info{job=~"unknown_service.*"}[2m]))
+    min: 1
+    settle: 30s
+  reset:
+    - script: faults/restore-all-mutations.sh
+    - script: faults/cloudops-load-stop.sh
+  cleanup:
+    - script: faults/restore-all-mutations.sh
+    - script: faults/cloudops-load-stop.sh
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: cloudops, name: payment}
+    category: missing-service-name
+    # ledger's caller becomes the unnamed service, and the gateway's calls
+    # land on it; either reads as the service that changed.
+    decoys:
+      - {kind: Deployment, namespace: cloudops, name: ledger}
+      - {kind: Deployment, namespace: cloudops, name: api-gateway}
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
+    categoryWeight: 0.5
+    requireEvidence: true

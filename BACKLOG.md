@@ -179,6 +179,12 @@ Not defects. Tracked here so nothing is lost between sessions.
   both conditions (`docs/bench/flagship-results.md`). Needs an agent that
   diagnoses some of these incidents, more passes (`--pass N`), and likely a
   larger token budget: 7 of 8 unanswered runs ended at the 100k cap.
+- [ ] **B-62** — Validate the four CloudOps mesh scenarios live
+  (`scenarios/cloudops-*.yaml`, README "CloudOps mesh"). They were written
+  from CloudOps's code, not measured: run each with the `cited` stub through
+  the full lifecycle on a CloudOps cluster, and check the gate fires on the
+  fault and clears after it (authoring guide rules 2, 3 and 5). Correct a gate
+  that does not, before any model run uses the scenario.
 - [ ] **B-34** — `deploy/terraform/` is a README placeholder. **Cut from v1.0**
   (DECISIONS.md, 2026-10-09): the flagship runs on kind; EKS is post-v1.0.
 - [ ] **B-35** — Plugin catalog submission. §9 says to submit at Phase 4 *start*

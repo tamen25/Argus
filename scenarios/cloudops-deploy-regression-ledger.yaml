@@ -1,0 +1,60 @@
+# Bench scenario on the CloudOps mesh (environment cloudops-mesh; run with
+# --inject-namespace cloudops, see README "CloudOps mesh"). Fault: ledger is
+# rolled out with an internal HMAC key that no longer matches payment's.
+#
+# The gateway's orders fail with 402 payment_failed, which names payment and
+# reads like card declines. payment is healthy: it signs correctly and
+# reports ledger's refusals. The evidence that separates the readings is
+# ownership and timing: payment's errors are about ledger, ledger refuses
+# every signed post, and the failures begin at ledger's rollout.
+#
+# UNVALIDATED: written from CloudOps's code (apps/api-gateway, apps/payment,
+# apps/ledger) and its OTel wiring, not measured on a live cluster. The gate
+# assumes the gateway's Node SDK exports http_server_request_duration_seconds
+# (stable HTTP semconv, instrumentation-http 0.223) through the collector's
+# remote write. See README "CloudOps mesh" for the validation still owed.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: cloudops-deploy-regression-ledger
+  description: >-
+    ledger is redeployed with an INTERNAL_HMAC_SECRET that no longer matches
+    the key payment signs with. The rollout succeeds, then ledger refuses
+    every post and the gateway's orders fail with 402 payment_failed.
+spec:
+  environment:
+    app: cloudops-mesh
+  inject:
+    - type: script
+      script: faults/cloudops-load.sh
+      duration: 10m
+    - type: script
+      script: faults/cloudops-deploy-regression-ledger.sh
+      duration: 10m
+  # Baseline 402s are zero: payment declines only amounts at or above
+  # 1,000,000 cents, far beyond the synthetic orders. With the load at 5 rps,
+  # every order fails, so the rate sits near 5/s.
+  steadyState:
+    query: sum(rate(http_server_request_duration_seconds_count{job="api-gateway",http_response_status_code="402"}[2m]))
+    min: 0.05
+    settle: 30s
+  reset:
+    - script: faults/restore-all-mutations.sh
+    - script: faults/cloudops-load-stop.sh
+  cleanup:
+    - script: faults/restore-all-mutations.sh
+    - script: faults/cloudops-load-stop.sh
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: cloudops, name: ledger}
+    category: deploy-regression
+    # The gateway's error names payment; the gateway is where the errors are
+    # returned. Both are victims.
+    decoys:
+      - {kind: Deployment, namespace: cloudops, name: payment}
+      - {kind: Deployment, namespace: cloudops, name: api-gateway}
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
+    categoryWeight: 0.5
+    requireEvidence: true

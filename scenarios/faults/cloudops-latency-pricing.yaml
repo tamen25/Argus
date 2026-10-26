@@ -1,0 +1,49 @@
+# Fault: pricing's replies to the gateway are delayed by 3s.
+#
+# Scenario: ../cloudops-latency-pricing.yaml
+# Ground truth: Deployment/cloudops/pricing.
+#
+# MECHANISM
+# NetworkChaos applies tc netem in pricing's network namespace, limited by
+# `target` to packets bound for the gateway. 3s stays under the gateway's 5s
+# per-hop timeout, so every order still succeeds, slowly: a latency incident
+# with no errors to follow. Limiting it to the gateway keeps kubelet's probes
+# out of it; a delay on all of pricing's traffic would fail its readiness
+# probe (1s timeout) and turn the fault into an outage.
+#
+# ADDITIVE: this creates a Chaos Mesh CR and nothing else, so the injector's
+# `kubectl delete -f` cleanup removes exactly what it added.
+#
+# UNVERIFIED on a live cluster. The selectors follow CloudOps's mesh module
+# (label app=<service>, namespace cloudops). If they match nothing, Chaos Mesh
+# reports success and affects nothing, and the scenario's steadyState gate
+# fails the run rather than scoring a healthy cluster.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: argus-fault-cloudops-latency-pricing
+  namespace: cloudops
+  labels:
+    app.kubernetes.io/managed-by: argus-bench
+    argus.dev/fault: cloudops-latency-pricing
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - cloudops
+    labelSelectors:
+      app: pricing
+  direction: to
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - cloudops
+      labelSelectors:
+        app: api-gateway
+  delay:
+    latency: 3s
+    correlation: "0"
+    jitter: 0ms
+  # No spec.duration: the orchestrator owns the fault's lifetime.

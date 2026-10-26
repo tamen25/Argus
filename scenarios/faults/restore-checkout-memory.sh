@@ -16,6 +16,14 @@ k() { kubectl "${ctx[@]}" -n "$ns" "$@"; }
 LIMIT_KEY=argus-oomkill-original-limit
 STRATEGY_KEY=argus-oomkill-original-strategy
 
+# restore-all-mutations.sh runs this in every namespace a mutation scenario
+# targets, and only otel-demo has a checkout. --ignore-not-found makes an
+# absent Deployment an empty answer, while an unreachable cluster still fails.
+if [ -z "$(k get deploy checkout --ignore-not-found -o name)" ]; then
+  echo "no checkout Deployment in ${ns}, nothing to restore"
+  exit 0
+fi
+
 limit="$(k get deploy checkout -o jsonpath="{.metadata.annotations.${LIMIT_KEY}}")"
 if [ -z "$limit" ]; then
   echo "checkout: no recorded originals, nothing to restore"
