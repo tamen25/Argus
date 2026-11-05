@@ -221,3 +221,5 @@ jobs:
           # a kubeVersion range without -0 excludes: Helm 3 refuses the
           # install.
           helm template argus deploy/helm/argus --kube-version v1.35.9-eks-577a51e >/dev/null
+          # The score gauges' service label must survive the scrape.
+          helm template argus deploy/helm/argus --set serviceMonitor.enabled=true | grep -q 'honorLabels: true'
