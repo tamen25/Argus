@@ -41,20 +41,19 @@ Needs the user: B-35 (catalog submission status).
 
 ## P2 — Plugin
 
-- [ ] **B-21** — npm audit reports 11 (5 high), down from 13, with **zero shipped
-  exposure**: each sits in or behind a package Grafana supplies at runtime
-  (`@grafana/data|ui|runtime` and `react-router*` are webpack externals), and
-  none of `moment`, `dompurify`, `react-use`, `js-cookie` or `react-router`
-  appears in `dist/`. Clearing them needs `@grafana/*` 13.2 and React Router 7,
-  which moves the SDK two minors past the pinned 13.0 line — a compatibility
-  decision, not hygiene. **Don't** run
-  `npm audit fix --force`; it bumps the Grafana SDK outside its declared range.
-- [ ] **B-24** — `@stylistic/eslint-plugin-ts` is deprecated, but it is a peer
-  dependency of `@grafana/eslint-config` 9, which is what the current
-  create-plugin scaffold (7.11.0) still pins. `@grafana/eslint-config` 10 moves
-  to `@stylistic/eslint-plugin` and drops the `./flat.js` export the scaffolded
-  `.config/eslint.config.mjs` imports. **Blocked upstream**: migrate when
-  create-plugin adopts eslint-config 10, by running its `update`.
+- [ ] **B-21** — The plugin's runtime dependencies: **no high advisories**
+  since 2026-11-06 (`@grafana/data|ui|runtime` 13.1.9, the last line that
+  accepts React 18, with `react-use` 17.6.1 and `js-cookie` 3.0.8). 11
+  moderates remain: React Router 6 (v7 needs a newer `@grafana/scenes`) and
+  `@grafana/i18n`'s lint tooling, none in `dist/`. Clearing those needs
+  `@grafana/*` 13.2+, which requires **React 19**: a change to the binding
+  stack (CLAUDE.md lists React 18), so a decision, not hygiene. **Don't** run
+  `npm audit fix --force`.
+- [ ] **B-24** — `@stylistic/eslint-plugin-ts` is deprecated, a peer of
+  `@grafana/eslint-config` 9, which create-plugin 7.11 pins. create-plugin
+  8.0.2 has moved to eslint-config 10, but its scaffold also moves to React
+  19 and Grafana 13.2: running its `update` is the same React 19 decision as
+  B-21. Do both together.
 
 ---
 
