@@ -2,7 +2,7 @@
 # §5.3: the engine API is reachable only from the allowed namespaces (Grafana's
 # plugin backend is its only documented caller), and the OTLP receiver only
 # from the namespaces that mirror telemetry to it. Each port is opened to its
-# own callers. Pods in the release namespace (postgres, jobs) reach the API.
+# own callers. Pods in the release namespace reach the API.
 #
 # The receiver has no authentication, so this policy is the trust boundary for
 # OTLP: any pod allowed here can report any service name. It only holds on a
