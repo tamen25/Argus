@@ -188,6 +188,11 @@ Not defects. Tracked here so nothing is lost between sessions.
 
 ## Done
 
+- [x] **B-62** — the four CloudOps mesh scenarios validated on CloudOps's EKS
+  cluster (2026-11-05): each ran the full lifecycle with the `cited` stub,
+  every gate fired on its fault and cleared after (README "CloudOps mesh").
+  No gate needed correcting.
+
 > **ID correction (2026-09-30).** #61's commit message says "Closes … B-24 B-25
 > B-26"; it closed **B-25, B-26 and B-27** (judge timeout, EntityKey, shotgun
 > decoys). B-24 (eslint deprecation) was not touched and is still open. The

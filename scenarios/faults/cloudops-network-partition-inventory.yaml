@@ -1,0 +1,42 @@
+# Fault: the gateway and inventory cannot reach each other.
+#
+# Scenario: ../cloudops-network-partition-inventory.yaml
+# Ground truth: Deployment/cloudops/inventory.
+#
+# MECHANISM
+# NetworkChaos partition drops every packet between the gateway's pods and
+# inventory's, both ways. inventory itself stays healthy: its probes come from
+# the node, not the gateway, and nothing else calls it. The gateway's call
+# hangs until its 5s per-hop timeout and the order fails with 504
+# upstream_timeout naming the inventory hop, after pricing answered normally.
+#
+# ADDITIVE: this creates a Chaos Mesh CR and nothing else.
+#
+# UNVERIFIED on a live cluster: see cloudops-latency-pricing.yaml. CloudOps
+# runs the VPC CNI, which enforces NetworkPolicy; Chaos Mesh's partition works
+# with iptables in the pods, independent of the CNI.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: argus-fault-cloudops-network-partition-inventory
+  namespace: cloudops
+  labels:
+    app.kubernetes.io/managed-by: argus-bench
+    argus.dev/fault: cloudops-network-partition-inventory
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces:
+      - cloudops
+    labelSelectors:
+      app: api-gateway
+  direction: both
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - cloudops
+      labelSelectors:
+        app: inventory
+  # No spec.duration: the orchestrator owns the fault's lifetime.

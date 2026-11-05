@@ -1,0 +1,59 @@
+# Bench scenario on the CloudOps mesh (environment cloudops-mesh; run with
+# --inject-namespace cloudops, see README "CloudOps mesh"). Fault: the
+# gateway and inventory cannot reach each other.
+#
+# inventory is healthy: it is up, ready, and reports, but receives nothing.
+# The gateway's orders wait out its 5s per-hop timeout and fail with 504
+# upstream_timeout naming the inventory hop, right after pricing answered.
+# The loud service is the gateway; the last service seen working is pricing;
+# the one at fault is the healthy service no request reaches.
+#
+# Paired with cloudops-latency-pricing.
+#
+# Validated 2026-11-05 on CloudOps's EKS cluster with the cited stub (B-62):
+# the gateway's 504 rate peaked at 3.49/s against a baseline of 0, and cleared
+# after the partition was removed.
+apiVersion: argus/v1alpha1
+kind: BenchScenario
+metadata:
+  name: cloudops-network-partition-inventory
+  description: >-
+    Traffic between the gateway and inventory is dropped while both are
+    healthy. Orders time out at the inventory hop and the gateway answers 504
+    after pricing has already responded.
+spec:
+  environment:
+    app: cloudops-mesh
+  inject:
+    - type: script
+      script: faults/cloudops-load.sh
+      duration: 10m
+    - type: chaosmesh
+      manifest: faults/cloudops-network-partition-inventory.yaml
+      duration: 10m
+  # Baseline 504s are zero: every hop answers in milliseconds.
+  steadyState:
+    query: sum(rate(http_server_request_duration_seconds_count{job="api-gateway",http_response_status_code="504"}[2m]))
+    min: 0.05
+    settle: 30s
+  reset:
+    - script: faults/restore-all-mutations.sh
+    - script: faults/cloudops-load-stop.sh
+  cleanup:
+    - script: faults/restore-all-mutations.sh
+    - script: faults/cloudops-load-stop.sh
+  groundTruth:
+    rootCauseEntities:
+      - {kind: Deployment, namespace: cloudops, name: inventory}
+    category: network-partition
+    # The gateway returns the 504s; pricing is the last hop that answered;
+    # fraud is the next one, and goes quiet.
+    decoys:
+      - {kind: Deployment, namespace: cloudops, name: api-gateway}
+      - {kind: Deployment, namespace: cloudops, name: pricing}
+      - {kind: Deployment, namespace: cloudops, name: fraud}
+  scoring:
+    entityMatch: jaccard
+    partialCredit: true
+    categoryWeight: 0.5
+    requireEvidence: true

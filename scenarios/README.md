@@ -43,7 +43,70 @@ The last three mutate an existing workload through `faults/lib/env-fault.sh` and
 reset and clean up with `faults/restore-all-mutations.sh`, which repairs every
 recorded mutation in the namespace (see the authoring guide, rule 6).
 
+## CloudOps mesh
+
+Four scenarios target [CloudOps](https://github.com/tamen25/CloudOps)'s
+polyglot mesh rather than the otel-demo: the same machinery against a system
+the bench has not seen, with different languages, a sequential call chain
+(gateway → pricing → inventory → fraud → payment → ledger) and statuses that
+point away from the cause.
+
+| Scenario | Fault | Ground truth | Category | Gate |
+|---|---|---|---|---|
+| `cloudops-deploy-regression-ledger` | ledger rolled out with a rotated internal HMAC key | `ledger` | `deploy-regression` | gateway 402 rate |
+| `cloudops-missing-service-name-payment` | payment redeployed with an empty `OTEL_SERVICE_NAME` | `payment` | `missing-service-name` | `unknown_service` series |
+| `cloudops-latency-pricing` | 3s delay on pricing's replies to the gateway | `pricing` | `dependency-latency` | gateway p95 latency |
+| `cloudops-network-partition-inventory` | gateway and inventory cut off from each other | `inventory` | `network-partition` | gateway 504 rate |
+
+The symptoms mislead the way the otel-demo ones do: a ledger fault surfaces
+as `402 payment_failed` from the gateway, naming payment; the latency
+scenario's delay is on the wire, so pricing's own spans stay fast; the
+partition leaves inventory healthy and pricing the last service seen
+answering. The latency and partition scenarios are a pair: a slow hop that
+answers, against a healthy hop nothing reaches.
+
+Each starts its own load (`faults/cloudops-load.sh`: a Job cloned from
+CloudOps's `loadgen-trickle` CronJob, placing orders at 5 rps), because
+CloudOps's trickle runs one minute in five and a `[2m]` gate over it would
+flicker. Cleanup stops it; reset's sweep removes a leftover one.
+
+**Validated 2026-11-05** on CloudOps's EKS cluster (B-62): each ran the
+full lifecycle with the `cited` stub (verified-clean baseline, inject,
+steady state, answer, cleanup), its gate fired on the fault and cleared
+after, and the stub scored 1.00.
+
+| Scenario | Gate baseline | Gate peak under the fault |
+|---|---|---|
+| `cloudops-latency-pricing` | p95 ≈ 0.05s | 7.1s (min 2) |
+| `cloudops-network-partition-inventory` | 504 rate 0 | 3.49/s (min 0.05) |
+| `cloudops-deploy-regression-ledger` | 402 rate 0 | 5.07/s (min 0.05) |
+| `cloudops-missing-service-name-payment` | no `unknown_service` series | 1 (min 1) |
+
+Not yet run with a model. On that cluster the mesh's own logs do not reach
+Loki (CloudOps collects OTLP only, and the services log to stdout), so an
+agent's `query_loki` finds little; traces and metrics are complete.
+
+They need a CloudOps cluster with the mesh, loadgen (with its trickle
+CronJob), Chaos Mesh, and observability with Mimir, and `jq` where the bench
+runs. They are not in `scripts/bench-matrix.sh`'s default list (it runs the
+otel-demo ones on kind); run them one at a time:
+
+```bash
+kubectl -n mimir port-forward svc/mimir-nginx   18080:80 &   # mimir-distributed 5.x
+kubectl -n loki  port-forward svc/loki-gateway  13100:80 &
+kubectl -n tempo port-forward svc/tempo         13200:3100 &
+argus bench run --scenario scenarios/cloudops-latency-pricing.yaml \
+  --agent stub --stub-profile cited --stub-obvious pricing --stub-category dependency-latency \
+  --mimir-url http://127.0.0.1:18080 --loki-url http://127.0.0.1:13100 --tempo-url http://127.0.0.1:13200 \
+  --inject-namespace cloudops --kube-context <the CloudOps cluster's context>
+```
+
+`--mimir-url` is the base URL: Argus adds `/prometheus` itself.
+
 ## Validation
+
+The eight otel-demo scenarios were validated as below; the CloudOps ones
+on EKS (see above).
 
 The first five were run through the full lifecycle on the kind cluster (2026-09-30):
 reset, verified-clean baseline, inject, steady state, answer, cleanup — each
