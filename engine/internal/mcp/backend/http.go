@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/prometheus/prometheus/promql/parser"
+
 	"github.com/tamen25/Argus/engine/internal/bounded"
 	"github.com/tamen25/Argus/engine/internal/clip"
 	"github.com/tamen25/Argus/engine/internal/httpclient"
@@ -201,6 +203,10 @@ func (m *Mimir) labels(ctx context.Context, path, selector string) ([]string, er
 	q := url.Values{}
 	q.Set("start", now.Add(-catalogWindow).UTC().Format(time.RFC3339))
 	q.Set("end", now.UTC().Format(time.RFC3339))
+	selector, err := scopingSelector(selector)
+	if err != nil {
+		return nil, err
+	}
 	if selector != "" {
 		q.Set("match[]", selector)
 	}
@@ -309,4 +315,27 @@ func (t *Tempo) TraceTagValues(ctx context.Context, tag string) ([]string, error
 		values = append(values, v.Value)
 	}
 	return values, nil
+}
+
+// scopingSelector returns the selector to send as match[], or "" for none.
+// Prometheus and Mimir refuse a selector in which every matcher matches the
+// empty string ({} or {job=""}: "match[] must contain at least one
+// non-empty matcher"); it scopes nothing, so it means the same as no
+// selector, and an agent that passes an empty service name should get the
+// unscoped list rather than spend a tool call on an error. A selector that
+// does not parse is returned as an error naming it.
+func scopingSelector(selector string) (string, error) {
+	if selector == "" {
+		return "", nil
+	}
+	matchers, err := parser.NewParser(parser.Options{}).ParseMetricSelector(selector)
+	if err != nil {
+		return "", fmt.Errorf("selector %q: %w", selector, err)
+	}
+	for _, m := range matchers {
+		if !m.Matches("") {
+			return selector, nil
+		}
+	}
+	return "", nil
 }

@@ -42,8 +42,10 @@ The server checks every request before calling a backend:
 | `search_traces` | Tempo | `--tempo-url` |
 | `list_alerts` | Mimir (Prometheus API) | `--mimir-url` |
 
-`query_prometheus` is an instant query by default; supply `start`, `end`, and
-`step` for a range query. `list_alerts` accepts an optional `state` (e.g.
+`query_prometheus` is an instant query by default; supply any of `start`,
+`end` or `step` for a range query. The others default as `query_loki`'s do:
+`end` now, `start` an hour before `end`, and `step` about 300 points over the
+range (at least 15s). `list_alerts` accepts an optional `state` (e.g.
 `firing`), filtered client-side so the argument is honored rather than ignored.
 
 ### Discovery
@@ -54,7 +56,9 @@ error. The `list_*` tools say what exists, the way a metric browser does for a
 human:
 
 - `list_metrics` — metric names with samples in the last 15 minutes; optional
-  `selector` (e.g. `{job="my-service"}`) and `match` (substring).
+  `selector` (e.g. `{job="my-service"}`) and `match` (substring). A selector
+  that scopes nothing (`{}`, `{job=""}`) lists everything, instead of being
+  sent to Mimir, which refuses it.
 - `list_metric_labels` — label names, or with `label`, that label's values.
 - `list_log_labels` — Loki stream labels, or one label's values (last hour).
 - `list_trace_tags` — Tempo attributes, scoped as TraceQL writes them

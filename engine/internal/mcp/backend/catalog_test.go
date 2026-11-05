@@ -225,3 +225,32 @@ func TestTopologyRejectsInvalidNamespace(t *testing.T) {
 		}
 	}
 }
+
+// TestMimir_AMatcherlessSelectorScopesNothing: Mimir refuses a match[] whose
+// every matcher matches the empty string ("match[] must contain at least one
+// non-empty matcher"). A model passed {job=""} on the CloudOps run and lost
+// a tool call to the 400; it means "no scope", so it is sent as none.
+func TestMimir_AMatcherlessSelectorScopesNothing(t *testing.T) {
+	var got http.Request
+	srv := labelServer(t, `{"status":"success","data":["up"]}`, &got)
+	defer srv.Close()
+	m := NewMimir(srv.URL, "")
+
+	for _, sel := range []string{`{}`, `{job=""}`, `{job=~".*"}`} {
+		if _, err := m.MetricNames(context.Background(), sel); err != nil {
+			t.Fatalf("%s: %v", sel, err)
+		}
+		if got.URL.Query().Has("match[]") {
+			t.Errorf("%s was sent as match[] = %q; it scopes nothing and Mimir refuses it", sel, got.URL.Query().Get("match[]"))
+		}
+	}
+	if _, err := m.MetricNames(context.Background(), `{job="cart",le=""}`); err != nil {
+		t.Fatal(err)
+	}
+	if got.URL.Query().Get("match[]") != `{job="cart",le=""}` {
+		t.Errorf("a selector with one non-empty matcher must be kept, got %q", got.URL.Query().Get("match[]"))
+	}
+	if _, err := m.MetricNames(context.Background(), `{job=`); err == nil || !strings.Contains(err.Error(), `{job=`) {
+		t.Errorf("an unparseable selector should be an error naming it, got %v", err)
+	}
+}
