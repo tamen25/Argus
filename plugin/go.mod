@@ -2,7 +2,7 @@ module github.com/tamen25/argus
 
 go 1.26.5
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require github.com/grafana/grafana-plugin-sdk-go v0.296.5
 
