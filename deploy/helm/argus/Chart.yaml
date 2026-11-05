@@ -9,4 +9,4 @@ appVersion: "2.0.0"
 home: https://github.com/tamen25/Argus
 sources:
   - https://github.com/tamen25/Argus
-kubeVersion: ">=1.27.0"
+kubeVersion: ">=1.27.0-0"

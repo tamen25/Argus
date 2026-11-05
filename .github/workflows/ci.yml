@@ -216,3 +216,8 @@ jobs:
           helm dependency update deploy/helm/argus
           helm lint deploy/helm/argus
           helm template argus deploy/helm/argus >/dev/null
+          # Managed clusters report versions with a suffix (EKS:
+          # v1.35.9-eks-577a51e) that semver reads as a pre-release, which
+          # a kubeVersion range without -0 excludes: Helm 3 refuses the
+          # install.
+          helm template argus deploy/helm/argus --kube-version v1.35.9-eks-577a51e >/dev/null
