@@ -159,7 +159,34 @@ func samplePair(pair []any) (float64, bool, error) {
 	}
 }
 
+// WhyNotClean reads the steady-state query once and describes the result for
+// a baseline that timed out. The query error that read() treats as "not yet"
+// is kept here, since by the deadline it is the likeliest cause.
+func (p *PromQLProbe) WhyNotClean(ctx context.Context, sc bench.Scenario) (string, bool) {
+	if p.Q == nil || sc.Spec.SteadyState == nil {
+		return "had no metrics backend to run against", false
+	}
+	raw, err := p.Q.QueryInstant(ctx, sc.Spec.SteadyState.Query, time.Now())
+	if err != nil {
+		return fmt.Sprintf("did not answer (%v)", err), false
+	}
+	sig, err := p.read(ctx, sc)
+	switch {
+	case err != nil:
+		return fmt.Sprintf("returned an unreadable result (%v)", err), false
+	case sig == present:
+		return "matched the fault's signature", true
+	case sig == absent:
+		return "is now clean", false
+	}
+	if v, ok, _ := firstSampleValue(raw); ok && math.IsNaN(v) {
+		return "returned NaN (no samples in its window)", false
+	}
+	return "gave no evidence either way", false
+}
+
 var (
-	_ SteadyStateProbe = (*PromQLProbe)(nil)
-	_ BaselineProbe    = (*PromQLProbe)(nil)
+	_ SteadyStateProbe  = (*PromQLProbe)(nil)
+	_ BaselineProbe     = (*PromQLProbe)(nil)
+	_ BaselineExplainer = (*PromQLProbe)(nil)
 )
