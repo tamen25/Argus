@@ -60,6 +60,18 @@ type BaselineProbe interface {
 	Clean(ctx context.Context, sc bench.Scenario) (bool, error)
 }
 
+// BaselineExplainer is implemented by baseline probes that can say why the
+// baseline was not proven clean. "Not clean" covers two different states: the
+// fault's signature is present (the reset left effects behind), or the query
+// gave no evidence at all (backend unreachable, wrong URL, NaN). They need
+// different fixes, and the timeout message must not blame the reset for a
+// query that never answered.
+type BaselineExplainer interface {
+	// WhyNotClean reads the environment once more and describes what it saw.
+	// present is true only when the fault's signature was observed.
+	WhyNotClean(ctx context.Context, sc bench.Scenario) (reason string, present bool)
+}
+
 // Locker is implemented by injectors whose reset reaches beyond the
 // scenario's own objects: the Kubernetes injector sweeps every argus-managed
 // fault in the cluster. Run holds the lock for its whole duration, so a
@@ -486,15 +498,30 @@ func waitBaseline(ctx context.Context, probe SteadyStateProbe, sc bench.Scenario
 			return nil
 		}
 		if !opts.Now().Before(deadline) {
-			return fmt.Errorf("environment did not return to baseline within %s: the fault's signature "+
-				"(%s) was still present before injection, so this repeat could not be independent of "+
-				"the last; the scenario's reset must remove the fault's effects, not only the fault",
-				opts.BaselineTimeout, sc.Spec.SteadyState.Query)
+			return baselineTimeout(ctx, bp, sc, opts.BaselineTimeout)
 		}
 		if err := sleep(ctx, opts.PollInterval); err != nil {
 			return err
 		}
 	}
+}
+
+// baselineTimeout says why the baseline was not proven clean in time. Without
+// an explainer it assumes the signature was present, the only cause a plain
+// BaselineProbe can report.
+func baselineTimeout(ctx context.Context, bp BaselineProbe, sc bench.Scenario, timeout time.Duration) error {
+	query := sc.Spec.SteadyState.Query
+	if ex, ok := bp.(BaselineExplainer); ok {
+		if reason, present := ex.WhyNotClean(ctx, sc); !present {
+			return fmt.Errorf("could not verify the baseline within %s: the steady-state query (%s) %s; "+
+				"no fault was injected. Check the metrics backend URL and that the query's series exist",
+				timeout, query, reason)
+		}
+	}
+	return fmt.Errorf("environment did not return to baseline within %s: the fault's signature "+
+		"(%s) was still present before injection, so this repeat could not be independent of "+
+		"the last; the scenario's reset must remove the fault's effects, not only the fault",
+		timeout, query)
 }
 
 // settleWindow is the scenario's declared settle duration, or zero.

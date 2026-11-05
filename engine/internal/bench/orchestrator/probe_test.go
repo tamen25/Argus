@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,5 +190,30 @@ func TestProbeTreatsNaNAsUnknown(t *testing.T) {
 	}
 	if clean, err := p.Clean(context.Background(), sc); err != nil || clean {
 		t.Fatalf("Clean on NaN = (%v, %v), want (false, nil): NaN cannot prove a clean baseline", clean, err)
+	}
+}
+
+// TestWhyNotCleanReportsWhatTheQuerySaw: the three states a timed-out baseline
+// can be in, each described distinctly; only a matching signature is present.
+func TestWhyNotCleanReportsWhatTheQuerySaw(t *testing.T) {
+	sc := scenarioWithSteadyState(&bench.SteadyState{Query: "histogram_quantile(0.95, x)", Min: f64(2)})
+	cases := []struct {
+		name        string
+		q           *fakeQuerier
+		want        string
+		wantPresent bool
+	}{
+		{"backend error", &fakeQuerier{err: errors.New("HTTP 404")}, "did not answer (HTTP 404)", false},
+		{"NaN", &fakeQuerier{raw: vectorJSON("NaN")}, "NaN", false},
+		{"signature", &fakeQuerier{raw: vectorJSON("3")}, "matched the fault's signature", true},
+		{"clean", &fakeQuerier{raw: vectorJSON("0.05")}, "is now clean", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reason, present := (&PromQLProbe{Q: tc.q}).WhyNotClean(context.Background(), sc)
+			if !strings.Contains(reason, tc.want) || present != tc.wantPresent {
+				t.Fatalf("WhyNotClean = (%q, %v), want (…%s…, %v)", reason, present, tc.want, tc.wantPresent)
+			}
+		})
 	}
 }

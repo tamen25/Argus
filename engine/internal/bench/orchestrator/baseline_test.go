@@ -174,3 +174,62 @@ func TestMalformedEvidenceIsScoredNotExcluded(t *testing.T) {
 		t.Fatalf("MalformedEvidence = %d, want 1 so the report shows the agent tried and got it wrong", got)
 	}
 }
+
+// explainingProbe is a clockedProbe that can also say why the baseline was not
+// clean, as PromQLProbe does.
+type explainingProbe struct {
+	clockedProbe
+	reason  string
+	present bool
+}
+
+func (p *explainingProbe) WhyNotClean(context.Context, bench.Scenario) (string, bool) {
+	return p.reason, p.present
+}
+
+// TestBaselineTimeoutSaysWhenTheQueryNeverAnswered: a steady-state query that
+// never answers (a wrong --mimir-url returned 404 for ten minutes on the first
+// CloudOps EKS run) is not a fault left behind. The error must say the query
+// gave no evidence, and must not send the operator to fix the scenario's reset.
+func TestBaselineTimeoutSaysWhenTheQueryNeverAnswered(t *testing.T) {
+	p := &explainingProbe{
+		clockedProbe: clockedProbe{reached: []bool{true}, clean: []bool{false}, now: time.Unix(0, 0), step: time.Minute},
+		reason:       "did not answer (HTTP 404)",
+	}
+	opts := clockedOpts(&p.clockedProbe, 1)
+	opts.BaselineTimeout = 5 * time.Minute
+	inj := &fakeInjector{}
+	rep, err := Run(context.Background(), testScenarioWithSteady(), &scriptAgent{answers: []string{perfect}}, nil, inj, p, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := rep.Runs[0].Error
+	if !strings.Contains(got, "could not verify the baseline") || !strings.Contains(got, "HTTP 404") {
+		t.Fatalf("error = %q, want it to say the baseline could not be verified, with the query's failure", got)
+	}
+	if strings.Contains(got, "still present") {
+		t.Fatalf("error = %q blames a leftover fault for a query that never answered", got)
+	}
+	if inj.injects != 0 {
+		t.Fatalf("injected %d times without a verified baseline, want 0", inj.injects)
+	}
+}
+
+// TestBaselineTimeoutKeepsBlamingAPresentSignature: when the explainer saw the
+// signature, the message is the leftover-fault one.
+func TestBaselineTimeoutKeepsBlamingAPresentSignature(t *testing.T) {
+	p := &explainingProbe{
+		clockedProbe: clockedProbe{reached: []bool{true}, clean: []bool{false}, now: time.Unix(0, 0), step: time.Minute},
+		reason:       "matched the fault's signature",
+		present:      true,
+	}
+	opts := clockedOpts(&p.clockedProbe, 1)
+	opts.BaselineTimeout = 5 * time.Minute
+	rep, err := Run(context.Background(), testScenarioWithSteady(), &scriptAgent{answers: []string{perfect}}, nil, &fakeInjector{}, p, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rep.Runs[0].Error; !strings.Contains(got, "still present") {
+		t.Fatalf("error = %q, want the leftover-fault message", got)
+	}
+}
