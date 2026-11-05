@@ -198,3 +198,45 @@ func TestRegistry_DuplicateRejected(t *testing.T) {
 		t.Error("expected duplicate error")
 	}
 }
+
+// TestQueryPrometheus_ARangeWithMissingPartsDefaults: on the CloudOps model
+// run a call that gave a start but no end (or only a step) failed with
+// "start: empty timestamp", costing the agent one of its 20 calls. Missing
+// parts now default as query_loki's do: the last hour, ending now, and a
+// step sized to the range.
+func TestQueryPrometheus_ARangeWithMissingPartsDefaults(t *testing.T) {
+	f := &fakeBackend{}
+	r, err := NewServer(fullBackends(f))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before := time.Now()
+	if _, err := r.Call(context.Background(), ToolQueryPrometheus, json.RawMessage(`{"query":"up","step":"1m"}`)); err != nil {
+		t.Fatalf("a step alone must make a range over the last hour: %v", err)
+	}
+	if !f.ranged || f.lastStep != time.Minute || f.lastEnd.Before(before) || f.lastEnd.Sub(f.lastStart) != time.Hour {
+		t.Errorf("got ranged=%v start=%v end=%v step=%v, want the last hour at 1m", f.ranged, f.lastStart, f.lastEnd, f.lastStep)
+	}
+
+	if _, err := r.Call(context.Background(), ToolQueryPrometheus,
+		json.RawMessage(`{"query":"up","start":"2026-11-05T13:00:00Z","end":"2026-11-05T15:00:00Z"}`)); err != nil {
+		t.Fatalf("start and end without a step: %v", err)
+	}
+	if f.lastStep != 24*time.Second {
+		t.Errorf("default step over 2h = %v, want 24s (about 300 points)", f.lastStep)
+	}
+
+	if _, err := r.Call(context.Background(), ToolQueryPrometheus,
+		json.RawMessage(`{"query":"up","start":"2026-11-05T13:00:00Z","end":"2026-11-05T13:10:00Z"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if f.lastStep != 15*time.Second {
+		t.Errorf("default step over 10m = %v, want the 15s floor", f.lastStep)
+	}
+
+	if _, err := r.Call(context.Background(), ToolQueryPrometheus,
+		json.RawMessage(`{"query":"up","start":"yesterday"}`)); err == nil || !strings.Contains(err.Error(), "start") {
+		t.Errorf("a malformed start must still be an error naming it, got %v", err)
+	}
+}

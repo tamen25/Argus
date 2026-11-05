@@ -182,12 +182,6 @@ Not defects. Tracked here so nothing is lost between sessions.
   CloudOps scenarios (2026-11-05, `docs/bench/cloudops-model-run.md`) the
   same model at 200k tokens never passed 108k; the 20-call cap bound first,
   and the two answers named the gateway decoy (mean 0.06).
-- [ ] **B-63** — Bench tools that error on inputs they could absorb. From the
-  CloudOps model run: `list_metrics` passes `{job=""}` to Mimir, which
-  refuses it ("match[] must contain at least one non-empty matcher"), where
-  an empty service should mean no filter; `query_prometheus` with an empty
-  `start` errors instead of defaulting to the scenario window. Each failed
-  call spends one of the agent's 20.
 - [ ] **B-34** — `deploy/terraform/` is a README placeholder. **Cut from v1.0**
   (DECISIONS.md, 2026-10-09): the flagship runs on kind; EKS is post-v1.0.
 - [ ] **B-35** — Plugin catalog submission. §9 says to submit at Phase 4 *start*
@@ -196,6 +190,10 @@ Not defects. Tracked here so nothing is lost between sessions.
 ---
 
 ## Done
+
+- [x] **B-63** — the bench tools absorb inputs they used to refuse: a
+  selector that scopes nothing lists everything, and a range query with a
+  missing `start`, `end` or `step` takes defaults.
 
 - [x] **B-62** — the four CloudOps mesh scenarios validated on CloudOps's EKS
   cluster (2026-11-05): each ran the full lifecycle with the `cited` stub,

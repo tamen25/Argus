@@ -85,9 +85,9 @@ func promTool(m MetricsBackend, catalog bool) Tool {
 		`"properties":{` +
 		`"query":{"type":"string","description":"PromQL expression"},` +
 		`"time":{"type":"string","description":"RFC3339 instant; default now. Ignored if start/end set."},` +
-		`"start":{"type":"string","description":"RFC3339 range start (with end+step)"},` +
-		`"end":{"type":"string","description":"RFC3339 range end"},` +
-		`"step":{"type":"string","description":"Range step duration, e.g. 30s"}}}`
+		`"start":{"type":"string","description":"RFC3339 range start; giving any of start, end or step makes a range query (default 1h before end)"},` +
+		`"end":{"type":"string","description":"RFC3339 range end; default now"},` +
+		`"step":{"type":"string","description":"Range step duration, e.g. 30s; default about 300 points over the range, at least 15s"}}}`
 	return Tool{
 		Name: ToolQueryPrometheus,
 		Description: hint("Run a read-only PromQL query against Mimir. Instant by default; range if start, end and step are given. "+
@@ -104,17 +104,33 @@ func promTool(m MetricsBackend, catalog bool) Tool {
 				return nil, fmt.Errorf("mcp: %s: query is required", ToolQueryPrometheus)
 			}
 			if a.Start != "" || a.End != "" || a.Step != "" {
-				start, err := parseTime(a.Start)
-				if err != nil {
-					return nil, fmt.Errorf("start: %w", err)
+				// Any one of them asks for a range; the others default as
+				// query_loki's do (the last hour, ending now) instead of
+				// failing the call: a model that gave only a start lost a tool
+				// call to "start: empty timestamp" on the CloudOps run.
+				end := time.Now()
+				if a.End != "" {
+					t, err := parseTime(a.End)
+					if err != nil {
+						return nil, fmt.Errorf("end: %w", err)
+					}
+					end = t
 				}
-				end, err := parseTime(a.End)
-				if err != nil {
-					return nil, fmt.Errorf("end: %w", err)
+				start := end.Add(-time.Hour)
+				if a.Start != "" {
+					t, err := parseTime(a.Start)
+					if err != nil {
+						return nil, fmt.Errorf("start: %w", err)
+					}
+					start = t
 				}
-				step, err := time.ParseDuration(a.Step)
-				if err != nil {
-					return nil, fmt.Errorf("step: %w", err)
+				step := defaultStep(start, end)
+				if a.Step != "" {
+					d, err := time.ParseDuration(a.Step)
+					if err != nil {
+						return nil, fmt.Errorf("step: %w", err)
+					}
+					step = d
 				}
 				if err := checkRange(start, end, step); err != nil {
 					return nil, err
@@ -278,6 +294,16 @@ const (
 	maxLogLines    = 5000  // Loki's default max_entries_limit_per_query
 	maxTraces      = 1000
 )
+
+// defaultStep is the step for a range query that gave none: about 300
+// points over the range, never under 15s (a typical scrape interval).
+func defaultStep(start, end time.Time) time.Duration {
+	step := end.Sub(start) / 300
+	if step < 15*time.Second {
+		return 15 * time.Second
+	}
+	return step.Round(time.Second)
+}
 
 // checkRange validates a range query's start, end and step.
 func checkRange(start, end time.Time, step time.Duration) error {
