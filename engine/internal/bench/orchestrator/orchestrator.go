@@ -228,9 +228,12 @@ type Report struct {
 	// when the adapter's default was not recorded.
 	AgentTimeout string `json:"agent_timeout,omitempty"`
 	// MaxTurnTokens is Options.MaxTurnTokens; omitted when no cap was sent.
-	MaxTurnTokens int         `json:"max_turn_tokens,omitempty"`
-	Runs          []RunRecord `json:"runs"`
-	Summary       Summary     `json:"summary"`
+	MaxTurnTokens int `json:"max_turn_tokens,omitempty"`
+	// Redacted is set when RedactReport removed the literal values from the
+	// tool log and errors (--redact-report).
+	Redacted bool        `json:"redacted,omitempty"`
+	Runs     []RunRecord `json:"runs"`
+	Summary  Summary     `json:"summary"`
 }
 
 // ErrInterrupted is returned, wrapping the context's error, when ctx is

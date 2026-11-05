@@ -3,12 +3,17 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/tamen25/Argus/engine/internal/bench/agent"
+	"github.com/tamen25/Argus/engine/internal/bench/orchestrator"
 )
 
 const benchScenarioYAML = `apiVersion: argus/v1alpha1
@@ -190,5 +195,26 @@ func TestBenchRun_RejectsBadFlags(t *testing.T) {
 		if err := root.Execute(); err == nil {
 			t.Errorf("args %v: expected error", args)
 		}
+	}
+}
+
+// TestWriteBenchReportRedactsOnRequest: --redact-report must reach the file
+// that is written, not only the rendering helpers.
+func TestWriteBenchReportRedactsOnRequest(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "report.json")
+	rep := orchestrator.Report{Runs: []orchestrator.RunRecord{{
+		ToolLog: []agent.ToolCall{{Tool: "list_metrics", Arguments: `{"selector":"{job=\"cart\"}"}`}},
+	}}}
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	if err := writeBenchReport(cmd, benchFlags{format: "json", out: out, redactReport: true}, rep); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "cart") || !strings.Contains(string(b), `"redacted": true`) {
+		t.Errorf("report not redacted:\n%s", b)
 	}
 }
