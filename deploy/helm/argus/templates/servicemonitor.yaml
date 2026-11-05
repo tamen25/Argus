@@ -19,4 +19,8 @@ spec:
     - port: http
       path: /metrics
       interval: {{ .Values.serviceMonitor.interval }}
+      # The gauges' own `service` label names the scored service; without
+      # this the operator's target label `service` (here: argus) wins and
+      # the scored service is renamed exported_service.
+      honorLabels: true
 {{- end }}
