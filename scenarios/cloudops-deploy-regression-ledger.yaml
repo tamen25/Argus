@@ -8,11 +8,9 @@
 # ownership and timing: payment's errors are about ledger, ledger refuses
 # every signed post, and the failures begin at ledger's rollout.
 #
-# UNVALIDATED: written from CloudOps's code (apps/api-gateway, apps/payment,
-# apps/ledger) and its OTel wiring, not measured on a live cluster. The gate
-# assumes the gateway's Node SDK exports http_server_request_duration_seconds
-# (stable HTTP semconv, instrumentation-http 0.223) through the collector's
-# remote write. See README "CloudOps mesh" for the validation still owed.
+# Validated 2026-11-05 on CloudOps's EKS cluster with the cited stub (B-62):
+# the gate's 402 rate peaked at 5.07/s against a baseline of 0, and cleared
+# after cleanup restored the key.
 apiVersion: argus/v1alpha1
 kind: BenchScenario
 metadata:

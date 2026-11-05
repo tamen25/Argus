@@ -70,11 +70,21 @@ CloudOps's `loadgen-trickle` CronJob, placing orders at 5 rps), because
 CloudOps's trickle runs one minute in five and a `[2m]` gate over it would
 flicker. Cleanup stops it; reset's sweep removes a leftover one.
 
-**Not validated.** They were written from CloudOps's code and OTel wiring,
-not measured on a live cluster (authoring guide rules 2 and 3): the gates
-assume the gateway's Node SDK exports `http_server_request_duration_seconds`
-(stable HTTP semantic conventions) through CloudOps's collector to Mimir.
-BACKLOG B-62 tracks the stub lifecycle run that validates them.
+**Validated 2026-11-05** on CloudOps's EKS cluster (B-62): each ran the
+full lifecycle with the `cited` stub (verified-clean baseline, inject,
+steady state, answer, cleanup), its gate fired on the fault and cleared
+after, and the stub scored 1.00.
+
+| Scenario | Gate baseline | Gate peak under the fault |
+|---|---|---|
+| `cloudops-latency-pricing` | p95 ≈ 0.05s | 7.1s (min 2) |
+| `cloudops-network-partition-inventory` | 504 rate 0 | 3.49/s (min 0.05) |
+| `cloudops-deploy-regression-ledger` | 402 rate 0 | 5.07/s (min 0.05) |
+| `cloudops-missing-service-name-payment` | no `unknown_service` series | 1 (min 1) |
+
+Not yet run with a model. On that cluster the mesh's own logs do not reach
+Loki (CloudOps collects OTLP only, and the services log to stdout), so an
+agent's `query_loki` finds little; traces and metrics are complete.
 
 They need a CloudOps cluster with the mesh, loadgen (with its trickle
 CronJob), Chaos Mesh, and observability with Mimir, and `jq` where the bench
@@ -82,7 +92,7 @@ runs. They are not in `scripts/bench-matrix.sh`'s default list (it runs the
 otel-demo ones on kind); run them one at a time:
 
 ```bash
-kubectl -n mimir port-forward svc/mimir-gateway 18080:80 &
+kubectl -n mimir port-forward svc/mimir-nginx   18080:80 &   # mimir-distributed 5.x
 kubectl -n loki  port-forward svc/loki-gateway  13100:80 &
 kubectl -n tempo port-forward svc/tempo         13200:3100 &
 argus bench run --scenario scenarios/cloudops-latency-pricing.yaml \
@@ -91,10 +101,12 @@ argus bench run --scenario scenarios/cloudops-latency-pricing.yaml \
   --inject-namespace cloudops --kube-context <the CloudOps cluster's context>
 ```
 
+`--mimir-url` is the base URL: Argus adds `/prometheus` itself.
+
 ## Validation
 
 The eight otel-demo scenarios were validated as below; the CloudOps ones
-are not yet (see above).
+on EKS (see above).
 
 The first five were run through the full lifecycle on the kind cluster (2026-09-30):
 reset, verified-clean baseline, inject, steady state, answer, cleanup — each

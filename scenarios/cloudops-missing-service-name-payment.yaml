@@ -8,9 +8,9 @@
 # for a failure finds none; the evidence is traffic that is still there under
 # another name.
 #
-# UNVALIDATED: written from CloudOps's code, not measured on a live cluster.
-# The gate assumes the collector's remote write emits target_info with the
-# service name as job, as it does for the otel-demo version of this scenario.
+# Validated 2026-11-05 on CloudOps's EKS cluster with the cited stub (B-62):
+# target_info appeared under job unknown_service:node during the fault (none
+# at baseline) and aged out of the [2m] window after payment was restored.
 apiVersion: argus/v1alpha1
 kind: BenchScenario
 metadata:

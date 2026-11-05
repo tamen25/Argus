@@ -10,7 +10,9 @@
 #
 # Paired with cloudops-latency-pricing.
 #
-# UNVALIDATED: written from CloudOps's code, not measured on a live cluster.
+# Validated 2026-11-05 on CloudOps's EKS cluster with the cited stub (B-62):
+# the gateway's 504 rate peaked at 3.49/s against a baseline of 0, and cleared
+# after the partition was removed.
 apiVersion: argus/v1alpha1
 kind: BenchScenario
 metadata:

@@ -11,9 +11,9 @@
 # Paired with cloudops-network-partition-inventory: the same gateway, a slow
 # hop that answers versus a healthy hop that cannot be reached.
 #
-# UNVALIDATED: written from CloudOps's code, not measured on a live cluster.
-# The gate assumes the gateway's http_server_request_duration_seconds histogram
-# (seconds, stable HTTP semconv) reaches Mimir through the collector.
+# Validated 2026-11-05 on CloudOps's EKS cluster with the cited stub (B-62):
+# gateway p95 peaked at 7.1s against a baseline of about 0.05s, and fell
+# back once the NetworkChaos was removed.
 apiVersion: argus/v1alpha1
 kind: BenchScenario
 metadata:
