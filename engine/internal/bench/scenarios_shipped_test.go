@@ -114,6 +114,28 @@ func TestShippedScenarioNamesMatchFilenames(t *testing.T) {
 	}
 }
 
+// TestShippedScenarioEnvironmentIsTheRootCauseNamespace: the agent's brief
+// names the scenario's environment ("An incident is affecting the %q
+// environment"), and a model reads that as the namespace. The CloudOps
+// scenarios named theirs cloudops-mesh while the mesh runs in cloudops, and
+// on the 2026-11-05 model run the answer put the gateway in a cloudops-mesh
+// namespace that does not exist. Every shipped scenario's environment is its
+// root cause's namespace.
+func TestShippedScenarioEnvironmentIsTheRootCauseNamespace(t *testing.T) {
+	for _, p := range shippedScenarios(t) {
+		sc, err := bench.LoadScenario(p)
+		if err != nil {
+			continue
+		}
+		for _, e := range sc.Spec.GroundTruth.RootCauseEntities {
+			if e.Namespace != sc.Spec.Environment.App {
+				t.Errorf("%s: environment %q, but root cause %s/%s is in namespace %q",
+					filepath.Base(p), sc.Spec.Environment.App, e.Kind, e.Name, e.Namespace)
+			}
+		}
+	}
+}
+
 // TestMutationScenariosRestoreEverything: a scenario whose inject script
 // mutates a workload through lib/env-fault.sh must reset and clean up with
 // restore-all-mutations.sh. That hook repairs every recorded mutation in the

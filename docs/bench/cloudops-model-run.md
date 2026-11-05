@@ -34,7 +34,11 @@ Mean score 0.06. Reports with full tool logs:
 - **The decoys worked as designed.** Both submitted answers named the
   gateway: the service that returns the 504s and 402s, not the one at fault.
   The partition answer also put it in namespace `cloudops-mesh`, the
-  scenario's environment name, which exists nowhere in the cluster.
+  scenario's environment name, which exists nowhere in the cluster: the
+  brief names the environment, and these scenarios (unlike the otel-demo
+  ones) named it differently from the namespace. Fixed after the run: their
+  environment is now `cloudops`, and a test keeps every scenario's
+  environment equal to its root cause's namespace.
 - **Most failed calls were malformed queries.** TraceQL that Tempo
   rejected, a Loki range in 2024, a `start` left empty, and `list_metrics`
   with `{job=""}`, which Mimir refuses ("match[] must contain at least one

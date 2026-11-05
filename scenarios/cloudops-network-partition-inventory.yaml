@@ -1,4 +1,4 @@
-# Bench scenario on the CloudOps mesh (environment cloudops-mesh; run with
+# Bench scenario on the CloudOps mesh (environment cloudops; run with
 # --inject-namespace cloudops, see README "CloudOps mesh"). Fault: the
 # gateway and inventory cannot reach each other.
 #
@@ -23,7 +23,7 @@ metadata:
     after pricing has already responded.
 spec:
   environment:
-    app: cloudops-mesh
+    app: cloudops
   inject:
     - type: script
       script: faults/cloudops-load.sh

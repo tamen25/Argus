@@ -1,4 +1,4 @@
-# Bench scenario on the CloudOps mesh (environment cloudops-mesh; run with
+# Bench scenario on the CloudOps mesh (environment cloudops; run with
 # --inject-namespace cloudops, see README "CloudOps mesh"). Fault: pricing's
 # replies to the gateway are delayed by 3s.
 #
@@ -24,7 +24,7 @@ metadata:
     climbs while pricing's own spans stay fast.
 spec:
   environment:
-    app: cloudops-mesh
+    app: cloudops
   inject:
     - type: script
       script: faults/cloudops-load.sh
