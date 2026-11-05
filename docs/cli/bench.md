@@ -331,6 +331,19 @@ in its caveats. The category an agent gave is recorded verbatim too, so a
 mismatch shows what it actually said. Shell agents have no tool log: Argus cannot
 see their tool use.
 
+### Sharing a report
+
+A report's `tool_log` quotes every query the agent sent and every error a
+backend returned, so it carries values from the environment: service and
+tenant names, IDs, log text. The file is written owner-only (mode 0600).
+Before sharing one outside the team that ran it, write it with
+`--redact-report`: each literal in a query (`{job="…"}`, `|= "…"`), each
+plain argument naming something (a namespace, a label, a match string) and
+each URL query string in an error becomes `…`, and the report says
+`"redacted": true`. Tool names, label names, functions, ranges, times and
+limits stay, so the report still shows how the agent investigated. The
+unredacted report is the one to debug with.
+
 ## Leaderboards and comparing telemetry conditions
 
 `bench run` reports one agent on one scenario. `bench report` reads a set of

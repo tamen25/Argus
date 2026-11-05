@@ -36,6 +36,8 @@ func newBenchCmd() *cobra.Command {
 type benchFlags struct {
 	scenario string
 
+	redactReport bool
+
 	agentKind    string
 	endpoint     string
 	model        string
@@ -249,6 +251,8 @@ func (f *benchFlags) register(fl *pflag.FlagSet) {
 
 	fl.StringVar(&f.format, "format", "md", "output format: md | json")
 	fl.StringVar(&f.out, "out", "", "write the report to this file instead of stdout")
+	fl.BoolVar(&f.redactReport, "redact-report", false,
+		"replace the literal values in the tool log and errors (service names, IDs, log text) before writing, for a report you will share")
 }
 
 // ErrJudgeSameModel is returned when the LLM judge would grade its own model.
@@ -520,6 +524,9 @@ func loadCategories(f benchFlags, sc bench.Scenario) (bench.Categories, error) {
 }
 
 func writeBenchReport(cmd *cobra.Command, f benchFlags, rep orchestrator.Report) error {
+	if f.redactReport {
+		rep = orchestrator.RedactReport(rep)
+	}
 	var payload []byte
 	switch f.format {
 	case "json":
