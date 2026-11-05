@@ -1,4 +1,4 @@
-# Bench scenario on the CloudOps mesh (environment cloudops-mesh; run with
+# Bench scenario on the CloudOps mesh (environment cloudops; run with
 # --inject-namespace cloudops, see README "CloudOps mesh"). Fault: payment is
 # redeployed with an empty OTEL_SERVICE_NAME.
 #
@@ -21,7 +21,7 @@ metadata:
     payment appears to stop reporting.
 spec:
   environment:
-    app: cloudops-mesh
+    app: cloudops
   inject:
     - type: script
       script: faults/cloudops-load.sh

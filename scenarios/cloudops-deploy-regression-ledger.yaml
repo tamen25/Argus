@@ -1,4 +1,4 @@
-# Bench scenario on the CloudOps mesh (environment cloudops-mesh; run with
+# Bench scenario on the CloudOps mesh (environment cloudops; run with
 # --inject-namespace cloudops, see README "CloudOps mesh"). Fault: ledger is
 # rolled out with an internal HMAC key that no longer matches payment's.
 #
@@ -21,7 +21,7 @@ metadata:
     every post and the gateway's orders fail with 402 payment_failed.
 spec:
   environment:
-    app: cloudops-mesh
+    app: cloudops
   inject:
     - type: script
       script: faults/cloudops-load.sh
