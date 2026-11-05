@@ -1,0 +1,218 @@
+{
+  "scenario": "cloudops-missing-service-name-payment",
+  "scenario_hash": "0ff155b3bd186dc09265a8df4a7381d2fcab1ef39a5c4959f7aacc1b610ab1d9",
+  "agent": "gpt-oss:20b",
+  "env_digest": "cloudops-eks-ee97b67",
+  "categories_offered": [
+    "alert-storm",
+    "broken-trace-propagation",
+    "cardinality-explosion",
+    "certificate-expiry",
+    "dependency-latency",
+    "deploy-regression",
+    "disk-pressure",
+    "missing-service-name",
+    "network-partition",
+    "oomkill",
+    "storage-throttling"
+  ],
+  "seed": 1,
+  "budget": {
+    "MaxToolCalls": 20,
+    "MaxTokens": 200000
+  },
+  "model": {
+    "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+    "model": "gpt-oss:20b"
+  },
+  "harness": {
+    "argus_version": "v2.1.0",
+    "injector": "auto",
+    "tools": [
+      "get_k8s_topology",
+      "list_metrics",
+      "list_metric_labels",
+      "list_log_labels",
+      "list_trace_tags",
+      "query_prometheus",
+      "query_loki",
+      "search_traces",
+      "list_alerts"
+    ],
+    "normalizers": [
+      "json"
+    ]
+  },
+  "agent_timeout": "30m0s",
+  "max_turn_tokens": 8192,
+  "runs": [
+    {
+      "repeat": 0,
+      "started": "2026-11-05T19:13:58.4614006+05:30",
+      "finished": "2026-11-05T19:17:15.2980876+05:30",
+      "usage": {
+        "tool_calls": 20,
+        "tool_errors": 3,
+        "tokens": 107632,
+        "steps": 22,
+        "retries": 1,
+        "submit_rejections": 1
+      },
+      "tool_log": [
+        {
+          "tool": "get_k8s_topology",
+          "arguments": "{\"namespace\":\"cloudops-mesh\"}",
+          "result_bytes": 76
+        },
+        {
+          "tool": "list_alerts",
+          "arguments": "{\"state\":\"\"}",
+          "result_bytes": 67
+        },
+        {
+          "tool": "list_log_labels",
+          "arguments": "{\"label\":\"\"}",
+          "result_bytes": 202
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":20,\"match\":\"service\",\"selector\":\"{__name__!=\\\"\\\"}\"}",
+          "result_bytes": 679
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"\",\"limit\":20,\"match\":\"kube\",\"selector\":\"{__name__=\\\"kube_pod_status_ready\\\"}\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":50,\"match\":\"error\",\"selector\":\"{__name__!=\\\"\\\"}\"}",
+          "result_bytes": 1765
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"limit\":100,\"query\":\"{service_name=\\\"cloudops-mesh\\\"} |= \\\"timeout\\\"\",\"start\":\"2024-11-05T00:00:00Z\",\"end\":\"2026-11-05T23:59:59Z\"}",
+          "error": "backend http://127.0.0.1:13100/loki/api/v1/query_range?end=2026-11-05T23%3A59%3A59Z\u0026l…e%3D%22cloudops-mesh%22%7D+%7C%3D+%22timeout%22\u0026start=2024-11-05T00%3A00%3A00Z: HTTP 400: the query time range exceeds the limit (query length: 17543h59m59s, limit: 30d1h)",
+          "result_bytes": 297
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"end\":\"2026-11-15T12:00:00Z\",\"limit\":100,\"query\":\"{service_name=\\\"cloudops-mesh\\\"} |= \\\"Error\\\"\",\"start\":\"2026-11-15T11:50:00Z\"}",
+          "result_bytes": 2634
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":100,\"match\":\"kube_pod\",\"selector\":\"{__name__!=\\\"\\\"}\"}",
+          "result_bytes": 2499
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"start\":\"2026-11-15T11:30:00Z\",\"end\":\"2026-11-15T12:30:00Z\",\"step\":\"5m\",\"time\":\"\",\"query\":\"sum(increase(kube_pod_container_status_restarts_total[1h])) by (k8s_namespace_name, k8s_deployment_name)\"}",
+          "result_bytes": 63
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-11-15T12:30:00Z\",\"query\":\"container_network_receive_errors_total \\u003e 0\",\"start\":\"2026-11-15T10:30:00Z\",\"step\":\"5m\",\"time\":\"\"}",
+          "result_bytes": 63
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-11-15T12:30:00Z\",\"query\":\"up\",\"start\":\"2026-11-15T12:29:00Z\",\"step\":\"1m\",\"time\":\"\"}",
+          "result_bytes": 63
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"selector\":\"{__name__=\\\"kube_pod_container_status_restarts_total\\\"}\",\"limit\":20}",
+          "result_bytes": 174
+        },
+        {
+          "tool": "get_k8s_topology",
+          "arguments": "{\"namespace\":\"\"}",
+          "result_bytes": 3484
+        },
+        {
+          "tool": "list_metric_labels",
+          "arguments": "{\"label\":\"namespace\",\"limit\":20,\"match\":\"mesh\"}",
+          "result_bytes": 66
+        },
+        {
+          "tool": "list_metrics",
+          "arguments": "{\"limit\":20,\"match\":\"payment\",\"selector\":\"{__name__!=\\\"\\\"}\"}",
+          "result_bytes": 54
+        },
+        {
+          "tool": "query_loki",
+          "arguments": "{\"end\":\"2026-11-15T12:00:00Z\",\"limit\":50,\"query\":\"{k8s_namespace_name=\\\"cloudops\\\"} |= \\\"error\\\"\",\"start\":\"2026-11-15T11:55:00Z\"}",
+          "result_bytes": 2634
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-11-15T12:30:00Z\",\"query\":\"sum(kube_pod_container_status_ready{status=\\\"false\\\"}) by (k8s_namespace_name, k8s_deployment_name)\",\"start\":\"2026-11-15T12:29:00Z\",\"step\":\"1m\"}",
+          "result_bytes": 63
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-11-15T12:30:00Z\",\"query\":\"max by (k8s_namespace_name, k8s_pod_name)(kube_pod_status_phase==\\\"Failed\\\")\"}",
+          "error": "start: empty timestamp",
+          "result_bytes": 34
+        },
+        {
+          "tool": "query_prometheus",
+          "arguments": "{\"end\":\"2026-11-15T12:30:00Z\",\"query\":\"kube_node_info\",\"step\":\"1m\"}",
+          "error": "start: empty timestamp",
+          "result_bytes": 34
+        }
+      ],
+      "normalization": "json",
+      "score": {
+        "scenario": "cloudops-missing-service-name-payment",
+        "score": 0.25,
+        "entity_score": 0,
+        "category_match": true,
+        "category": "missing-service-name",
+        "decoys_named": [
+          {
+            "kind": "Deployment",
+            "namespace": "cloudops",
+            "name": "api-gateway"
+          }
+        ],
+        "evidence_count": 2,
+        "cited_signals": [
+          "logs",
+          "topology"
+        ],
+        "matched": null,
+        "missed": [
+          {
+            "kind": "Deployment",
+            "namespace": "cloudops",
+            "name": "payment"
+          }
+        ],
+        "extra": [
+          {
+            "kind": "Deployment",
+            "namespace": "cloudops",
+            "name": "api-gateway"
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "attempts": 1,
+    "diagnoses": 1,
+    "failures": 0,
+    "budget_exhausted": 0,
+    "answer_rate": 1,
+    "mean_score": 0.25,
+    "stddev_score": 0,
+    "mean_entity_score": 0,
+    "stddev_entity_score": 0,
+    "category_match_rate": 1,
+    "evidence_missing_rate": 0,
+    "mean_tool_calls": 20,
+    "mean_tokens": 107632
+  }
+}

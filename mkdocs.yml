@@ -58,6 +58,7 @@ nav:
       - First real-model run: bench/first-real-run.md
       - Running the flagship: bench/flagship.md
       - Flagship result (v1.0): bench/flagship-results.md
+      - CloudOps scenarios with a model: bench/cloudops-model-run.md
   - Releasing: releasing.md
   - Master build plan: argus-master-build-plan.md
 
