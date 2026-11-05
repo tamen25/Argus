@@ -50,6 +50,11 @@ A scrape always reports one whole snapshot. Until a service has been
 observed there are no score series at all: an empty fleet's score would be a
 vacuous 100.
 
+With a Prometheus Operator, the chart can create the scrape:
+`--set serviceMonitor.enabled=true`, plus the labels your operator selects
+ServiceMonitors by (`serviceMonitor.labels`), and the scraper's namespace in
+`networkPolicy.allowedNamespaces`.
+
 ## Authentication
 
 When `ARGUS_API_TOKEN` is set, every `/api/` request needs

@@ -1,0 +1,22 @@
+{{- if .Values.serviceMonitor.enabled }}
+# Scrapes /metrics (the score gauges and the engine's own metrics) for a
+# Prometheus Operator. Needs its CRD; /metrics carries no findings and no
+# token. The NetworkPolicy must admit the scraper's namespace on the http
+# port (networkPolicy.allowedNamespaces).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "argus.fullname" . }}
+  labels:
+    {{- include "argus.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels: {{- include "argus.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}

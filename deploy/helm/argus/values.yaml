@@ -42,6 +42,16 @@ serviceAccount:
   create: true
   name: ""
 
+# A ServiceMonitor for the score gauges on /metrics (Prometheus Operator).
+# Off by default: it needs the operator's CRD.
+serviceMonitor:
+  enabled: false
+  # Labels the operator selects ServiceMonitors by, e.g. kube-prometheus-stack
+  # selects `release: <its release name>` unless told otherwise.
+  labels: {}
+  # Matches the engine's default --score-interval.
+  interval: 30s
+
 resources:
   requests:
     cpu: 100m
